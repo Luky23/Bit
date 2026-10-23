@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.*
+models/
+*.gguf
+*.onnx
+userData/
+userData-preview/
+vault/
+boveda/
+notas/
+audio-user/
+logs/
+*.log
+coverage/
+*.local.json
