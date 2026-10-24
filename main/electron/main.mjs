@@ -1,8 +1,10 @@
-import { app, BrowserWindow, ipcMain, session } from "electron";
+import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session } from "electron";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
+import { createVisionMessage } from "../src/screen/vision-request.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const previewData = join(app.getPath("appData"), "Bit Preview");
@@ -11,6 +13,7 @@ app.setAppUserModelId("com.bit.assistant.preview");
 app.commandLine.appendSwitch("disable-spell-checking");
 
 let mainWindow;
+let overlayWindow;
 let voiceProcess;
 let voiceReady = false;
 let voiceWaiters = [];
@@ -60,10 +63,56 @@ ipcMain.handle("bit:chat", async (_event, request = {}) => {
   const model = typeof request.model === "string" && request.model.length < 128 ? request.model : "qwen2.5:3b";
   const message = typeof request.message === "string" ? request.message.trim().slice(0, 8000) : "";
   if (!message) throw new Error("Escribí un mensaje");
-  const response = await fetch("http://127.0.0.1:11434/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, stream: false, messages: [{ role: "user", content: message }], options: { temperature: 0.3 } }) });
+  const userMessage = request.imageDataUrl ? createVisionMessage(message, request.imageDataUrl) : { role: "user", content: message };
+  const response = await fetch("http://127.0.0.1:11434/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, stream: false, messages: [userMessage], options: { temperature: 0.3 } }) });
   if (!response.ok) throw new Error(`Ollama respondió ${response.status}`);
   const body = await response.json();
   return { model, text: String(body.message?.content ?? "") };
+});
+
+function overlayBounds(expanded = false) {
+  const display = screen.getPrimaryDisplay();
+  const width = expanded ? 410 : 92;
+  const height = expanded ? 560 : 92;
+  const margin = 22;
+  return { width, height, x: display.workArea.x + display.workArea.width - width - margin, y: display.workArea.y + margin };
+}
+
+function setOverlayExpanded(expanded) {
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  overlayWindow.setBounds(overlayBounds(expanded), true);
+  overlayWindow.setAlwaysOnTop(true, "floating");
+  if (expanded) overlayWindow.focus();
+}
+
+ipcMain.handle("bit:overlay-set-expanded", (_event, expanded) => {
+  setOverlayExpanded(expanded === true);
+  return { expanded: expanded === true };
+});
+
+ipcMain.handle("bit:open-main", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
+  mainWindow.show();
+  mainWindow.focus();
+  return { ok: true };
+});
+
+ipcMain.handle("bit:screen-capture", async () => {
+  const policy = createCapturePolicy({ consent: true, maxSide: 1280 });
+  if (!canCapture(policy, "")) throw new Error("La captura requiere consentimiento explícito");
+  const wasVisible = overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible();
+  if (wasVisible) overlayWindow.hide();
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    const display = screen.getPrimaryDisplay();
+    const dimensions = resizeDimensions(display.size.width, display.size.height, policy.maxSide);
+    const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: dimensions });
+    const source = sources[0];
+    if (!source?.thumbnail || source.thumbnail.isEmpty()) throw new Error("Windows no devolvió una captura de pantalla");
+    return { imageDataUrl: source.thumbnail.toDataURL(), width: dimensions.width, height: dimensions.height, source: "primary-screen" };
+  } finally {
+    if (wasVisible) overlayWindow.showInactive();
+  }
 });
 
 ipcMain.handle("bit:speak", async (_event, text) => {
@@ -83,7 +132,7 @@ function isAllowedUrl(url) {
   } catch { return false; }
 }
 
-function createWindow() {
+function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 980,
     height: 720,
@@ -104,10 +153,39 @@ function createWindow() {
   mainWindow.loadFile(join(here, "index.html"));
 }
 
+function createOverlayWindow() {
+  overlayWindow = new BrowserWindow({
+    ...overlayBounds(false),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: false,
+    skipTaskbar: true,
+    show: false,
+    alwaysOnTop: true,
+    hasShadow: false,
+    backgroundColor: "#00000000",
+    webPreferences: {
+      preload: join(here, "preload.mjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false
+    }
+  });
+  overlayWindow.setAlwaysOnTop(true, "floating");
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  overlayWindow.loadFile(join(here, "overlay.html"));
+  overlayWindow.once("ready-to-show", () => overlayWindow.showInactive());
+  overlayWindow.on("closed", () => { overlayWindow = undefined; });
+}
+
 app.whenReady().then(() => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => callback({ cancel: !isAllowedUrl(details.url) }));
-  createWindow();
-  app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
+  createMainWindow();
+  createOverlayWindow();
+  app.on("activate", () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow(); });
 });
 
 app.on("window-all-closed", () => { if (voiceProcess && !voiceProcess.killed) voiceProcess.kill(); if (process.platform !== "darwin") app.quit(); });

@@ -17,3 +17,5 @@ logs/
 *.log
 coverage/
 *.local.json
+_referencia/
+.venv/
