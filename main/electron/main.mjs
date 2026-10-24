@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
 import { createVisionMessage } from "../src/screen/vision-request.mjs";
+import { validateToolInput } from "../src/core/validation.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const previewData = join(app.getPath("appData"), "Bit Preview");
@@ -57,9 +58,15 @@ function waitVoiceReady() {
   return new Promise((resolve, reject) => voiceWaiters.push({ resolve, reject }));
 }
 
-ipcMain.handle("bit:runtime", () => ({ channel: "preview", privacy: "Solo localhost / 127.0.0.1", models: { fast: "qwen2.5:3b", heavy: "qwen2.5-coder:7b" }, voice: "es_ES-davefx-medium", voicePaths: voicePaths() }));
+ipcMain.handle("bit:runtime", () => {
+  const validation = validateToolInput("bit:runtime", {});
+  if (!validation.ok) throw new Error(validation.error);
+  return ({ channel: "preview", privacy: "Solo localhost / 127.0.0.1", models: { fast: "qwen2.5:3b", heavy: "qwen2.5-coder:7b" }, voice: "es_ES-davefx-medium", voicePaths: voicePaths() });
+});
 
 ipcMain.handle("bit:chat", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:chat", request);
+  if (!validation.ok) throw new Error(validation.error);
   const model = typeof request.model === "string" && request.model.length < 128 ? request.model : "qwen2.5:3b";
   const message = typeof request.message === "string" ? request.message.trim().slice(0, 8000) : "";
   if (!message) throw new Error("Escribí un mensaje");
@@ -86,11 +93,15 @@ function setOverlayExpanded(expanded) {
 }
 
 ipcMain.handle("bit:overlay-set-expanded", (_event, expanded) => {
+  const validation = validateToolInput("bit:overlay-set-expanded", { expanded });
+  if (!validation.ok) throw new Error(validation.error);
   setOverlayExpanded(expanded === true);
   return { expanded: expanded === true };
 });
 
 ipcMain.handle("bit:open-main", () => {
+  const validation = validateToolInput("bit:open-main", {});
+  if (!validation.ok) throw new Error(validation.error);
   if (!mainWindow || mainWindow.isDestroyed()) createMainWindow();
   mainWindow.show();
   mainWindow.focus();
@@ -98,6 +109,8 @@ ipcMain.handle("bit:open-main", () => {
 });
 
 ipcMain.handle("bit:screen-capture", async () => {
+  const validation = validateToolInput("bit:screen-capture", {});
+  if (!validation.ok) throw new Error(validation.error);
   const policy = createCapturePolicy({ consent: true, maxSide: 1280 });
   if (!canCapture(policy, "")) throw new Error("La captura requiere consentimiento explícito");
   const wasVisible = overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible();
@@ -116,6 +129,8 @@ ipcMain.handle("bit:screen-capture", async () => {
 });
 
 ipcMain.handle("bit:speak", async (_event, text) => {
+  const validation = validateToolInput("bit:speak", { text });
+  if (!validation.ok) throw new Error(validation.error);
   const safeText = typeof text === "string" ? text.trim().slice(0, 4000) : "";
   if (!safeText) throw new Error("No hay texto para hablar");
   await waitVoiceReady();
@@ -123,7 +138,12 @@ ipcMain.handle("bit:speak", async (_event, text) => {
   return { ok: true };
 });
 
-ipcMain.handle("bit:stop-speaking", () => { if (voiceProcess && !voiceProcess.killed) voiceProcess.stdin.write('{"type":"stop"}\n'); return { ok: true }; });
+ipcMain.handle("bit:stop-speaking", () => {
+  const validation = validateToolInput("bit:stop-speaking", {});
+  if (!validation.ok) throw new Error(validation.error);
+  if (voiceProcess && !voiceProcess.killed) voiceProcess.stdin.write('{"type":"stop"}\n');
+  return { ok: true };
+});
 
 function isAllowedUrl(url) {
   try {
