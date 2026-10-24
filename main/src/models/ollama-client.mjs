@@ -26,6 +26,46 @@ export class OllamaClient {
     return response.json();
   }
 
+  async copy(source, destination) {
+    return this.#jsonPost("/api/copy", { source, destination });
+  }
+
+  async pull(model, { signal, onProgress } = {}) {
+    const response = await this.fetch(new URL("/api/pull", this.baseUrl), {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, stream: true }), signal
+    });
+    if (!response.ok) throw new Error(`Ollama /api/pull: ${response.status}`);
+    if (!response.body || typeof response.body.getReader !== "function") return response.json();
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    const results = [];
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const item = JSON.parse(line);
+        results.push(item);
+        onProgress?.(item);
+      }
+    }
+    if (buffer.trim()) results.push(JSON.parse(buffer));
+    return results;
+  }
+
+  async #jsonPost(path, body) {
+    const response = await this.fetch(new URL(path, this.baseUrl), {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body)
+    });
+    if (!response.ok) throw new Error(`Ollama ${path}: ${response.status}`);
+    return response.json();
+  }
+
   async status(model) {
     const response = await this.fetch(new URL("/api/tags", this.baseUrl));
     if (!response.ok) throw new Error(`Ollama /api/tags: ${response.status}`);

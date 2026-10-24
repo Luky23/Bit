@@ -6,6 +6,7 @@ import { normalizeModelResponse, stripThinkTags } from "../src/models/reasoning.
 import { toolsForTurn } from "../src/models/prompt.mjs";
 import { OllamaClient } from "../src/models/ollama-client.mjs";
 import { ModelManager } from "../src/models/model-manager.mjs";
+import { ModelUpdater } from "../src/models/model-updater.mjs";
 
 test("configuración nueva usa roles editables y think falso", () => {
   const config = defaultModelConfig();
@@ -67,4 +68,33 @@ test("pedidos concurrentes del manager se serializan", async () => {
   const second = manager.withModel("fast", async ({ model }) => { order.push(`${model}-second`); });
   await Promise.all([first, second]);
   assert.deepEqual(order, ["fast-start", "fast-end", "fast-second"]);
+});
+
+test("actualización requiere opt-in, respaldo y aprobación", async () => {
+  const calls = [];
+  const client = {
+    copy: async (...args) => { calls.push(["copy", ...args]); },
+    pull: async (...args) => { calls.push(["pull", ...args]); },
+    generate: async (...args) => { calls.push(["generate", ...args]); return { message: { content: "OK" } }; }
+  };
+  const updater = new ModelUpdater({ client, config: { enabled: true, selectedTags: ["qwen2.5:3b"] }, diskSpace: async () => 100, requiredBytes: 0, now: () => new Date("2026-10-23T00:00:00Z"), approve: async () => true });
+  const result = await updater.update("qwen2.5:3b", { requiredBytes: 10 });
+  assert.equal(result.rolledBack, false);
+  assert.equal(calls[0][0], "copy");
+  assert.match(calls[0][2], /respaldo-20261023$/);
+  await assert.rejects(() => updater.update("qwen2.5-coder:7b"), /no autorizada/);
+});
+
+test("fallo de prueba de humo restaura el respaldo", async () => {
+  const copies = [];
+  let generates = 0;
+  const client = {
+    copy: async (...args) => copies.push(args),
+    pull: async () => {},
+    generate: async () => { generates += 1; if (generates === 2) throw new Error("sin herramientas"); return {}; }
+  };
+  const updater = new ModelUpdater({ client, config: { enabled: true, selectedTags: ["tag"] }, diskSpace: async () => 100, approve: async () => true, now: () => new Date("2026-10-23T00:00:00Z") });
+  const result = await updater.update("tag");
+  assert.equal(result.rolledBack, true);
+  assert.deepEqual(copies.map(([source, destination]) => [source, destination]), [["tag", "tag-respaldo-20261023"], ["tag-respaldo-20261023", "tag"]]);
 });
