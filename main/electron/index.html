@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; connect-src 'none'; form-action 'none';">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bit Preview</title>
+  <style>
+    :root { color-scheme: dark; font-family: Segoe UI, sans-serif; background: #07131b; color: #d9faff; }
+    body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
+    main { width: min(720px, 86vw); padding: 40px; border: 1px solid #1b6c78; border-radius: 24px; background: #0b202b; box-shadow: 0 0 60px #073b49; }
+    .orb { width: 112px; height: 112px; margin: 0 auto 24px; display: grid; place-items: center; border: 2px solid #25e8ff; border-radius: 50%; color: #25e8ff; font-size: 44px; box-shadow: 0 0 28px #25e8ff88; }
+    h1 { text-align: center; font-weight: 500; } p { color: #a8cbd0; line-height: 1.6; }
+    .status { padding: 16px; border-radius: 12px; background: #061017; border: 1px solid #1e4c57; }
+    code { color: #8ff5ff; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="orb">B</div>
+    <h1>Bit Preview</h1>
+    <p>Aplicación local en canal de prueba. La red externa está bloqueada por defecto.</p>
+    <div class="status">Canal: <code id="channel">preview</code><br>Privacidad: <code id="privacy">local-only</code><br>Voz: <code id="voice">Piper local</code></div>
+  </main>
+  <script>
+    document.querySelector('#channel').textContent = window.bitRuntime?.channel ?? 'preview';
+    document.querySelector('#privacy').textContent = window.bitRuntime?.privacy ?? 'local-only';
+    document.querySelector('#voice').textContent = window.bitRuntime?.voice ?? 'Piper local';
+  </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+appId: com.bit.assistant.preview
+productName: Bit Preview
+artifactName: Bit-Preview-${version}-${arch}.${ext}
+directories:
+  output: dist/preview
+  buildResources: build
+files:
+  - main/electron/**
+  - main/src/**
+  - main/package.json
+  - package.json
+asar: true
+win:
+  target:
+    - nsis
+  artifactName: Bit-Preview-${version}-Setup.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Bit Preview
