@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-10-23",
+  "models": [
+    { "tag": "qwen2.5:3b", "role": "fast", "selectedByDefault": true, "notes": "charla y tareas livianas" },
+    { "tag": "qwen2.5-coder:7b", "role": "heavy", "selectedByDefault": true, "notes": "programación y tareas pesadas" }
+  ]
+}
