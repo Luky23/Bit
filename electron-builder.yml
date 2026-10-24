@@ -1,6 +1,6 @@
 appId: com.bit.assistant.preview
 productName: Bit Preview
-artifactName: Bit-Preview-${version}-${arch}.${ext}
+artifactName: Bit-Preview-${version}-Portable.${ext}
 directories:
   output: dist/preview
   buildResources: build
@@ -12,12 +12,4 @@ files:
 asar: true
 win:
   target:
-    - nsis
-  artifactName: Bit-Preview-${version}-Setup.${ext}
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-  createDesktopShortcut: true
-  createStartMenuShortcut: true
-  shortcutName: Bit Preview
+    - portable
