@@ -9,8 +9,8 @@ import { ModelManager } from "../src/models/model-manager.mjs";
 
 test("configuración nueva usa roles editables y think falso", () => {
   const config = defaultModelConfig();
-  assert.equal(config.fastModel, "qwen3:4b-instruct");
-  assert.equal(config.model, "qwen3:14b");
+  assert.equal(config.fastModel, "qwen2.5:3b");
+  assert.equal(config.model, "qwen2.5-coder:7b");
   assert.equal(config.fast.think, false);
   assert.equal(config.heavy.context, 16384);
 });

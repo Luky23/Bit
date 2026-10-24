@@ -7,6 +7,6 @@ Bit separa el rol de cada modelo de su etiqueta concreta:
 - `visionModel`: pantalla, solo bajo demanda.
 - `embedModel`: embeddings opcionales, solo local.
 
-Los valores iniciales son configurables (`qwen3:4b-instruct` y `qwen3:14b`). El tag exacto debe confirmarse en la instalación local con `ollama list` o `/api/tags`; Bit no descarga nada automáticamente.
+Los valores iniciales configurables son `qwen2.5:3b` para el rol rápido y `qwen2.5-coder:7b` para el rol pesado/programación. El tag exacto puede confirmarse en la instalación local con `ollama list` o `/api/tags`; Bit no descarga nada automáticamente.
 
 `think` es falso por defecto. El razonamiento se mantiene separado de la respuesta y nunca se muestra ni se envía a voz.

@@ -1,6 +1,6 @@
 const DEFAULTS = Object.freeze({
-  fastModel: "qwen3:4b-instruct",
-  model: "qwen3:14b",
+  fastModel: "qwen2.5:3b",
+  model: "qwen2.5-coder:7b",
   visionModel: "",
   embedModel: "",
   fast: { context: 8192, numPredict: 512, temperature: 0.7, keepAlive: "10m", think: false },
