@@ -98,3 +98,15 @@ test("fallo de prueba de humo restaura el respaldo", async () => {
   assert.equal(result.rolledBack, true);
   assert.deepEqual(copies.map(([source, destination]) => [source, destination]), [["tag", "tag-respaldo-20261023"], ["tag-respaldo-20261023", "tag"]]);
 });
+
+test("rechaza espacio insuficiente y cancelación antes de tocar Ollama", async () => {
+  let calls = 0;
+  const client = { copy: async () => { calls += 1; }, pull: async () => { calls += 1; }, generate: async () => ({}) };
+  const updater = new ModelUpdater({ client, config: { enabled: true, selectedTags: ["tag"] }, diskSpace: async () => 9, approve: async () => true });
+  await assert.rejects(() => updater.update("tag", { requiredBytes: 10 }), /espacio insuficiente/);
+  const cancelled = new AbortController();
+  cancelled.abort();
+  const enough = new ModelUpdater({ client, config: { enabled: true, selectedTags: ["tag"] }, diskSpace: async () => 100, approve: async () => true });
+  await assert.rejects(() => enough.update("tag", { signal: cancelled.signal }), /cancelada/);
+  assert.equal(calls, 0);
+});
