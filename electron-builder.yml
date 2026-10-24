@@ -1,0 +1,15 @@
+appId: com.bit.assistant.preview
+productName: Bit Preview
+artifactName: Bit-Preview-${version}-Portable.${ext}
+directories:
+  output: dist/preview
+  buildResources: build
+files:
+  - main/electron/**
+  - main/src/**
+  - main/package.json
+  - package.json
+asar: true
+win:
+  target:
+    - portable
