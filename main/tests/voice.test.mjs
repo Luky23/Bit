@@ -15,10 +15,14 @@ test("protocolo de voz valida y enmarca JSONL", () => {
 test("la respuesta se segmenta por oración y puede interrumpirse", async () => {
   assert.deepEqual(splitSentences("Uno. Dos! Tres?"), ["Uno.", "Dos!", "Tres?"]);
   const spoken = [];
-  const queue = new SpeechQueue(async (text) => { spoken.push(text); });
+  const queue = new SpeechQueue(async (msg) => { spoken.push(msg); });
   queue.enqueue("Primera. Segunda.");
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(spoken, ["Primera.", "Segunda."]);
+  // La cola ahora envía mensajes JSONL codificados
+  assert.equal(spoken.length, 2);
+  assert.ok(spoken[0].includes('"type":"speak"'));
+  assert.ok(spoken[0].includes('"text":"Primera."'));
+  assert.ok(spoken[1].includes('"text":"Segunda."'));
   queue.enqueue("No debe salir.");
   queue.cancel();
   assert.equal(queue.items.length, 0);

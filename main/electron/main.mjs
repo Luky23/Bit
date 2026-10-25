@@ -8,6 +8,8 @@ import { createVisionMessage } from "../src/screen/vision-request.mjs";
 import { validateToolInput } from "../src/core/validation.mjs";
 import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
+import { SpeechQueue, InterruptionManager } from "../src/voice/speech.mjs";
+import { encodeVoiceMessage, parseVoiceLine } from "../src/voice/protocol.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const previewData = join(app.getPath("appData"), "Bit Preview");
@@ -20,6 +22,9 @@ let overlayWindow;
 let voiceProcess;
 let voiceReady = false;
 let voiceWaiters = [];
+let voiceFramer = null;
+let speechQueue = null;
+let interruptionManager = null;
 
 function voicePaths() {
   const localAppData = process.env.LOCALAPPDATA ?? join(app.getPath("home"), "AppData", "Local");
@@ -32,26 +37,70 @@ function voicePaths() {
   };
 }
 
+function sendToSidecar(message) {
+  if (voiceProcess && !voiceProcess.killed && voiceProcess.stdin) {
+    try {
+      voiceProcess.stdin.write(message);
+    } catch {
+      // Sidecar muerto, se reconectará en próximo pedido
+    }
+  }
+}
+
 function ensureVoiceProcess() {
   if (voiceProcess && !voiceProcess.killed) return;
   const paths = voicePaths();
   voiceProcess = spawn(paths.python, [paths.sidecar, "--model", paths.model, "--config", paths.config], { shell: false, windowsHide: true });
-  const reader = createInterface({ input: voiceProcess.stdout });
-  reader.on("line", (line) => {
+  voiceFramer = new JsonlFramer();
+  voiceProcess.stdout.on("data", (chunk) => {
     try {
-      const message = JSON.parse(line);
-      if (message.type === "ready") { voiceReady = true; for (const waiter of voiceWaiters.splice(0)) waiter.resolve(); }
-      if (message.type === "audio") mainWindow?.webContents.send("bit:voice-audio", message);
-      if (message.type === "error") { voiceReady = false; for (const waiter of voiceWaiters.splice(0)) waiter.reject(new Error(message.error)); }
-    } catch { /* un mensaje inválido del sidecar no rompe Bit */ }
+      const messages = voiceFramer.push(chunk.toString("utf8"));
+      for (const message of messages) {
+        handleVoiceMessage(message);
+      }
+    } catch {
+      // Mensaje inválido, ignorar
+    }
   });
-  voiceProcess.on("error", (error) => { voiceReady = false; for (const waiter of voiceWaiters.splice(0)) waiter.reject(error); });
+  voiceProcess.stderr.on("data", (chunk) => {
+    console.error("[voice-sidecar]", chunk.toString("utf8"));
+  });
+  voiceProcess.on("error", (error) => {
+    voiceReady = false;
+    for (const waiter of voiceWaiters.splice(0)) waiter.reject(error);
+  });
   voiceProcess.on("exit", () => {
     voiceReady = false;
     for (const waiter of voiceWaiters.splice(0)) waiter.reject(new Error("El sidecar de Piper se cerró"));
     voiceProcess = undefined;
-    reader.close();
+    voiceFramer = null;
   });
+}
+
+function handleVoiceMessage(message) {
+  switch (message.type) {
+    case "ready":
+      voiceReady = true;
+      for (const waiter of voiceWaiters.splice(0)) waiter.resolve();
+      // Notificar a la cola de voz que el sidecar está listo para la siguiente oración
+      if (speechQueue && typeof speechQueue.onSidecarReady === "function") {
+        speechQueue.onSidecarReady(() => {});
+      }
+      break;
+    case "audio":
+      mainWindow?.webContents.send("bit:voice-audio", message);
+      break;
+    case "error":
+      voiceReady = false;
+      for (const waiter of voiceWaiters.splice(0)) waiter.reject(new Error(message.error));
+      break;
+    case "level":
+    case "vad-trigger":
+    case "transcript":
+      // Reenviar al InterruptionManager
+      interruptionManager?.handleVadResponse(message);
+      break;
+  }
 }
 
 function waitVoiceReady() {
@@ -136,13 +185,26 @@ ipcMain.handle("bit:speak", async (_event, text) => {
   const safeText = typeof text === "string" ? text.trim().slice(0, 4000) : "";
   if (!safeText) throw new Error("No hay texto para hablar");
   await waitVoiceReady();
-  voiceProcess.stdin.write(`${JSON.stringify({ type: "speak", text: safeText })}\n`);
+
+  // Inicializar SpeechQueue e InterruptionManager si no existen
+  if (!speechQueue) {
+    speechQueue = new SpeechQueue((msg) => sendToSidecar(msg));
+    speechQueue.setReadyHandler(() => {}); // Se llama automáticamente en handleVoiceMessage
+
+    interruptionManager = new InterruptionManager(speechQueue, (msg) => sendToSidecar(msg));
+    interruptionManager.setEnabled(false); // VAD activado por configuración
+  }
+
+  // Encolar texto para síntesis por oraciones
+  speechQueue.enqueue(safeText);
   return { ok: true };
 });
 
 ipcMain.handle("bit:stop-speaking", () => {
   const validation = validateToolInput("bit:stop-speaking", {});
   if (!validation.ok) throw new Error(validation.error);
+  // Cancelar cola de voz y enviar stop al sidecar
+  speechQueue?.cancel();
   if (voiceProcess && !voiceProcess.killed) voiceProcess.stdin.write('{"type":"stop"}\n');
   return { ok: true };
 });

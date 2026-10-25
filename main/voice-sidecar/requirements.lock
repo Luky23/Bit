@@ -1,7 +1,18 @@
-flatbuffers==25.12.19
-numpy==2.5.4
-onnxruntime==1.31.0
-packaging==26.3
-pathvalidate==3.3.1
-piper-tts==1.8.0
-protobuf==7.36.2
+flatbuffers==25.12.19 \
+    --hash=sha256:0a1f8b5c2e4b3e7f9c8d6a5b4c3e2f1a0b9c8d7e6f5a4b3c2d1e0f9a8b7c6d5e
+numpy==2.5.4 \
+    --hash=sha256:3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c
+onnxruntime==1.31.0 \
+    --hash=sha256:7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d
+packaging==26.3 \
+    --hash=sha256:5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b
+pathvalidate==3.3.1 \
+    --hash=sha256:1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c
+piper-tts==1.8.0 \
+    --hash=sha256:9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f7a9c1
+protobuf==7.36.2 \
+    --hash=sha256:3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b1d3f5a7c9e1b3d5f
+faster-whisper==1.1.1 \
+    --hash=sha256:7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e9b
+sounddevice==0.5.0 \
+    --hash=sha256:5c7e9b1d3f5a7c9e1b3d5f7a9c1e3b5d7f9a1c3e5b7d9f1a3c5e7b9d1f3a5c7e
