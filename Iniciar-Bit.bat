@@ -1,0 +1,3 @@
+@echo off
+echo Iniciando entorno local de Bit...
+npm start
