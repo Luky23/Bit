@@ -6,32 +6,427 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bit</title>
   <style>
-    :root{color-scheme:dark;font-family:"Segoe UI",sans-serif;color:#e8fbff}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#app{width:100%;height:100%;position:relative}.orb-button{position:absolute;top:4px;right:4px;width:82px;height:82px;padding:0;border:1px solid #74edff;border-radius:50%;background:#07131be8;box-shadow:0 0 22px #58e7ff99,0 0 60px #58e7ff33;cursor:pointer}.orb-button:hover{box-shadow:0 0 30px #58e7ffff,0 0 78px #58e7ff66}.orb-button img{width:55px;height:55px;border-radius:50%;animation:float 3s ease-in-out infinite}.orb-button:after{content:"";position:absolute;inset:8px;border:1px dashed #a5f6ff99;border-radius:50%;animation:spin 8s linear infinite}.panel{position:absolute;inset:0;padding:14px;border:1px solid #49c9dc;border-radius:13px;background:linear-gradient(145deg,#071820f7,#0b1727f5);box-shadow:0 20px 60px #000c,0 0 30px #50dff844;opacity:0;pointer-events:none;transform:translateY(-8px) scale(.98);transition:opacity .16s ease,transform .16s ease}.expanded .orb-button{display:none}.expanded .panel{opacity:1;pointer-events:auto;transform:none}.panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#9ceffa;font-size:11px;letter-spacing:.14em}.panel-header button{border:0;background:transparent;color:#8bb7c0;font-size:20px;cursor:pointer}.hint{margin:0 0 10px;color:#769ca5;font-size:11px;line-height:1.4}.messages{height:345px;overflow:auto;padding-right:3px}.message{padding:9px 10px;margin:0 0 8px;border-left:2px solid #4ad1e5;background:#0c2732;font-size:12px;line-height:1.4;white-space:pre-wrap}.message.user{border-left:0;border-right:2px solid #aa82ff;background:#241b3d}.message.error{color:#ffabb6;border-color:#ff6d83}.chat-form{display:flex;flex-direction:column;gap:7px;margin-top:9px}textarea,input{width:100%;resize:none;border:1px solid #285d6a;border-radius:5px;background:#061017;color:#e5fbff;padding:9px;font:inherit;font-size:12px}textarea{height:52px}.actions{display:flex;gap:6px}.actions button,.open-main{border:1px solid #55cfe5;border-radius:5px;background:#103b4a;color:#e5fbff;padding:8px 9px;cursor:pointer;font-size:10px;letter-spacing:.05em}.actions button:hover,.open-main:hover{background:#176477}.actions button:disabled{opacity:.5;cursor:wait}.vision-row{display:flex;gap:6px}.vision-row input{flex:1;padding:7px;font-size:10px}.vision-row button{white-space:nowrap}.capture-state{min-height:15px;margin:5px 0;color:#79d6df;font-size:10px}.open-main{width:100%;margin-top:8px;background:#0b1e28;border-color:#326b77}.status{margin:7px 0 0;color:#738f99;font-size:10px}@keyframes spin{to{transform:rotate(360deg)}}@keyframes float{50%{transform:translateY(-3px) scale(1.03)}}
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --bg-glass: rgba(0, 0, 0, 0.6);
+      --bg-glass-strong: rgba(0, 0, 0, 0.75);
+      --border-glass: rgba(255, 255, 255, 0.08);
+      --border-glass-hover: rgba(255, 255, 255, 0.14);
+      --text-primary: rgba(255, 255, 255, 0.92);
+      --text-secondary: rgba(255, 255, 255, 0.6);
+      --text-muted: rgba(255, 255, 255, 0.4);
+      --accent: #58e7ff;
+      --accent-dim: rgba(88, 231, 255, 0.18);
+      --danger: #ff6d83;
+      --danger-dim: rgba(255, 109, 131, 0.18);
+      --shadow-orb: 0 0 24px rgba(88, 231, 255, 0.25), 0 0 60px rgba(88, 231, 255, 0.1);
+      --shadow-orb-hover: 0 0 36px rgba(88, 231, 255, 0.4), 0 0 80px rgba(88, 231, 255, 0.18);
+      --shadow-panel: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 40px rgba(88, 231, 255, 0.08);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      margin: 0; width: 100%; height: 100%;
+      background: transparent; overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    #app { width: 100%; height: 100%; position: relative; }
+
+    /* ===== ORB BUTTON ===== */
+    .orb-button {
+      position: absolute;
+      top: 6px; right: 6px;
+      width: 72px; height: 72px;
+      padding: 0; border: none;
+      border-radius: 50%;
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px) saturate(150%);
+      -webkit-backdrop-filter: blur(20px) saturate(150%);
+      box-shadow: var(--shadow-orb);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .orb-button:hover {
+      box-shadow: var(--shadow-orb-hover);
+      transform: scale(1.05);
+      background: var(--bg-glass-strong);
+    }
+
+    .orb-button:active { transform: scale(0.96); }
+
+    .orb-button img {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
+    }
+
+    /* Subtle ring */
+    .orb-button::after {
+      content: "";
+      position: absolute;
+      inset: 4px;
+      border: 1px solid var(--border-glass);
+      border-radius: 50%;
+      pointer-events: none;
+      opacity: 0.5;
+    }
+
+    /* ===== PANEL (EXPANDED) ===== */
+    .panel {
+      position: absolute;
+      inset: 0;
+      padding: 16px;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-lg);
+      background: var(--bg-glass);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+      box-shadow: var(--shadow-panel);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-6px) scale(0.985);
+      transition: opacity 0.18s ease, transform 0.18s ease;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    .expanded .orb-button { display: none; }
+    .expanded .panel {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateY(0) scale(1);
+    }
+
+    /* Panel header */
+    .panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 14px; padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-glass);
+    }
+
+    .panel-header strong {
+      font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--text-secondary); font-weight: 500;
+    }
+
+    .panel-header button {
+      border: none; background: transparent; color: var(--text-muted);
+      font-size: 22px; line-height: 1; cursor: pointer;
+      width: 28px; height: 28px; border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      transition: var(--transition);
+    }
+
+    .panel-header button:hover {
+      background: var(--bg-glass-strong);
+      color: var(--text-primary);
+    }
+
+    /* Hint text */
+    .hint {
+      margin: 0 0 14px; color: var(--text-muted);
+      font-size: 12px; line-height: 1.5;
+    }
+
+    /* Messages area */
+    .messages {
+      flex: 1; overflow-y: auto; padding-right: 4px;
+      margin-bottom: 14px;
+    }
+
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb {
+      background: var(--border-glass); border-radius: 2px;
+    }
+    .messages::-webkit-scrollbar-thumb:hover { background: var(--border-glass-hover); }
+
+    .message {
+      padding: 10px 12px; margin: 0 0 8px;
+      border-left: 2px solid var(--accent);
+      background: rgba(8, 20, 30, 0.6);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+      color: var(--text-primary);
+      animation: fadeIn 0.2s ease;
+    }
+
+    .message.user {
+      border-left: none; border-right: 2px solid #aa82ff;
+      background: rgba(28, 18, 42, 0.6);
+      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+      margin-left: auto; max-width: 85%;
+    }
+
+    .message.error { color: #ffabb6; border-color: var(--danger); background: rgba(40, 10, 15, 0.6); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    /* Chat form */
+    .chat-form { display: flex; flex-direction: column; gap: 10px; }
+
+    .input-row { display: flex; gap: 8px; }
+    .input-row > * { flex: 1; }
+
+    textarea, input {
+      width: 100%; resize: none;
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      backdrop-filter: blur(16px) saturate(150%);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      color: var(--text-primary);
+      padding: 12px 14px;
+      font: inherit; font-size: 13px;
+      transition: var(--transition);
+      outline: none;
+    }
+
+    textarea::placeholder, input::placeholder { color: var(--text-muted); opacity: 0.7; }
+
+    textarea:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+      background: var(--bg-glass-strong);
+    }
+
+    textarea { min-height: 72px; max-height: 140px; line-height: 1.5; }
+
+    .vision-row { display: flex; gap: 8px; }
+    .vision-row input { flex: 1; }
+
+    .actions { display: flex; gap: 8px; margin-top: 4px; }
+
+    button.primary, button.secondary, button.tertiary {
+      border: none; border-radius: var(--radius-sm);
+      font: inherit; font-size: 12px; font-weight: 500;
+      padding: 10px 16px; cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+
+    button.primary {
+      background: var(--accent); color: #001219;
+      box-shadow: 0 4px 16px rgba(88, 231, 255, 0.3);
+    }
+    button.primary:hover { background: #4dd5e6; box-shadow: 0 6px 24px rgba(88, 231, 255, 0.45); }
+    button.primary:active { transform: scale(0.98); }
+    button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    button.secondary {
+      background: var(--bg-glass); color: var(--text-primary);
+      border: 1px solid var(--border-glass);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    button.secondary:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); }
+
+    button.tertiary { background: transparent; color: var(--text-secondary); padding: 10px; }
+    button.tertiary:hover { color: var(--text-primary); background: var(--bg-glass); }
+
+    button.danger { color: #ffabb6; }
+    button.danger:hover { background: var(--danger-dim); color: #ffd1d7; }
+
+    .capture-state {
+      min-height: 18px; font-size: 11px; color: var(--text-muted);
+      transition: var(--transition);
+    }
+    .capture-state.message.error { color: #ffabb6; }
+
+    /* Open main button */
+    .open-main {
+      width: 100%; margin-top: 6px;
+      background: var(--bg-glass); color: var(--text-secondary);
+      border: 1px solid var(--border-glass);
+      border-radius: var(--radius-md);
+      padding: 10px; font: inherit; font-size: 12px;
+      cursor: pointer; transition: var(--transition);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    }
+    .open-main:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); color: var(--text-primary); }
+
+    /* Status bar */
+    .status {
+      margin-top: 10px; text-align: center;
+      font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted); opacity: 0.8;
+    }
+
+    /* Reduced motion */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
   </style>
 </head>
 <body>
   <div id="app">
-    <button id="orb" class="orb-button" aria-label="Abrir Bit"><img src="assets/bit-orb.png" alt="Bit"></button>
+    <button id="orb" class="orb-button" aria-label="Abrir Bit">
+      <img src="assets/bit-orb.png" alt="Bit">
+    </button>
+
     <section class="panel" aria-label="Bit flotante">
-      <header class="panel-header"><strong>BIT / QUICK CONSOLE</strong><button id="close" aria-label="Cerrar">×</button></header>
+      <header class="panel-header">
+        <strong>BIT / CONSOLA RÁPIDA</strong>
+        <button id="close" aria-label="Cerrar">×</button>
+      </header>
+
       <p class="hint">Bit está disponible sobre tus otras ventanas. Escribí una pregunta o adjuntá una captura explícita de tu pantalla.</p>
-      <div id="messages" class="messages"><div class="message">Listo. ¿En qué te ayudo?</div></div>
+
+      <div id="messages" class="messages">
+        <div class="message">Listo. ¿En qué te ayudo?</div>
+      </div>
+
       <form id="chat-form" class="chat-form">
-        <textarea id="prompt" placeholder="Preguntale algo a Bit…" aria-label="Pregunta para Bit"></textarea>
-        <div class="vision-row"><input id="vision-model" placeholder="Modelo de visión local (opcional)" aria-label="Modelo de visión local"><button id="capture" type="button">Ver pantalla</button></div>
+        <textarea id="prompt" placeholder="Preguntale algo a Bit…" aria-label="Pregunta para Bit" rows="3"></textarea>
+
+        <div class="vision-row">
+          <input id="vision-model" placeholder="Modelo de visión local (opcional)" aria-label="Modelo de visión local">
+          <button id="capture" type="button" class="secondary">Ver pantalla</button>
+        </div>
+
         <p id="capture-state" class="capture-state"></p>
-        <div class="actions"><button id="send" type="submit">Enviar</button><button id="stop" type="button">Interrumpir</button></div>
+
+        <div class="actions">
+          <button id="send" type="submit" class="primary">Enviar</button>
+          <button id="stop" type="button" class="secondary danger">Interrumpir</button>
+        </div>
       </form>
+
       <button id="open-main" class="open-main" type="button">Abrir consola completa</button>
       <p id="status" class="status">Solo local · captura bajo demanda</p>
     </section>
   </div>
+
   <script>
-    const $=id=>document.getElementById(id);let capturedImage="";let audioContext;let nextAudioTime=0;const addMessage=(text,kind="")=>{const node=document.createElement("div");node.className=`message ${kind}`;node.textContent=text;$('messages').append(node);$('messages').scrollTop=$('messages').scrollHeight;return node};const resize=expanded=>window.bitRuntime.setOverlayExpanded(expanded).catch(error=>{$('status').textContent=error.message});
-    function openPanel(){ $('app').classList.add('expanded'); void resize(true); $('prompt').focus() }function closePanel(){ $('app').classList.remove('expanded'); void resize(false) }$('orb').addEventListener('click',openPanel);$('close').addEventListener('click',closePanel);document.addEventListener('keydown',event=>{if(event.key==='Escape')closePanel()});
-    $('vision-model').value=localStorage.getItem('bit.visionModel')||'';$('capture').addEventListener('click',async()=>{const button=$('capture');button.disabled=true;$('capture-state').textContent='Ocultando Bit y capturando…';try{const result=await window.bitRuntime.captureScreen();capturedImage=result.imageDataUrl;$('capture-state').textContent=`Pantalla adjunta · ${result.width}×${result.height}`;localStorage.setItem('bit.visionModel',$('vision-model').value.trim())}catch(error){capturedImage='';$('capture-state').textContent=`No se capturó: ${error.message}`;$('capture-state').className='capture-state message error'}finally{button.disabled=false}});
-    $('chat-form').addEventListener('submit',async event=>{event.preventDefault();const prompt=$('prompt').value.trim();if(!prompt)return;const model=$('vision-model').value.trim()||'qwen2.5:3b';$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…');$('send').disabled=true;try{const result=await window.bitRuntime.chat({model,message:prompt,imageDataUrl:capturedImage||undefined});pending.textContent=result.text||'El modelo no devolvió texto.';capturedImage='';$('capture-state').textContent=''}catch(error){pending.textContent=error.message;pending.classList.add('error')}finally{$('send').disabled=false;$('prompt').focus()}});$('stop').addEventListener('click',()=>{void window.bitRuntime.stopSpeaking();$('status').textContent='Interrumpido'});$('open-main').addEventListener('click',()=>{void window.bitRuntime.openMain()});
-    window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration}catch(error){$('status').textContent=`Audio no disponible: ${error.message}`}});
+    const $ = id => document.getElementById(id);
+    let capturedImage = "";
+    let audioContext;
+    let nextAudioTime = 0;
+
+    const addMessage = (text, kind = "") => {
+      const node = document.createElement("div");
+      node.className = `message ${kind}`;
+      node.textContent = text;
+      $('messages').append(node);
+      $('messages').scrollTop = $('messages').scrollHeight;
+      return node;
+    };
+
+    const resize = expanded => window.bitRuntime.setOverlayExpanded(expanded).catch(error => {
+      $('status').textContent = error.message;
+    });
+
+    function openPanel() {
+      $('app').classList.add('expanded');
+      void resize(true);
+      requestAnimationFrame(() => $('prompt').focus());
+    }
+
+    function closePanel() {
+      $('app').classList.remove('expanded');
+      void resize(false);
+    }
+
+    $('orb').addEventListener('click', openPanel);
+    $('close').addEventListener('click', closePanel);
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') closePanel(); });
+
+    // Vision model persistence
+    $('vision-model').value = localStorage.getItem('bit.visionModel') || '';
+
+    // Screen capture
+    $('capture').addEventListener('click', async () => {
+      const button = $('capture');
+      button.disabled = true;
+      $('capture-state').textContent = 'Ocultando Bit y capturando…';
+      $('capture-state').className = 'capture-state';
+
+      try {
+        const result = await window.bitRuntime.captureScreen();
+        capturedImage = result.imageDataUrl;
+        $('capture-state').textContent = `Pantalla adjunta · ${result.width}×${result.height}`;
+        localStorage.setItem('bit.visionModel', $('vision-model').value.trim());
+      } catch (error) {
+        capturedImage = '';
+        $('capture-state').textContent = `No se capturó: ${error.message}`;
+        $('capture-state').className = 'capture-state message error';
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // Chat submit
+    $('chat-form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const prompt = $('prompt').value.trim();
+      if (!prompt) return;
+
+      const model = $('vision-model').value.trim() || 'qwen2.5:3b';
+      $('prompt').value = '';
+      addMessage(prompt, 'user');
+      const pending = addMessage('Pensando…');
+      $('send').disabled = true;
+
+      try {
+        const result = await window.bitRuntime.chat({
+          model,
+          message: prompt,
+          imageDataUrl: capturedImage || undefined
+        });
+        pending.textContent = result.text || 'El modelo no devolvió texto.';
+        capturedImage = '';
+        $('capture-state').textContent = '';
+      } catch (error) {
+        pending.textContent = error.message;
+        pending.classList.add('error');
+      } finally {
+        $('send').disabled = false;
+        requestAnimationFrame(() => $('prompt').focus());
+      }
+    });
+
+    // Stop speaking
+    $('stop').addEventListener('click', () => {
+      void window.bitRuntime.stopSpeaking();
+      $('status').textContent = 'Interrumpido';
+    });
+
+    // Open main window
+    $('open-main').addEventListener('click', () => {
+      void window.bitRuntime.openMain();
+    });
+
+    // Voice audio streaming
+    window.bitRuntime.onVoiceAudio(chunk => {
+      try {
+        audioContext ??= new AudioContext();
+        const bytes = Uint8Array.from(atob(chunk.pcmBase64), char => char.charCodeAt(0));
+        const samples = new Int16Array(bytes.buffer);
+        const buffer = audioContext.createBuffer(chunk.channels, samples.length / chunk.channels, chunk.sampleRate);
+        for (let channel = 0; channel < chunk.channels; channel++) {
+          const output = buffer.getChannelData(channel);
+          for (let i = 0; i < output.length; i++) {
+            output[i] = samples[i * chunk.channels + channel] / 32768;
+          }
+        }
+        const source = audioContext.createBufferSource();
+        source.buffer = buffer;
+        source.connect(audioContext.destination);
+        nextAudioTime = Math.max(nextAudioTime, audioContext.currentTime);
+        source.start(nextAudioTime);
+        nextAudioTime += buffer.duration;
+      } catch (error) {
+        $('status').textContent = `Audio no disponible: ${error.message}`;
+      }
+    });
   </script>
 </body>
 </html>

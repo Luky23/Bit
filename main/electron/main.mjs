@@ -316,6 +316,13 @@ function createMainWindow() {
   mainWindow.once("ready-to-show", () => mainWindow.show());
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.loadFile(join(here, "index.html"));
+
+  // Overlay visibility: hide when main window has focus, show when it loses focus
+  mainWindow.on("focus", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
+  mainWindow.on("show", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
+  mainWindow.on("blur", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
+  mainWindow.on("hide", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
+  mainWindow.on("closed", () => { mainWindow = undefined; });
 }
 
 function createOverlayWindow() {
