@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
 import { createVisionMessage } from "../src/screen/vision-request.mjs";
+import { captureScreenBase64, analyzeScreenWithVision, captureAndAnalyze } from "../src/screen/vision-tools.mjs";
+import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/exec-tools.mjs";
 import { validateToolInput } from "../src/core/validation.mjs";
 import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
@@ -302,6 +304,41 @@ ipcMain.on("hud-clicked", () => {
   if (overlayWindow && !overlayWindow.isDestroyed()) {
     overlayWindow.hide();
   }
+});
+
+// ===== COMPUTER USE TOOLS =====
+
+// Screen capture + vision analysis
+ipcMain.handle("bit:system-capture-screen", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:system-capture-screen", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  try {
+    const result = await captureAndAnalyze({
+      prompt: request.prompt,
+      visionModel: request.visionModel || "llava",
+      maxSide: request.maxSide || 1280,
+    });
+    return result;
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+});
+
+// App execution with confirmation
+ipcMain.handle("bit:system-open-app", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:system-open-app", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, error: "Ventana principal no disponible para confirmación" };
+  }
+
+  return executeWithConfirmation({
+    target: request.target,
+    args: request.args || "",
+    mainWindow,
+  });
 });
 
 function isAllowedUrl(url) {

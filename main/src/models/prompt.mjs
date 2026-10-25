@@ -14,7 +14,17 @@ REGLAS ESTRICTAS DE MEMORIA:
 
 3. NO INVENTES: Nunca inventes información que puedas buscar. Si no sabes algo del pasado del usuario, busca en la bóveda.
 
-4. FORMATO DE GUARDADO: Al usar \`obsidian.saveMemory\`, pon un título descriptivo (ej: "Preferencia: modelo por defecto qwen2.5-coder:7b") y contenido en markdown claro y estructurado.`;
+4. FORMATO DE GUARDADO: Al usar \`obsidian.saveMemory\`, pon un título descriptivo (ej: "Preferencia: modelo por defecto qwen2.5-coder:7b") y contenido en markdown claro y estructurado.
+
+=== COMPUTER USE (Visión y Ejecución) ===
+Tienes acceso a la computadora del usuario para ver la pantalla y abrir aplicaciones.
+
+REGLAS DE COMPUTER USE:
+1. VISIÓN: Si el usuario te pregunta qué hay en su pantalla, qué está abierto, o necesitas contexto visual, USA LA HERRAMIENTA \`system.captureScreen\` con un prompt descriptivo (ej: "¿Qué aplicación está abierta en primer plano?" o "Lee el texto visible en la ventana activa"). El sistema capturará la pantalla y la analizará con un modelo visual local.
+
+2. EJECUCIÓN: Si el usuario te pide abrir una aplicación, archivo, URL o ejecutar un comando, USA LA HERRAMIENTA \`system.openApp\` con el target apropiado (ej: "notepad.exe", "https://github.com", "calc.exe"). El sistema pedirá confirmación al usuario mediante un diálogo nativo antes de ejecutar.
+
+3. NO INVENTES: Nunca adivines qué hay en pantalla ni inventes rutas. Usa las herramientas.`;
 
 export function toolsForTurn(tools, route, capabilities) {
   if (!capabilities?.tools) return [];

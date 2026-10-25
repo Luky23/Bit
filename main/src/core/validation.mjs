@@ -102,6 +102,25 @@ const SCHEMAS = Object.freeze({
     },
     required: ["modelName", "voicesDir"],
     additionalProperties: false
+  },
+  "bit:system-capture-screen": {
+    type: "object",
+    properties: {
+      prompt: { type: "string", minLength: 1, maxLength: 8000 },
+      visionModel: { type: "string", maxLength: 128 },
+      maxSide: { type: "integer", minimum: 640, maximum: 1920, default: 1280 }
+    },
+    required: ["prompt"],
+    additionalProperties: false
+  },
+  "bit:system-open-app": {
+    type: "object",
+    properties: {
+      target: { type: "string", minLength: 1, maxLength: 500 },
+      args: { type: "string", maxLength: 1000, default: "" }
+    },
+    required: ["target"],
+    additionalProperties: false
   }
 });
 
