@@ -15,5 +15,7 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     const handler = (_event, chunk) => listener(chunk);
     ipcRenderer.on("bit:voice-audio", handler);
     return () => ipcRenderer.removeListener("bit:voice-audio", handler);
-  }
+  },
+  auditObsidianVault: (vaultPath) => ipcRenderer.invoke("bit:obsidian-audit", { vaultPath }),
+  saveToObsidian: (vaultPath, title, content) => ipcRenderer.invoke("bit:obsidian-save", { vaultPath, title, content })
 }));

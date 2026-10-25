@@ -1,4 +1,4 @@
-import { app, BrowserWindow, desktopCapturer, ipcMain, screen, session } from "electron";
+import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } from "electron";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
 import { createVisionMessage } from "../src/screen/vision-request.mjs";
 import { validateToolInput } from "../src/core/validation.mjs";
+import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
+import { ObsidianVault } from "../src/obsidian/vault.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const previewData = join(app.getPath("appData"), "Bit Preview");
@@ -143,6 +145,40 @@ ipcMain.handle("bit:stop-speaking", () => {
   if (!validation.ok) throw new Error(validation.error);
   if (voiceProcess && !voiceProcess.killed) voiceProcess.stdin.write('{"type":"stop"}\n');
   return { ok: true };
+});
+
+ipcMain.handle("bit:obsidian-audit", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:obsidian-audit", request);
+  if (!validation.ok) throw new Error(validation.error);
+  return auditVaultCompatibility(request.vaultPath);
+});
+
+ipcMain.handle("bit:obsidian-save", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:obsidian-save", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  // Show native confirmation dialog BEFORE writing
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    title: "Guardar en Obsidian",
+    message: `¿Guardar "${request.title}" en la bóveda de Obsidian?`,
+    detail: `La nota se guardará en <Vault>/Bit/Conversaciones/ con frontmatter estructurado.`,
+    buttons: ["Cancelar", "Guardar"],
+    defaultId: 1,
+    cancelId: 0,
+    noLink: true
+  });
+
+  if (result.response === 0) {
+    return { ok: false, cancelled: true };
+  }
+
+  try {
+    const vault = new ObsidianVault(request.vaultPath);
+    return await vault.saveConversationContext(request.title, request.content);
+  } catch (error) {
+    return { ok: false, error: error.message };
+  }
 });
 
 function isAllowedUrl(url) {

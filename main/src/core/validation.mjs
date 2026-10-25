@@ -64,6 +64,24 @@ const SCHEMAS = Object.freeze({
     },
     required: ["fastModel", "model"],
     additionalProperties: false
+  },
+  "bit:obsidian-audit": {
+    type: "object",
+    properties: {
+      vaultPath: { type: "string", minLength: 1, maxLength: 260 }
+    },
+    required: ["vaultPath"],
+    additionalProperties: false
+  },
+  "bit:obsidian-save": {
+    type: "object",
+    properties: {
+      vaultPath: { type: "string", minLength: 1, maxLength: 260 },
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      content: { type: "string", minLength: 1, maxLength: 200000 }
+    },
+    required: ["vaultPath", "title", "content"],
+    additionalProperties: false
   }
 });
 
