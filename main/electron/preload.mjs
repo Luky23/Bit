@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from "electron";
+import pkg from "electron";
+const { contextBridge, ipcRenderer } = pkg;
 
 contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   channel: "preview",
@@ -17,5 +18,7 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     return () => ipcRenderer.removeListener("bit:voice-audio", handler);
   },
   auditObsidianVault: (vaultPath) => ipcRenderer.invoke("bit:obsidian-audit", { vaultPath }),
-  saveToObsidian: (vaultPath, title, content) => ipcRenderer.invoke("bit:obsidian-save", { vaultPath, title, content })
+  saveToObsidian: (vaultPath, title, content) => ipcRenderer.invoke("bit:obsidian-save", { vaultPath, title, content }),
+  downloadAsset: (url, destPath, expectedHash, assetName) => ipcRenderer.invoke("bit:download-asset", { url, destPath, expectedHash, assetName }),
+  ensurePiperModel: (modelName, voicesDir) => ipcRenderer.invoke("bit:ensure-piper-model", { modelName, voicesDir })
 }));

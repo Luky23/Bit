@@ -1,4 +1,5 @@
-import { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } from "electron";
+import pkg from "electron";
+const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } = pkg;
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { join } from "node:path";
@@ -10,12 +11,18 @@ import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
 import { SpeechQueue, InterruptionManager } from "../src/voice/speech.mjs";
 import { encodeVoiceMessage, parseVoiceLine } from "../src/voice/protocol.mjs";
+import { downloadSecureAsset, ensurePiperModel, PIPER_MODELS } from "../src/core/downloader.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const previewData = join(app.getPath("appData"), "Bit Preview");
 app.setPath("userData", previewData);
 app.setAppUserModelId("com.bit.assistant.preview");
 app.commandLine.appendSwitch("disable-spell-checking");
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-gpu-compositing");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("disable-disk-cache");
+app.commandLine.appendSwitch("disable-application-cache");
 
 let mainWindow;
 let overlayWindow;
@@ -241,6 +248,46 @@ ipcMain.handle("bit:obsidian-save", async (_event, request = {}) => {
   } catch (error) {
     return { ok: false, error: error.message };
   }
+});
+
+// Download handlers
+function showDownloadConfirmation(assetName, domain) {
+  return new Promise((resolve) => {
+    if (!mainWindow) {
+      resolve(false);
+      return;
+    }
+    dialog.showMessageBox(mainWindow, {
+      type: "question",
+      title: "Descargar archivo",
+      message: `¿Descargar "${assetName}" desde ${domain}?`,
+      detail: "Bit descargará el archivo y verificará su integridad (SHA256). La conexión es HTTPS directa al servidor oficial.",
+      buttons: ["Cancelar", "Descargar"],
+      defaultId: 1,
+      cancelId: 0,
+      noLink: true,
+    }).then((result) => resolve(result.response === 1));
+  });
+}
+
+ipcMain.handle("bit:download-asset", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:download-asset", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  return downloadSecureAsset(
+    request.url,
+    request.destPath,
+    request.expectedHash,
+    request.assetName,
+    showDownloadConfirmation
+  );
+});
+
+ipcMain.handle("bit:ensure-piper-model", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:ensure-piper-model", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  return ensurePiperModel(request.modelName, request.voicesDir, showDownloadConfirmation);
 });
 
 function isAllowedUrl(url) {

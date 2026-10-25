@@ -82,6 +82,26 @@ const SCHEMAS = Object.freeze({
     },
     required: ["vaultPath", "title", "content"],
     additionalProperties: false
+  },
+  "bit:download-asset": {
+    type: "object",
+    properties: {
+      url: { type: "string", format: "uri", maxLength: 500 },
+      destPath: { type: "string", minLength: 1, maxLength: 260 },
+      expectedHash: { type: "string", pattern: "^[a-f0-9]{64}$" },
+      assetName: { type: "string", minLength: 1, maxLength: 100 }
+    },
+    required: ["url", "destPath", "expectedHash", "assetName"],
+    additionalProperties: false
+  },
+  "bit:ensure-piper-model": {
+    type: "object",
+    properties: {
+      modelName: { type: "string", pattern: "^[a-zA-Z0-9_-]+$" },
+      voicesDir: { type: "string", minLength: 1, maxLength: 260 }
+    },
+    required: ["modelName", "voicesDir"],
+    additionalProperties: false
   }
 });
 
