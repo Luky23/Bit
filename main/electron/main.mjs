@@ -96,6 +96,7 @@ function handleVoiceMessage(message) {
       break;
     case "audio":
       mainWindow?.webContents.send("bit:voice-audio", message);
+      overlayWindow?.webContents.send("bit:voice-audio", message);
       break;
     case "error":
       voiceReady = false;
@@ -106,6 +107,8 @@ function handleVoiceMessage(message) {
     case "transcript":
       // Reenviar al InterruptionManager
       interruptionManager?.handleVadResponse(message);
+      // Reenviar a la ventana overlay para HUD/visualizador
+      overlayWindow?.webContents.send("bit:voice-level", message);
       break;
   }
 }

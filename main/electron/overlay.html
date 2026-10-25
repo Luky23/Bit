@@ -9,24 +9,31 @@
     :root {
       color-scheme: dark;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --bg-glass: rgba(0, 0, 0, 0.6);
+      --bg-glass: rgba(0, 0, 0, 0.55);
       --bg-glass-strong: rgba(0, 0, 0, 0.75);
-      --border-glass: rgba(255, 255, 255, 0.08);
-      --border-glass-hover: rgba(255, 255, 255, 0.14);
-      --text-primary: rgba(255, 255, 255, 0.92);
-      --text-secondary: rgba(255, 255, 255, 0.6);
-      --text-muted: rgba(255, 255, 255, 0.4);
-      --accent: #58e7ff;
-      --accent-dim: rgba(88, 231, 255, 0.18);
-      --danger: #ff6d83;
-      --danger-dim: rgba(255, 109, 131, 0.18);
-      --shadow-orb: 0 0 24px rgba(88, 231, 255, 0.25), 0 0 60px rgba(88, 231, 255, 0.1);
-      --shadow-orb-hover: 0 0 36px rgba(88, 231, 255, 0.4), 0 0 80px rgba(88, 231, 255, 0.18);
-      --shadow-panel: 0 24px 64px rgba(0, 0, 0, 0.5), 0 0 40px rgba(88, 231, 255, 0.08);
-      --radius-sm: 8px;
-      --radius-md: 12px;
-      --radius-lg: 16px;
-      --transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      --bg-panel: rgba(3, 8, 15, 0.7);
+      --border-glass: rgba(255, 255, 255, 0.06);
+      --border-glass-hover: rgba(255, 255, 255, 0.12);
+      --text-primary: rgba(255, 255, 255, 0.95);
+      --text-secondary: rgba(255, 255, 255, 0.55);
+      --text-muted: rgba(255, 255, 255, 0.35);
+      --accent: #4de8ff;
+      --accent-dim: rgba(77, 232, 255, 0.15);
+      --accent-glow: rgba(77, 232, 255, 0.4);
+      --danger: #ff5d7a;
+      --danger-dim: rgba(255, 93, 122, 0.15);
+      --telemetry-bg: rgba(0, 0, 0, 0.6);
+      --shadow-core: 0 0 32px rgba(77, 232, 255, 0.18), 0 0 80px rgba(77, 232, 255, 0.06);
+      --shadow-core-active: 0 0 48px rgba(77, 232, 255, 0.5), 0 0 120px rgba(77, 232, 255, 0.25);
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --transition: all 0.25s cubic-bezier(0.2, 0.5, 0.3, 1);
+      --transition-fast: all 0.1s ease-out;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      :root { --transition: none; --transition-fast: none; }
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -39,67 +46,129 @@
 
     #app { width: 100%; height: 100%; position: relative; }
 
-    /* ===== ORB BUTTON ===== */
-    .orb-button {
+    /* ===== HUD CORE (ORB) ===== */
+    .hud-core {
       position: absolute;
-      top: 6px; right: 6px;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
       width: 72px; height: 72px;
-      padding: 0; border: none;
-      border-radius: 50%;
-      background: var(--bg-glass);
-      backdrop-filter: blur(20px) saturate(150%);
-      -webkit-backdrop-filter: blur(20px) saturate(150%);
-      box-shadow: var(--shadow-orb);
-      cursor: pointer;
-      transition: var(--transition);
-      display: flex; align-items: center; justify-content: center;
-    }
-
-    .orb-button:hover {
-      box-shadow: var(--shadow-orb-hover);
-      transform: scale(1.05);
-      background: var(--bg-glass-strong);
-    }
-
-    .orb-button:active { transform: scale(0.96); }
-
-    .orb-button img {
-      width: 48px; height: 48px;
-      border-radius: 50%;
-      filter: drop-shadow(0 2px 8px rgba(0,0,0,0.3));
-    }
-
-    /* Subtle ring */
-    .orb-button::after {
-      content: "";
-      position: absolute;
-      inset: 4px;
-      border: 1px solid var(--border-glass);
-      border-radius: 50%;
       pointer-events: none;
-      opacity: 0.5;
+      z-index: 10;
+      transition: var(--transition);
     }
 
-    /* ===== PANEL (EXPANDED) ===== */
+    /* Concentric rings */
+    .core-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      animation: rotate linear infinite;
+      opacity: 0;
+      transition: opacity 0.4s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .ring-1 { animation-duration: 20s; }
+    .ring-2 { animation-duration: 35s; animation-direction: reverse; }
+    .ring-3 { animation-duration: 50s; }
+
+    @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    /* Core states */
+    .hud-core.idle .core-ring {
+      opacity: 0.25;
+      border-color: var(--border-glass);
+    }
+
+    .hud-core.listening .core-ring {
+      opacity: 0.6;
+      border-color: var(--accent);
+      box-shadow: inset 0 0 20px var(--accent-dim), 0 0 30px var(--accent-glow);
+      animation-duration: 8s;
+    }
+    .hud-core.listening .ring-2 { animation-duration: 12s; }
+    .hud-core.listening .ring-3 { animation-duration: 18s; }
+
+    .hud-core.speaking .core-ring {
+      opacity: 0.85;
+      border-color: var(--accent);
+      box-shadow: inset 0 0 30px var(--accent-dim), 0 0 60px var(--accent-glow);
+    }
+
+    .hud-core.processing .core-ring {
+      opacity: 0.5;
+      border-color: #ffcc00;
+      box-shadow: inset 0 0 20px rgba(255, 204, 0, 0.2), 0 0 30px rgba(255, 204, 0, 0.15);
+    }
+
+    /* Center core dot */
+    .core-center {
+      position: absolute;
+      inset: 50%;
+      transform: translate(-50%, -50%);
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent-glow);
+      opacity: 0;
+      transition: var(--transition), opacity 0.3s ease;
+    }
+
+    .hud-core.idle .core-center { opacity: 0.15; width: 14px; height: 14px; }
+    .hud-core.listening .core-center { opacity: 0.9; animation: pulse 1.5s ease-in-out infinite; }
+    .hud-core.speaking .core-center { opacity: 1; animation: pulse 0.6s ease-in-out infinite; }
+    .hud-core.processing .core-center { opacity: 0.8; background: #ffcc00; box-shadow: 0 0 12px rgba(255,204,0,0.6), 0 0 24px rgba(255,204,0,0.3); }
+
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+      50% { transform: translate(-50%, -50%) scale(1.35); opacity: 1; }
+    }
+
+    /* Audio reactive bars around core */
+    .core-bars {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 88px; height: 88px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .core-bar {
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 2px; height: 18px;
+      background: linear-gradient(180deg, transparent, var(--accent));
+      border-radius: 1px;
+      transform-origin: center -28px;
+      opacity: 0;
+      transition: opacity 0.1s ease, height 0.08s ease, transform 0.08s ease;
+    }
+
+    .hud-core.listening .core-bars,
+    .hud-core.speaking .core-bars { opacity: 1; }
+
+    /* ===== EXPANDED PANEL ===== */
     .panel {
       position: absolute;
       inset: 0;
       padding: 16px;
       border: 1px solid var(--border-glass);
       border-radius: var(--radius-lg);
-      background: var(--bg-glass);
-      backdrop-filter: blur(24px) saturate(180%);
-      -webkit-backdrop-filter: blur(24px) saturate(180%);
-      box-shadow: var(--shadow-panel);
+      background: var(--bg-panel);
+      backdrop-filter: blur(28px) saturate(200%);
+      -webkit-backdrop-filter: blur(28px) saturate(200%);
+      box-shadow: 0 28px 72px rgba(0,0,0,0.6), 0 0 60px rgba(77,232,255,0.04);
       opacity: 0;
       pointer-events: none;
-      transform: translateY(-6px) scale(0.985);
-      transition: opacity 0.18s ease, transform 0.18s ease;
+      transform: translateY(-8px) scale(0.98);
+      transition: opacity 0.22s ease, transform 0.22s ease;
       display: flex; flex-direction: column;
       overflow: hidden;
     }
 
-    .expanded .orb-button { display: none; }
+    .expanded .hud-core { display: none; }
     .expanded .panel {
       opacity: 1;
       pointer-events: auto;
@@ -113,67 +182,110 @@
       border-bottom: 1px solid var(--border-glass);
     }
 
-    .panel-header strong {
-      font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+    .panel-title {
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .panel-title strong {
+      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
       color: var(--text-secondary); font-weight: 500;
     }
 
+    .status-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--text-muted);
+      transition: var(--transition-fast);
+    }
+    .status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent-glow); animation: pulseDot 1.2s ease-in-out infinite; }
+    .status-dot.speaking { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulseDot 0.5s ease-in-out infinite; }
+    .status-dot.processing { background: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.7); }
+
+    @keyframes pulseDot { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
     .panel-header button {
       border: none; background: transparent; color: var(--text-muted);
-      font-size: 22px; line-height: 1; cursor: pointer;
+      font-size: 20px; line-height: 1; cursor: pointer;
       width: 28px; height: 28px; border-radius: var(--radius-sm);
       display: flex; align-items: center; justify-content: center;
-      transition: var(--transition);
+      transition: var(--transition-fast);
+    }
+    .panel-header button:hover { background: var(--bg-glass-strong); color: var(--text-primary); }
+
+    /* Telemetry log */
+    .telemetry {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      max-height: 120px;
+      background: var(--telemetry-bg);
+      border-top: 1px solid var(--border-glass);
+      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+      padding: 8px 12px;
+      font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
+      font-size: 9.5px; line-height: 1.5;
+      color: var(--text-secondary);
+      overflow-y: auto;
+      opacity: 0.7;
+      transition: opacity 0.2s ease;
+    }
+    .telemetry:hover { opacity: 1; }
+    .telemetry::-webkit-scrollbar { width: 3px; }
+    .telemetry::-webkit-scrollbar-track { background: transparent; }
+    .telemetry::-webkit-scrollbar-thumb { background: var(--border-glass); border-radius: 1.5px; }
+
+    .telemetry-line {
+      padding: 1px 0; white-space: pre-wrap; word-break: break-word;
+      animation: fadeInUp 0.3s ease;
+      opacity: 0.85;
+    }
+    .telemetry-line.dim { opacity: 0.45; }
+    .telemetry-line .timestamp { color: var(--text-muted); margin-right: 6px; }
+    .telemetry-line .tag { color: var(--accent); font-weight: 500; margin-right: 4px; }
+    .telemetry-line .tag.warn { color: #ffcc00; }
+    .telemetry-line .tag.error { color: var(--danger); }
+    .telemetry-line .tag.ok { color: #4eff99; }
+
+    @keyframes fadeInUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 0.85; transform: none; }
     }
 
-    .panel-header button:hover {
-      background: var(--bg-glass-strong);
-      color: var(--text-primary);
+    /* Panel content */
+    .panel-content {
+      flex: 1; display: flex; flex-direction: column;
+      overflow: hidden;
     }
 
-    /* Hint text */
-    .hint {
-      margin: 0 0 14px; color: var(--text-muted);
-      font-size: 12px; line-height: 1.5;
-    }
-
-    /* Messages area */
+    /* Chat / Messages */
     .messages {
       flex: 1; overflow-y: auto; padding-right: 4px;
       margin-bottom: 14px;
+      display: flex; flex-direction: column; gap: 8px;
     }
-
     .messages::-webkit-scrollbar { width: 4px; }
     .messages::-webkit-scrollbar-track { background: transparent; }
-    .messages::-webkit-scrollbar-thumb {
-      background: var(--border-glass); border-radius: 2px;
-    }
-    .messages::-webkit-scrollbar-thumb:hover { background: var(--border-glass-hover); }
+    .messages::-webkit-scrollbar-thumb { background: var(--border-glass); border-radius: 2px; }
 
     .message {
-      padding: 10px 12px; margin: 0 0 8px;
+      padding: 10px 12px;
       border-left: 2px solid var(--accent);
-      background: rgba(8, 20, 30, 0.6);
+      background: rgba(8, 20, 30, 0.5);
       border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+      font-size: 12.5px; line-height: 1.5; white-space: pre-wrap;
       color: var(--text-primary);
-      animation: fadeIn 0.2s ease;
+      animation: fadeInUp 0.25s ease;
     }
-
     .message.user {
       border-left: none; border-right: 2px solid #aa82ff;
-      background: rgba(28, 18, 42, 0.6);
+      background: rgba(28, 18, 42, 0.55);
       border-radius: var(--radius-sm) 0 0 var(--radius-sm);
       margin-left: auto; max-width: 85%;
     }
+    .message.system { border-color: var(--text-muted); background: rgba(10,10,15,0.5); font-size: 11px; color: var(--text-secondary); }
 
-    .message.error { color: #ffabb6; border-color: var(--danger); background: rgba(40, 10, 15, 0.6); }
-
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-
-    /* Chat form */
+    /* Input form */
     .chat-form { display: flex; flex-direction: column; gap: 10px; }
 
+    .input-group { display: flex; flex-direction: column; gap: 6px; }
     .input-row { display: flex; gap: 8px; }
     .input-row > * { flex: 1; }
 
@@ -185,21 +297,18 @@
       backdrop-filter: blur(16px) saturate(150%);
       -webkit-backdrop-filter: blur(16px) saturate(150%);
       color: var(--text-primary);
-      padding: 12px 14px;
-      font: inherit; font-size: 13px;
-      transition: var(--transition);
+      padding: 11px 14px;
+      font: inherit; font-size: 12.5px;
+      transition: var(--transition-fast);
       outline: none;
     }
-
-    textarea::placeholder, input::placeholder { color: var(--text-muted); opacity: 0.7; }
-
+    textarea::placeholder, input::placeholder { color: var(--text-muted); opacity: 0.6; }
     textarea:focus, input:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-dim);
+      box-shadow: 0 0 0 2px var(--accent-dim);
       background: var(--bg-glass-strong);
     }
-
-    textarea { min-height: 72px; max-height: 140px; line-height: 1.5; }
+    textarea { min-height: 68px; max-height: 130px; line-height: 1.5; }
 
     .vision-row { display: flex; gap: 8px; }
     .vision-row input { flex: 1; }
@@ -208,158 +317,297 @@
 
     button.primary, button.secondary, button.tertiary {
       border: none; border-radius: var(--radius-sm);
-      font: inherit; font-size: 12px; font-weight: 500;
+      font: inherit; font-size: 11.5px; font-weight: 500;
       padding: 10px 16px; cursor: pointer;
-      transition: var(--transition);
+      transition: var(--transition-fast);
       display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     }
-
     button.primary {
       background: var(--accent); color: #001219;
-      box-shadow: 0 4px 16px rgba(88, 231, 255, 0.3);
+      box-shadow: 0 4px 16px rgba(77,232,255,0.25);
     }
-    button.primary:hover { background: #4dd5e6; box-shadow: 0 6px 24px rgba(88, 231, 255, 0.45); }
+    button.primary:hover { background: #3dd5e6; box-shadow: 0 6px 24px rgba(77,232,255,0.4); }
     button.primary:active { transform: scale(0.98); }
-    button.primary:disabled { opacity: 0.45; cursor: not-allowed; }
-
+    button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
     button.secondary {
       background: var(--bg-glass); color: var(--text-primary);
       border: 1px solid var(--border-glass);
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     }
     button.secondary:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); }
-
-    button.tertiary { background: transparent; color: var(--text-secondary); padding: 10px; }
+    button.tertiary { background: transparent; color: var(--text-secondary); padding: 8px 12px; }
     button.tertiary:hover { color: var(--text-primary); background: var(--bg-glass); }
-
-    button.danger { color: #ffabb6; }
-    button.danger:hover { background: var(--danger-dim); color: #ffd1d7; }
+    button.danger { color: #ff99aa; }
+    button.danger:hover { background: var(--danger-dim); color: #ffcce0; }
 
     .capture-state {
-      min-height: 18px; font-size: 11px; color: var(--text-muted);
-      transition: var(--transition);
+      min-height: 16px; font-size: 10px; color: var(--text-muted);
+      transition: var(--transition-fast);
     }
-    .capture-state.message.error { color: #ffabb6; }
+    .capture-state.message.error { color: #ff99aa; }
 
-    /* Open main button */
     .open-main {
       width: 100%; margin-top: 6px;
       background: var(--bg-glass); color: var(--text-secondary);
       border: 1px solid var(--border-glass);
       border-radius: var(--radius-md);
-      padding: 10px; font: inherit; font-size: 12px;
-      cursor: pointer; transition: var(--transition);
+      padding: 9px; font: inherit; font-size: 11px;
+      cursor: pointer; transition: var(--transition-fast);
       backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
     }
     .open-main:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); color: var(--text-primary); }
 
-    /* Status bar */
-    .status {
-      margin-top: 10px; text-align: center;
-      font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
-      color: var(--text-muted); opacity: 0.8;
+    /* ===== STATE INDICATOR (on orb when collapsed) ===== */
+    .state-badge {
+      position: absolute;
+      bottom: -4px; right: -4px;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 2px solid #000;
+      background: var(--text-muted);
+      opacity: 0;
+      transform: scale(0.8);
+      transition: var(--transition-fast);
+      pointer-events: none;
+      z-index: 5;
     }
-
-    /* Reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-    }
+    .orb-button:hover .state-badge { opacity: 1; transform: scale(1); }
+    .orb-button.listening .state-badge { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulseDot 1.2s ease-in-out infinite; opacity: 1; transform: scale(1); }
+    .orb-button.speaking .state-badge { background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulseDot 0.5s ease-in-out infinite; opacity: 1; transform: scale(1); }
+    .orb-button.processing .state-badge { background: #ffcc00; box-shadow: 0 0 8px rgba(255,204,0,0.7); opacity: 1; transform: scale(1); }
   </style>
 </head>
 <body>
   <div id="app">
-    <button id="orb" class="orb-button" aria-label="Abrir Bit">
-      <img src="assets/bit-orb.png" alt="Bit">
+    <!-- HUD Core (Collapsed State) -->
+    <button id="orb" class="orb-button" aria-label="Abrir Bit" title="Bit">
+      <div class="hud-core idle" id="hudCore" aria-hidden="true">
+        <div class="core-ring ring-1"></div>
+        <div class="core-ring ring-2"></div>
+        <div class="core-ring ring-3"></div>
+        <div class="core-center"></div>
+        <div class="core-bars" id="coreBars"></div>
+      </div>
+      <span class="state-badge" id="stateBadge" aria-hidden="true"></span>
     </button>
 
-    <section class="panel" aria-label="Bit flotante">
+    <!-- Expanded Panel -->
+    <section class="panel" aria-label="Bit HUD" id="panel">
       <header class="panel-header">
-        <strong>BIT / CONSOLA RÁPIDA</strong>
-        <button id="close" aria-label="Cerrar">×</button>
+        <div class="panel-title">
+          <span class="status-dot" id="statusDot" aria-hidden="true"></span>
+          <strong>BIT</strong>
+        </div>
+        <button id="close" aria-label="Cerrar" title="Cerrar">×</button>
       </header>
 
-      <p class="hint">Bit está disponible sobre tus otras ventanas. Escribí una pregunta o adjuntá una captura explícita de tu pantalla.</p>
+      <div class="panel-content" id="panelContent">
+        <div id="messages" class="messages" role="log" aria-live="polite">
+          <div class="message system">> [SYS] Bit v0.1.0-preview · Modo HUD activo</div>
+          <div class="message system">> [SYS] Esperando entrada…</div>
+        </div>
 
-      <div id="messages" class="messages">
-        <div class="message">Listo. ¿En qué te ayudo?</div>
+        <form id="chat-form" class="chat-form">
+          <div class="input-group">
+            <textarea id="prompt" placeholder="Consulta…" aria-label="Entrada de texto" rows="2"></textarea>
+
+            <div class="input-row vision-row">
+              <input id="vision-model" placeholder="Modelo visión (opcional)" aria-label="Modelo de visión local" autocomplete="off">
+              <button id="capture" type="button" class="secondary" title="Capturar pantalla">▢</button>
+            </div>
+
+            <p id="capture-state" class="capture-state"></p>
+
+            <div class="actions">
+              <button id="send" type="submit" class="primary">Enviar</button>
+              <button id="stop" type="button" class="secondary danger" title="Interrumpir síntesis">■</button>
+            </div>
+          </div>
+        </form>
+
+        <button id="open-main" class="open-main" type="button">Abrir consola completa</button>
       </div>
 
-      <form id="chat-form" class="chat-form">
-        <textarea id="prompt" placeholder="Preguntale algo a Bit…" aria-label="Pregunta para Bit" rows="3"></textarea>
-
-        <div class="vision-row">
-          <input id="vision-model" placeholder="Modelo de visión local (opcional)" aria-label="Modelo de visión local">
-          <button id="capture" type="button" class="secondary">Ver pantalla</button>
-        </div>
-
-        <p id="capture-state" class="capture-state"></p>
-
-        <div class="actions">
-          <button id="send" type="submit" class="primary">Enviar</button>
-          <button id="stop" type="button" class="secondary danger">Interrumpir</button>
-        </div>
-      </form>
-
-      <button id="open-main" class="open-main" type="button">Abrir consola completa</button>
-      <p id="status" class="status">Solo local · captura bajo demanda</p>
+      <!-- Telemetry Log -->
+      <div class="telemetry" id="telemetry" aria-label="Telemetría del sistema" role="log" aria-live="polite" aria-atomic="false"></div>
     </section>
   </div>
 
   <script>
     const $ = id => document.getElementById(id);
+
+    // ===== STATE MANAGEMENT =====
+    const State = { IDLE: 'idle', LISTENING: 'listening', SPEAKING: 'speaking', PROCESSING: 'processing' };
+    let currentState = State.IDLE;
     let capturedImage = "";
     let audioContext;
     let nextAudioTime = 0;
+    let coreBars = [];
+    let barAnimationId = null;
 
-    const addMessage = (text, kind = "") => {
-      const node = document.createElement("div");
-      node.className = `message ${kind}`;
-      node.textContent = text;
-      $('messages').append(node);
-      $('messages').scrollTop = $('messages').scrollHeight;
-      return node;
-    };
+    // DOM
+    const orb = $('orb');
+    const hudCore = $('hudCore');
+    const stateBadge = $('stateBadge');
+    const coreBarsEl = $('coreBars');
+    const panel = $('panel');
+    const panelContent = $('panelContent');
+    const statusDot = $('statusDot');
+    const messagesEl = $('messages');
+    const telemetryEl = $('telemetry');
 
-    const resize = expanded => window.bitRuntime.setOverlayExpanded(expanded).catch(error => {
-      $('status').textContent = error.message;
-    });
+    // ===== TELEMETRY =====
+    function logTelemetry(tag, text, type = 'info') {
+      const now = new Date();
+      const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}.${now.getMilliseconds().toString().padStart(3,'0')}`;
+      const line = document.createElement('div');
+      line.className = 'telemetry-line';
+      if (type === 'dim') line.classList.add('dim');
+      line.innerHTML = `<span class="timestamp">[${ts}]</span><span class="tag ${type === 'warn' ? 'warn' : type === 'error' ? 'error' : type === 'ok' ? 'ok' : ''}">[${tag}]</span>${text}`;
+      telemetryEl.appendChild(line);
+      // Keep max 50 lines
+      while (telemetryEl.children.length > 50) telemetryEl.removeChild(telemetryEl.firstChild);
+      telemetryEl.scrollTop = telemetryEl.scrollHeight;
+    }
 
+    // ===== CORE STATE =====
+    function setState(newState) {
+      if (currentState === newState) return;
+      currentState = newState;
+
+      // Update HUD core classes
+      hudCore.className = 'hud-core ' + newState;
+      orb.className = 'orb-button ' + newState;
+
+      // Update panel status dot
+      statusDot.className = 'status-dot';
+      if (newState === State.LISTENING) statusDot.classList.add('active');
+      else if (newState === State.SPEAKING) statusDot.classList.add('speaking');
+      else if (newState === State.PROCESSING) statusDot.classList.add('processing');
+
+      // Telemetry
+      logTelemetry('STATE', `Transición → ${newState.toUpperCase()}`, 'info');
+
+      // Cancel bar animation on state change
+      if (barAnimationId) { cancelAnimationFrame(barAnimationId); barAnimationId = null; }
+      if (newState === State.LISTENING || newState === State.SPEAKING) animateCoreBars();
+    }
+
+    // ===== CORE BARS (Audio Reactive) =====
+    function createCoreBars() {
+      coreBarsEl.innerHTML = '';
+      coreBars = [];
+      const count = 16;
+      for (let i = 0; i < count; i++) {
+        const bar = document.createElement('div');
+        bar.className = 'core-bar';
+        bar.style.transform = `rotate(${i * (360 / count)}deg) translateY(-28px)`;
+        coreBarsEl.appendChild(bar);
+        coreBars.push({ el: bar, baseHeight: 18, baseOpacity: 0.25 });
+      }
+    }
+    createCoreBars();
+
+    function animateCoreBars() {
+      if (currentState !== State.LISTENING && currentState !== State.SPEAKING) return;
+      const now = Date.now();
+      coreBars.forEach((bar, i) => {
+        // Pseudo-random but deterministic per bar using time
+        const phase = (now * 0.003 + i * 0.4) % (Math.PI * 2);
+        const amplitude = 0.3 + 0.7 * Math.max(0, Math.sin(phase));
+        const h = Math.max(4, 18 + amplitude * 28);
+        const o = 0.15 + amplitude * 0.8;
+        bar.el.style.height = h + 'px';
+        bar.el.style.opacity = o;
+      });
+      barAnimationId = requestAnimationFrame(animateCoreBars);
+    }
+
+    // ===== PANEL TOGGLE =====
     function openPanel() {
-      $('app').classList.add('expanded');
-      void resize(true);
+      document.body.classList.add('expanded');
+      void window.bitRuntime.setOverlayExpanded(true).catch(e => logTelemetry('ERR', e.message, 'error'));
       requestAnimationFrame(() => $('prompt').focus());
     }
-
     function closePanel() {
-      $('app').classList.remove('expanded');
-      void resize(false);
+      document.body.classList.remove('expanded');
+      void window.bitRuntime.setOverlayExpanded(false);
     }
-
-    $('orb').addEventListener('click', openPanel);
+    orb.addEventListener('click', openPanel);
     $('close').addEventListener('click', closePanel);
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') closePanel(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+
+    // ===== VOICE LEVEL FROM SIDECAR =====
+    let vadActive = false;
+    window.bitRuntime.onVoiceAudio?.(null); // ensure bridge ready
+
+    // Listen for voice level events from main process
+    const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel((msg) => {
+      if (msg.type === 'level') {
+        const rms = msg.rms ?? 0;
+        // Smooth transition to listening when voice detected
+        if (rms > 0.015 && currentState === State.IDLE && !vadActive) {
+          vadActive = true;
+          setState(State.LISTENING);
+        } else if (rms < 0.005 && vadActive && currentState === State.LISTENING) {
+          vadActive = false;
+          // Don't auto-return to idle; wait for user action or timeout
+        }
+      } else if (msg.type === 'vad-trigger') {
+        if (msg.speech && currentState === State.IDLE) {
+          vadActive = true;
+          setState(State.LISTENING);
+        } else if (!msg.speech && vadActive && currentState === State.LISTENING) {
+          vadActive = false;
+        }
+      } else if (msg.type === 'transcript') {
+        if (msg.text && currentState === State.LISTENING) {
+          // Auto-submit transcript as prompt
+          $('prompt').value = msg.text;
+          logTelemetry('VAD', `Transcripción: "${msg.text.slice(0,40)}..."`, 'ok');
+        }
+      }
+    });
+
+    // Cleanup on unload
+    window.addEventListener('beforeunload', cleanupVoiceLevel);
+
+    // ===== CHAT =====
+    function addMessage(text, kind = '') {
+      const node = document.createElement('div');
+      node.className = `message ${kind}`;
+      node.textContent = text;
+      messagesEl.appendChild(node);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Limit messages
+      while (messagesEl.children.length > 50) messagesEl.removeChild(messagesEl.firstChild);
+      return node;
+    }
 
     // Vision model persistence
     $('vision-model').value = localStorage.getItem('bit.visionModel') || '';
 
     // Screen capture
     $('capture').addEventListener('click', async () => {
-      const button = $('capture');
-      button.disabled = true;
-      $('capture-state').textContent = 'Ocultando Bit y capturando…';
-      $('capture-state').className = 'capture-state';
+      const btn = $('capture');
+      btn.disabled = true;
+      setState(State.PROCESSING);
+      logTelemetry('SCRN', 'Iniciando captura de pantalla…', 'info');
+      $('capture-state').textContent = 'Capturando…';
 
       try {
         const result = await window.bitRuntime.captureScreen();
         capturedImage = result.imageDataUrl;
         $('capture-state').textContent = `Pantalla adjunta · ${result.width}×${result.height}`;
         localStorage.setItem('bit.visionModel', $('vision-model').value.trim());
+        logTelemetry('SCRN', `Captura OK ${result.width}×${result.height}`, 'ok');
       } catch (error) {
         capturedImage = '';
-        $('capture-state').textContent = `No se capturó: ${error.message}`;
-        $('capture-state').className = 'capture-state message error';
+        $('capture-state').textContent = `Error: ${error.message}`;
+        logTelemetry('SCRN', `Falló: ${error.message}`, 'error');
       } finally {
-        button.disabled = false;
+        btn.disabled = false;
+        setState(State.IDLE);
       }
     });
 
@@ -372,8 +620,10 @@
       const model = $('vision-model').value.trim() || 'qwen2.5:3b';
       $('prompt').value = '';
       addMessage(prompt, 'user');
-      const pending = addMessage('Pensando…');
+      logTelemetry('LLM', `Inferencia (${model})…`, 'info');
+      const pending = addMessage('Procesando…', 'system');
       $('send').disabled = true;
+      setState(State.PROCESSING);
 
       try {
         const result = await window.bitRuntime.chat({
@@ -382,29 +632,35 @@
           imageDataUrl: capturedImage || undefined
         });
         pending.textContent = result.text || 'El modelo no devolvió texto.';
+        pending.classList.remove('system');
         capturedImage = '';
         $('capture-state').textContent = '';
+        logTelemetry('LLM', 'Respuesta recibida', 'ok');
       } catch (error) {
         pending.textContent = error.message;
         pending.classList.add('error');
+        logTelemetry('LLM', `Error: ${error.message}`, 'error');
       } finally {
         $('send').disabled = false;
         requestAnimationFrame(() => $('prompt').focus());
+        setState(State.IDLE);
       }
     });
 
     // Stop speaking
     $('stop').addEventListener('click', () => {
       void window.bitRuntime.stopSpeaking();
-      $('status').textContent = 'Interrumpido';
+      setState(State.IDLE);
+      logTelemetry('TTS', 'Interrumpido por usuario', 'warn');
     });
 
     // Open main window
     $('open-main').addEventListener('click', () => {
       void window.bitRuntime.openMain();
+      logTelemetry('UI', 'Abrir ventana principal', 'info');
     });
 
-    // Voice audio streaming
+    // ===== VOICE AUDIO STREAMING =====
     window.bitRuntime.onVoiceAudio(chunk => {
       try {
         audioContext ??= new AudioContext();
@@ -423,10 +679,22 @@
         nextAudioTime = Math.max(nextAudioTime, audioContext.currentTime);
         source.start(nextAudioTime);
         nextAudioTime += buffer.duration;
+
+        // Speaking state during playback
+        if (currentState !== State.SPEAKING) setState(State.SPEAKING);
+        // Auto-return to idle after buffer ends
+        setTimeout(() => {
+          if (currentState === State.SPEAKING) setState(State.IDLE);
+        }, buffer.duration * 1000 + 500);
       } catch (error) {
-        $('status').textContent = `Audio no disponible: ${error.message}`;
+        logTelemetry('TTS', `Error: ${error.message}`, 'error');
       }
     });
+
+    // ===== INIT =====
+    logTelemetry('SYS', 'Bit v0.1.0-preview inicializado', 'ok');
+    logTelemetry('SYS', 'Privacidad: solo localhost · Zero-Trust', 'info');
+    logTelemetry('SYS', 'Modelos: qwen2.5:3b (rápido) / qwen2.5-coder:7b (pesado)', 'info');
   </script>
 </body>
 </html>

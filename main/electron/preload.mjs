@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     ipcRenderer.on("bit:voice-audio", handler);
     return () => ipcRenderer.removeListener("bit:voice-audio", handler);
   },
+  onVoiceLevel: (listener) => {
+    const handler = (_event, data) => listener(data);
+    ipcRenderer.on("bit:voice-level", handler);
+    return () => ipcRenderer.removeListener("bit:voice-level", handler);
+  },
   auditObsidianVault: (vaultPath) => ipcRenderer.invoke("bit:obsidian-audit", { vaultPath }),
   saveToObsidian: (vaultPath, title, content) => ipcRenderer.invoke("bit:obsidian-save", { vaultPath, title, content }),
   downloadAsset: (url, destPath, expectedHash, assetName) => ipcRenderer.invoke("bit:download-asset", { url, destPath, expectedHash, assetName }),
