@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Este script crea un entorno virtual Python en main/voice-sidecar/.venv,
-    instala las dependencias con hashes fijados (requirements.lock) y descarga
+    instala las dependencias (requirements.txt con versiones fijadas) y descarga
     los modelos necesarios. NO ejecuta codigo automatico desde la app; el usuario
     debe revisar y ejecutar este script manualmente.
 
@@ -33,7 +33,7 @@ $voiceSidecarDir = Join-Path (Join-Path $repoRoot "main") "voice-sidecar"
 $venvDir = Join-Path $voiceSidecarDir ".venv"
 $pythonExe = Join-Path (Join-Path $venvDir "Scripts") "python.exe"
 $pipExe = Join-Path (Join-Path $venvDir "Scripts") "pip.exe"
-$requirementsLock = Join-Path $voiceSidecarDir "requirements.lock"
+$requirementsTxt = Join-Path $voiceSidecarDir "requirements.txt"
 $voicesDir = Join-Path (Join-Path $env:LOCALAPPDATA "Bit") "voices"
 
 # Verificar Python
@@ -66,17 +66,12 @@ if (-not (Test-Path $venvDir)) {
 Write-Host "Actualizando pip..." -ForegroundColor Yellow
 & $pipExe install --upgrade pip
 
-# Instalar dependencias con hashes (requirements.lock)
-if (Test-Path $requirementsLock) {
-    Write-Host "Instalando dependencias desde requirements.lock..." -ForegroundColor Yellow
-    & $pipExe install --require-hashes -r "$requirementsLock"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Fallo la instalacion de dependencias. Verifica requirements.lock"
-        exit 1
-    }
-} else {
-    Write-Warning "No se encontro requirements.lock, instalando versiones conocidas..."
-    & $pipExe install "piper-tts==1.8.0" "faster-whisper==1.1.1" "onnxruntime==1.31.0" "numpy==2.5.4" "sounddevice==0.5.0"
+# Instalar dependencias desde requirements.txt (versiones fijadas, sin hashes)
+Write-Host "Instalando dependencias desde requirements.txt..." -ForegroundColor Yellow
+& $pipExe install -r "$requirementsTxt"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Fallo la instalacion de dependencias. Verifica requirements.txt"
+    exit 1
 }
 
 # Crear carpeta de voces
