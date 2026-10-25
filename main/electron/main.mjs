@@ -293,6 +293,17 @@ ipcMain.handle("bit:ensure-piper-model", async (_event, request = {}) => {
   return ensurePiperModel(request.modelName, request.voicesDir, showDownloadConfirmation);
 });
 
+// HUD click → open main window, hide overlay
+ipcMain.on("hud-clicked", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+  }
+  if (overlayWindow && !overlayWindow.isDestroyed()) {
+    overlayWindow.hide();
+  }
+});
+
 function isAllowedUrl(url) {
   try {
     const parsed = new URL(url);
