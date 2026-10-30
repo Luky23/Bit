@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
-import { createVisionMessage } from "../src/screen/vision-request.mjs";
+import { createVisionMessage, imageDataUrlToBase64 } from "../src/screen/vision-request.mjs";
 import { captureScreenBase64, analyzeScreenWithVision, captureAndAnalyze } from "../src/screen/vision-tools.mjs";
 import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/exec-tools.mjs";
 import { validateToolInput } from "../src/core/validation.mjs";
@@ -444,7 +444,6 @@ ipcMain.handle("bit:system-capture-webcam", async (_event, request = {}) => {
           return;
         }
         // Validar data URL
-        const { imageDataUrlToBase64 } = await import("../src/screen/vision-request.mjs");
         const base64 = imageDataUrlToBase64(dataUrl);
         if (!base64) {
           reject(new Error("La imagen de la cámara no es válida"));
