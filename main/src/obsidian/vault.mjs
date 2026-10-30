@@ -48,13 +48,24 @@ export class ObsidianVault {
   }
 
   async saveConversationContext(title, markdownContent) {
+    // Ensure Bit/ folder exists before proceeding (fixes ENOENT when vaultPath exists but Bit/ doesn't)
+    await this.#ensureBitFolders();
+
     this.#assertSafePath(this.conversationsFolder);
 
-    // Sanitize title for filename
+    // Sanitize title for filename - remove newlines and other problematic chars
     const safeTitle = String(title)
       .replace(/[\\/:*?"<>|]/g, "_")
       .replace(/\s+/g, "_")
+      .replace(/\n/g, "_")
       .slice(0, 100);
+
+    // Sanitize title for frontmatter - only neutralize newlines to prevent injection,
+    // keep spaces and other characters for readability
+    const frontmatterTitle = String(title)
+      .replace(/\n/g, " ")
+      .replace(/\r/g, " ")
+      .slice(0, 200);
 
     const date = new Date();
     const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -64,15 +75,14 @@ export class ObsidianVault {
     // Ensure target is within allowed folder
     this.#assertSafePath(filePath);
 
-    // Build frontmatter
+    // Build frontmatter using sanitized title (prevents frontmatter injection via newlines in title)
     const frontmatter = [
       "---",
-      `title: ${title}`,
+      `title: ${frontmatterTitle}`,
       `date: ${date.toISOString()}`,
       `type: bit-conversation`,
       `bit_version: 1`,
       "---",
-      ""
     ].join("\n");
 
     const fullContent = frontmatter + markdownContent;

@@ -6,20 +6,17 @@
 import pkg from "electron";
 const { shell, dialog } = pkg;
 import { join, resolve } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
-const execFileAsync = promisify(execFile);
+import { spawn } from "node:child_process";
 
 /**
  * Lista blanca de ejecutables permitidos (nombres base, sin ruta)
  * Solo comandos simples, sin argumentos complejos de shell
+ * NOTA: cmd.exe, powershell.exe, pwsh.exe, regedit.exe SON INTENCIONALMENTE EXCLUIDOS por riesgo de seguridad
  */
 const ALLOWED_EXECUTABLES = new Set([
-  // Windows built-ins
+  // Windows built-ins (sin cmd/powershell/regedit - riesgo de seguridad)
   "calc.exe", "notepad.exe", "mspaint.exe", "write.exe", "wordpad.exe",
-  "cmd.exe", "powershell.exe", "pwsh.exe",
-  "explorer.exe", "control.exe", "msconfig.exe", "regedit.exe", "taskmgr.exe",
+  "explorer.exe", "control.exe", "msconfig.exe", "taskmgr.exe",
   "snippingtool.exe", "ms-settings:", "ms-photos:",
   // Dev tools (si están en PATH)
   "code.exe", "code-insiders.exe", "vim.exe", "nvim.exe",
@@ -45,32 +42,43 @@ const FILE_EXTENSIONS = new Set([
  * @returns {{ok: boolean, reason?: string, type: "executable"|"url"|"file"|"protocol"}}
  */
 export function validateExecutionTarget(target) {
-  const trimmed = target.trim();
+  let trimmed = target.trim();
+
+  // Remover sintaxis de enlace markdown [texto](url) si está presente
+  if (trimmed.startsWith('[') && trimmed.includes('](')) {
+    const openingParenIdx = trimmed.indexOf('](');
+    if (openingParenIdx > 0) {
+      trimmed = trimmed.substring(openingParenIdx + 2); // Quitar [texto] y dejar solo la URL
+    }
+  }
 
   // RECHAZO TEMPRANO: Detectar patrones peligrosos ANTES de cualquier validación permisiva
-  const dangerousPatterns = [
-    /[;&|$`]/,                    // Inyección de shell: ; & | $ `
-    /\b(rm|del|format|shutdown|reboot|taskkill|rd|rmdir)\b/i,  // Comandos destructivos
-    /\.\./,                       // Path traversal
-    /[%{}]/,                      // Variables de entorno expandidas
-  ];
-  for (const pattern of dangerousPatterns) {
-    if (pattern.test(trimmed)) {
-      return { ok: false, reason: "Patrón peligroso detectado (inyección, comando destructivo, path traversal)", type: "blocked" };
-    }
+  if (trimmed.includes('..')) {
+    return { ok: false, reason: "Patrón peligroso detectado (path traversal)", type: "blocked" };
+  }
+  const destructivePatterns = /\b(rm|del|format|shutdown|reboot|taskkill|rd|rmdir)\b/i;
+  if (destructivePatterns.test(trimmed)) {
+    return { ok: false, reason: "Patrón peligroso detectado (comando destructivo)", type: "blocked" };
+  }
+  if (/[%{}]/.test(trimmed)) {
+    return { ok: false, reason: "Patrón peligroso detectado (variables entorno)", type: "blocked" };
   }
 
   // 1. URL con protocolo conocido (solo http/https/mailto/tel, NO rutas de Windows como C:\)
   try {
     const url = new URL(trimmed);
-    // Solo aceptar si el protocolo está en la whitelist Y no parece una ruta de Windows (ej: C:\)
     if (URL_PROTOCOLS.has(url.protocol) && !/^[a-z]:\\/i.test(trimmed)) {
       return { ok: true, type: "url" };
     }
   } catch { /* no es URL válida */ }
 
-  // 2. Protocolo Windows especial (ms-settings:, ms-photos:, etc.)
+  // 2. Protocolo Windows especial - BLOQUEAR protocolos de confianza baja
   if (/^[a-z-]+:/i.test(trimmed) && !trimmed.includes("\\") && !trimmed.includes("/")) {
+    const lowTrustProtocols = ["ms-msdt:", "ms-remote:", "cmd:", "telnet:", "search-ms:", "javascript:"];
+    const trimmedLower = trimmed.toLowerCase();
+    if (lowTrustProtocols.some(p => trimmedLower.startsWith(p))) {
+      return { ok: false, reason: "Protocolo de confianza baja bloqueado", type: "blocked" };
+    }
     return { ok: true, type: "protocol" };
   }
 
@@ -86,7 +94,7 @@ export function validateExecutionTarget(target) {
     return { ok: true, type: "executable" };
   }
 
-  // 5. Ruta absoluta a .exe SOLO en directorios seguros (permitir espacios en ruta segura)
+  // 5. Ruta absoluta a .exe SOLO en directorios seguros
   if (trimmed.toLowerCase().endsWith(".exe")) {
     const safeDirs = [
       "C:\\Program Files\\",
@@ -95,9 +103,7 @@ export function validateExecutionTarget(target) {
       "C:\\Windows\\System32\\",
     ];
     const upper = trimmed.toUpperCase();
-    // Verificar que ESTÉ EXCLUSIVAMENTE en un directorio seguro
     const inSafeDir = safeDirs.some(dir => upper.startsWith(dir.toUpperCase()));
-    // Y que NO contenga path traversal ni esté en subdirectorios sospechosos
     const noTraversal = !upper.includes("..") && !upper.includes("TEMP") && !upper.includes("APPDATA") && !upper.includes("LOCALAPPDATA");
     if (inSafeDir && noTraversal) {
       return { ok: true, type: "executable" };
@@ -113,6 +119,7 @@ export function validateExecutionTarget(target) {
 
 /**
  * Ejecuta un comando/aplicación con confirmación nativa
+ * Para ejecutables usa spawn (desacoplado) en lugar de execFile para no matar la app al pasar el timeout.
  * @param {Object} options
  * @param {string} options.target - Comando, app, URL o ruta
  * @param {string} options.args - Argumentos adicionales (solo para ejecutables)
@@ -125,15 +132,14 @@ export async function executeWithConfirmation({ target, args = "", mainWindow })
     return { ok: false, error: validation.reason };
   }
 
-  // Mostrar diálogo de confirmación nativo
-  const displayTarget = target.length > 80 ? target.slice(0, 77) + "..." : target;
+  // Mostrar diálogo de confirmación nativa (target COMPLETO, sin truncar)
   const displayArgs = args ? ` con args: ${args}` : "";
 
   const result = await dialog.showMessageBox(mainWindow, {
     type: "question",
     title: "Ejecutar aplicación / abrir recurso",
     message: `¿Permitir ejecutar/abrir?`,
-    detail: `${displayTarget}${displayArgs}\n\nTipo: ${validation.type}`,
+    detail: `${target}${displayArgs}\n\nTipo: ${validation.type}`,
     buttons: ["Cancelar", "Permitir"],
     defaultId: 1,
     cancelId: 0,
@@ -159,22 +165,18 @@ export async function executeWithConfirmation({ target, args = "", mainWindow })
       }
 
       case "executable": {
-        // Parsear comando y args de forma segura
-        const parts = target.trim().split(/\s+/);
-        const cmd = parts[0];
-        const cmdArgs = [...parts.slice(1), ...(args ? args.trim().split(/\s+/) : [])].filter(Boolean);
-
-        const result = await execFileAsync(cmd, cmdArgs, {
-          windowsHide: true,
-          timeout: 10000,
-          maxBuffer: 1024 * 1024,
+        // Usar spawn para ejecutar desacoplado (no bloquea, no mata al pasar timeout)
+        const cmdArgs = (args ? args.trim().split(/\s+/) : []).filter(Boolean);
+        const child = spawn(target, cmdArgs, {
+          detached: true,
+          stdio: "ignore",
+          shell: false,
         });
+        child.unref();
 
         return {
           ok: true,
-          result: `Ejecutado: ${cmd}${cmdArgs.length ? " " + cmdArgs.join(" ") : ""}`,
-          stdout: result.stdout?.slice(0, 2000),
-          stderr: result.stderr?.slice(0, 2000),
+          result: `Ejecutado: ${target}${cmdArgs.length ? " " + cmdArgs.join(" ") : ""}`,
         };
       }
 

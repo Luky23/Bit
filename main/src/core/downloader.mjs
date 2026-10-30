@@ -10,7 +10,8 @@
 import { createHash } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import { unlink, access, constants } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
+import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
 
 /**
@@ -32,6 +33,17 @@ const ALLOWED_DOMAINS = new Set([
  */
 export function isUrlAllowed(url) {
   try {
+    // Remover sintaxis de enlace markdown [texto](url) si está presente
+    if (url.startsWith('[') && url.includes('](')) {
+      const closeBracket = url.indexOf('](');
+      if (closeBracket > 0) {
+        url = url.substring(closeBracket + 2);
+        // Remover paréntesis final de cierre si está presente
+        if (url.endsWith(')')) {
+          url = url.substring(0, url.length - 1);
+        }
+      }
+    }
     const parsed = new URL(url);
     // Solo HTTPS
     if (parsed.protocol !== "https:") return false;
@@ -68,6 +80,17 @@ async function calculateSha256(filePath) {
  * @returns {Promise<{ok: boolean, path?: string, error?: string, cancelled?: boolean}>}
  */
 export async function downloadSecureAsset(url, destPath, expectedHash, assetName, showConfirmation) {
+  // Remover sintaxis de enlace markdown [texto](url) si está presente
+  if (url.startsWith('[') && url.includes('](')) {
+    const closeBracket = url.indexOf('](');
+    if (closeBracket > 0) {
+      url = url.substring(closeBracket + 2);
+      if (url.endsWith(')')) {
+        url = url.substring(0, url.length - 1);
+      }
+    }
+  }
+
   // Validación 1: URL permitida
   if (!isUrlAllowed(url)) {
     return { ok: false, error: `Dominio no permitido: ${new URL(url).hostname}. Solo: ${Array.from(ALLOWED_DOMAINS).join(", ")}` };
@@ -80,14 +103,28 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
 
   // Validación 3: Path absoluto y dentro de directorio permitido
   const resolvedDest = resolve(destPath);
+  // Rechazar path traversal en la ruta original
+  if (destPath.includes("..")) {
+    return { ok: false, error: "Ruta de destino no permitida (path traversal)" };
+  }
   // Permitir descargas en AppData/Bit/voices o directorios temporales del sistema
   const allowedBase = process.env.LOCALAPPDATA ? resolve(process.env.LOCALAPPDATA, "Bit") : null;
-  if (!allowedBase || !resolvedDest.startsWith(allowedBase + "\\") && !resolvedDest.startsWith(allowedBase + "/")) {
-    // Permitir también directorio temporal del sistema para testing
-    const tempDir = resolve(process.cwd(), "tmp");
-    if (!resolvedDest.startsWith(tempDir)) {
-      return { ok: false, error: "Ruta de destino no permitida (debe estar en %LOCALAPPDATA%/Bit/ o directorio temporal)" };
-    }
+  let pathAllowed = false;
+  if (allowedBase && (resolvedDest.startsWith(allowedBase + "\\") || resolvedDest.startsWith(allowedBase + "/") || resolvedDest === allowedBase)) {
+    pathAllowed = true;
+  }
+  // Permitir también directorio temporal del sistema para testing
+  const sysTmp = tmpdir();
+  if (resolvedDest.startsWith(sysTmp + sep) || resolvedDest === sysTmp) {
+    pathAllowed = true;
+  }
+  // Permitir también directorio temporal del proyecto (cwd/tmp)
+  const projTmp = resolve(process.cwd(), "tmp");
+  if (resolvedDest.startsWith(projTmp + sep) || resolvedDest === projTmp) {
+    pathAllowed = true;
+  }
+  if (!pathAllowed) {
+    return { ok: false, error: "Ruta de destino no permitida (debe estar en %LOCALAPPDATA%/Bit/ o directorio temporal)" };
   }
 
   // Validación 4: Consentimiento del usuario

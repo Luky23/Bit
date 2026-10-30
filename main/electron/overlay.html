@@ -433,10 +433,8 @@
     // ===== STATE MANAGEMENT =====
     const State = { IDLE: 'idle', LISTENING: 'listening', SPEAKING: 'speaking', PROCESSING: 'processing' };
     let currentState = State.IDLE;
-    let capturedImage = "";
     let audioContext;
-    let nextAudioTime = 0;
-    let coreBars = [];
+        let coreBars = [];
     let barAnimationId = null;
 
     // DOM
@@ -536,8 +534,7 @@
 
     // ===== VOICE LEVEL FROM SIDECAR =====
     let vadActive = false;
-    window.bitRuntime.onVoiceAudio?.(null);
-
+    
     const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel((msg) => {
       if (msg.type === 'level') {
         const rms = msg.rms ?? 0;
@@ -599,7 +596,6 @@
       }
     });
 
-    let capturedImage = "";
 
     $('chat-form').addEventListener('submit', async event => {
       event.preventDefault();

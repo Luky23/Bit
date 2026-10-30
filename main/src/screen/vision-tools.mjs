@@ -4,7 +4,7 @@
  */
 
 import pkg from "electron";
-const { desktopCapturer } = pkg;
+const { desktopCapturer, screen } = pkg;
 import { createCapturePolicy, canCapture, resizeDimensions } from "./capture-policy.mjs";
 import { imageDataUrlToBase64 } from "./vision-request.mjs";
 
@@ -22,7 +22,7 @@ export async function captureScreenBase64({ maxSide = 1280 } = {}) {
     throw new Error("La captura requiere consentimiento explícito");
   }
 
-  const display = await import("electron").then(e => e.screen.getPrimaryDisplay());
+  const display = screen.getPrimaryDisplay();
   const dimensions = resizeDimensions(display.size.width, display.size.height, policy.maxSide);
 
   const sources = await desktopCapturer.getSources({

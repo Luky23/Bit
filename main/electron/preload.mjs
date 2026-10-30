@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   voice: "Piper local",
   getRuntime: () => ipcRenderer.invoke("bit:runtime"),
   chat: (request) => ipcRenderer.invoke("bit:chat", request),
+  getConfig: () => ipcRenderer.invoke("config:get"),
+  setConfig: (key, value) => ipcRenderer.invoke("config:set", key, value),
   setOverlayExpanded: (expanded) => ipcRenderer.invoke("bit:overlay-set-expanded", expanded === true),
   openMain: () => ipcRenderer.invoke("bit:open-main"),
   captureScreen: () => ipcRenderer.invoke("bit:screen-capture"),
@@ -28,5 +30,15 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   ensurePiperModel: (modelName, voicesDir) => ipcRenderer.invoke("bit:ensure-piper-model", { modelName, voicesDir }),
   // Computer Use
   captureAndAnalyzeScreen: (prompt, visionModel, maxSide) => ipcRenderer.invoke("bit:system-capture-screen", { prompt, visionModel, maxSide }),
-  openApp: (target, args) => ipcRenderer.invoke("bit:system-open-app", { target, args })
+  openApp: (target, args) => ipcRenderer.invoke("bit:system-open-app", { target, args }),
+  hudClicked: () => ipcRenderer.send("hud-clicked"),
+  // Webcam
+  onWebcamCaptureRequest: (listener) => {
+    const handler = (_event, data) => listener(data);
+    ipcRenderer.on("webcam:capture-request", handler);
+    return () => ipcRenderer.removeListener("webcam:capture-request", handler);
+  },
+  sendWebcamCaptureResult: (id, dataUrl) => ipcRenderer.send(`webcam:capture-result:${id}`, { id, dataUrl }),
+  getConfig: () => ipcRenderer.invoke("config:get"),
+  setConfig: (key, value) => ipcRenderer.invoke("config:set", key, value),
 }));

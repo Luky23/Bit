@@ -25,17 +25,26 @@ export function splitSentences(text) {
 /**
  * Cola de voz que segmenta texto en oraciones y las envía al sidecar.
  * Maneja interrupción (cancel) y backpressure.
+ *
+ * Opciones:
+ * - waitForReady (boolean, default false): si true, cada oración espera a
+ *   notifyReady() antes de enviarse. Si false, se resuelve inmediatamente
+ *   después de enviar (comportamiento anterior, no rompe tests existentes).
  */
 export class SpeechQueue {
   /**
    * @param {Function} sendToSidecar - Función que envía mensaje al sidecar (recibe string JSONL)
+   * @param {Object} options
+   * @param {boolean} options.waitForReady - Esperar ready del sidecar entre oraciones
    */
-  constructor(sendToSidecar) {
+  constructor(sendToSidecar, { waitForReady = false } = {}) {
     this.sendToSidecar = sendToSidecar;
+    this.waitForReady = waitForReady;
     this.items = [];
     this.running = false;
     this.cancelled = false;
     this.currentPromise = null;
+    this._readyResolve = null; // Resolver pendiente de notifyReady()
   }
 
   /**
@@ -56,11 +65,28 @@ export class SpeechQueue {
   cancel() {
     this.cancelled = true;
     this.items.length = 0;
+    // Resolver cualquier promise pendiente de ready para no dejar rejected promises
+    if (this._readyResolve) {
+      this._readyResolve();
+      this._readyResolve = null;
+    }
     // Enviar comando stop al sidecar
     try {
       this.sendToSidecar(encodeVoiceMessage({ type: "stop" }));
     } catch {
       // Ignorar errores de envío durante cancelación
+    }
+  }
+
+  /**
+   * Notifica que el sidecar está listo para la siguiente oración.
+   * Se llama desde main.mjs cuando llega el mensaje "ready" del sidecar.
+   */
+  notifyReady() {
+    if (this._readyResolve) {
+      const resolve = this._readyResolve;
+      this._readyResolve = null;
+      resolve();
     }
   }
 
@@ -80,8 +106,6 @@ export class SpeechQueue {
         const sentence = this.items.shift();
         if (!sentence) continue;
 
-        // Esperar a que el sidecar esté listo (ready) antes de enviar la siguiente oración
-        // Nota: el sidecar responde "ready" después de cada síntesis completa
         await this.#speakSentence(sentence);
       }
     } finally {
@@ -90,7 +114,8 @@ export class SpeechQueue {
   }
 
   /**
-   * Envía una oración al sidecar y espera confirmación "ready".
+   * Envía una oración al sidecar.
+   * Si waitForReady es true, espera notifyReady() antes de resolver.
    * @returns {Promise<void>}
    */
   #speakSentence(sentence) {
@@ -100,31 +125,18 @@ export class SpeechQueue {
         return;
       }
 
-      // Timeout de seguridad (30s por oración)
-      const timeout = setTimeout(() => {
-        cleanup();
-        reject(new Error("Timeout esperando ready del sidecar"));
-      }, 30000);
+      // Timeout de seguridad (30s por oración) solo cuando waitForReady está activo
+      let timeout = null;
+      if (this.waitForReady) {
+        timeout = setTimeout(() => {
+          this._readyResolve = null;
+          reject(new Error("Timeout esperando ready del sidecar"));
+        }, 30000);
+      }
 
       const cleanup = () => {
-        clearTimeout(timeout);
-        // Remover listener temporal
+        if (timeout) clearTimeout(timeout);
       };
-
-      // Listener temporal para "ready"
-      const onReady = () => {
-        cleanup();
-        resolve();
-      };
-
-      // Registrar listener temporal en el sidecar manager (se configura externamente)
-      if (typeof this.onSidecarReady === "function") {
-        this.onSidecarReady(onReady);
-      } else {
-        // Fallback: resolver inmediatamente (el sidecar maneja su propia cola)
-        cleanup();
-        resolve();
-      }
 
       // Enviar oración
       try {
@@ -132,17 +144,21 @@ export class SpeechQueue {
       } catch (error) {
         cleanup();
         reject(error);
+        return;
+      }
+
+      if (this.waitForReady) {
+        // Esperar a notifyReady() antes de continuar con la siguiente oración
+        this._readyResolve = () => {
+          cleanup();
+          resolve();
+        };
+      } else {
+        // Comportamiento anterior: resolver inmediatamente después de enviar
+        cleanup();
+        resolve();
       }
     });
-  }
-
-  /**
-   * Callback que se invoca cuando el sidecar envía "ready".
-   * Se registra desde main.mjs para coordinar la cola.
-   * @param {Function} callback
-   */
-  setReadyHandler(callback) {
-    this.onSidecarReady = callback;
   }
 }
 

@@ -121,6 +121,40 @@ const SCHEMAS = Object.freeze({
     },
     required: ["target"],
     additionalProperties: false
+  },
+  "bit:system-capture-webcam": {
+    type: "object",
+    properties: {
+      prompt: { type: "string", minLength: 1, maxLength: 8000 }
+    },
+    required: ["prompt"],
+    additionalProperties: false
+  },
+  "bit:obsidian-search": {
+    type: "object",
+    properties: {
+      query: { type: "string", minLength: 1, maxLength: 500 },
+      limit: { type: "integer", minimum: 1, maximum: 50, default: 10 }
+    },
+    required: ["query"],
+    additionalProperties: false
+  },
+  "bit:obsidian-read": {
+    type: "object",
+    properties: {
+      notePath: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["notePath"],
+    additionalProperties: false
+  },
+  "bit:obsidian-save-memory": {
+    type: "object",
+    properties: {
+      title: { type: "string", minLength: 1, maxLength: 200 },
+      content: { type: "string", minLength: 1, maxLength: 200000 }
+    },
+    required: ["title", "content"],
+    additionalProperties: false
   }
 });
 
@@ -147,7 +181,8 @@ function validateValue(value, schema, path = "") {
     const fmtErr = schema.format ? validateFormat(value, schema.format) : null;
     if (fmtErr) return `${path}: ${fmtErr}`;
   } else if (schema.type === "integer" || schema.type === "number") {
-    const num = Number(value);
+    if (typeof value !== "number") return `${path}: se esperaba número`;
+    const num = value;
     if (!Number.isFinite(num)) return `${path}: se esperaba número`;
     if (schema.type === "integer" && !Number.isInteger(num)) return `${path}: se esperaba entero`;
     if (schema.minimum !== undefined && num < schema.minimum) return `${path}: mínimo ${schema.minimum}`;
@@ -191,6 +226,26 @@ export function validateToolInput(toolName, input) {
 }
 
 export function validateToolOutput(toolName, output) {
+  const schema = SCHEMAS[toolName];
+  if (!schema) return { ok: true };
+  // Si la salida no es un objeto, no hay propiedades que validar contra el schema
+  if (!output || typeof output !== "object" || Array.isArray(output)) return { ok: true };
+  // Validación simple: verificar que el output tenga las propiedades esperadas
+  const keys = Object.keys(output);
+  const allowed = new Set(Object.keys(schema.properties || {}));
+  for (const key of keys) {
+    if (!allowed.has(key)) return { ok: false, error: `${key}: propiedad no permitida en salida` };
+  }
+  // Verificar tipos básicos de propiedades requeridas
+  for (const [prop, propSchema] of Object.entries(schema.properties || {})) {
+    if (propSchema.required === true && !(prop in output)) return { ok: false, error: `${prop}: propiedad requerida` };
+    if (prop in output) {
+      const val = output[prop];
+      if (propSchema.type === "string" && typeof val !== "string") return { ok: false, error: `${prop}: se esperaba string` };
+      if (propSchema.type === "integer" && typeof val !== "number") return { ok: false, error: `${prop}: se esperaba número` };
+      if (propSchema.type === "boolean" && typeof val !== "boolean") return { ok: false, error: `${prop}: se esperaba booleano` };
+    }
+  }
   return { ok: true };
 }
 

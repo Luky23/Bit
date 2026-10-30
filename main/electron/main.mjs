@@ -9,10 +9,12 @@ import { createVisionMessage } from "../src/screen/vision-request.mjs";
 import { captureScreenBase64, analyzeScreenWithVision, captureAndAnalyze } from "../src/screen/vision-tools.mjs";
 import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/exec-tools.mjs";
 import { validateToolInput } from "../src/core/validation.mjs";
+import { runAgentTurn, AGENT_TOOLS } from "../src/core/agent.mjs";
+import { configGet, configSet, configPickSong, configRemoveSong, bootGetSong, getStartupConfig } from "../src/core/config.mjs";
 import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
 import { SpeechQueue, InterruptionManager } from "../src/voice/speech.mjs";
-import { encodeVoiceMessage, parseVoiceLine } from "../src/voice/protocol.mjs";
+import { encodeVoiceMessage, parseVoiceLine, JsonlFramer } from "../src/voice/protocol.mjs";
 import { downloadSecureAsset, ensurePiperModel, PIPER_MODELS } from "../src/core/downloader.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
@@ -25,6 +27,7 @@ app.commandLine.appendSwitch("disable-gpu-compositing");
 app.commandLine.appendSwitch("disable-software-rasterizer");
 app.commandLine.appendSwitch("disable-disk-cache");
 app.commandLine.appendSwitch("disable-application-cache");
+app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 let mainWindow;
 let overlayWindow;
@@ -92,13 +95,11 @@ function handleVoiceMessage(message) {
       voiceReady = true;
       for (const waiter of voiceWaiters.splice(0)) waiter.resolve();
       // Notificar a la cola de voz que el sidecar está listo para la siguiente oración
-      if (speechQueue && typeof speechQueue.onSidecarReady === "function") {
-        speechQueue.onSidecarReady(() => {});
-      }
+      speechQueue?.notifyReady();
       break;
     case "audio":
+      // Enviar audio SOLO a la ventana principal si existe
       mainWindow?.webContents.send("bit:voice-audio", message);
-      overlayWindow?.webContents.send("bit:voice-audio", message);
       break;
     case "error":
       voiceReady = false;
@@ -130,14 +131,109 @@ ipcMain.handle("bit:runtime", () => {
 ipcMain.handle("bit:chat", async (_event, request = {}) => {
   const validation = validateToolInput("bit:chat", request);
   if (!validation.ok) throw new Error(validation.error);
-  const model = typeof request.model === "string" && request.model.length < 128 ? request.model : "qwen2.5:3b";
   const message = typeof request.message === "string" ? request.message.trim().slice(0, 8000) : "";
   if (!message) throw new Error("Escribí un mensaje");
-  const userMessage = request.imageDataUrl ? createVisionMessage(message, request.imageDataUrl) : { role: "user", content: message };
-  const response = await fetch("http://127.0.0.1:11434/api/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, stream: false, messages: [userMessage], options: { temperature: 0.3 } }) });
-  if (!response.ok) throw new Error(`Ollama respondió ${response.status}`);
-  const body = await response.json();
-  return { model, text: String(body.message?.content ?? "") };
+
+  const config = await getStartupConfig();
+  const model = typeof request.model === "string" && request.model.length < 128 ? request.model : config.model || "qwen2.5:3b";
+
+  // Cliente de chat que envuelve Ollama /api/chat
+  const chatClient = {
+    async generate(modelName, req) {
+      const response = await fetch("http://127.0.0.1:11434/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: modelName, stream: false, ...req }),
+      });
+      if (!response.ok) throw new Error(`Ollama respondió ${response.status}`);
+      return response.json();
+    },
+  };
+
+  // OllamaClient para verificar capacidades de tools
+  const ollamaClient = new OllamaClient();
+
+  // Executor de herramientas: mapea nombres con punto a IPC handlers
+  const executeTool = async (toolName, toolArgs) => {
+    switch (toolName) {
+      case "system.captureScreen": {
+        const result = await captureAndAnalyze({
+          prompt: toolArgs.prompt,
+          visionModel: toolArgs.visionModel || config.visionModel || "llava",
+          maxSide: toolArgs.maxSide || 1280,
+        });
+        return result;
+      }
+      case "system.openApp": {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return { ok: false, error: "Ventana principal no disponible para confirmación" };
+        }
+        return executeWithConfirmation({
+          target: toolArgs.target,
+          args: toolArgs.args || "",
+          mainWindow,
+        });
+      }
+      case "system.captureWebcam": {
+        return { ok: false, error: "Captura de cámara web no implementada en este turno" };
+      }
+      case "obsidian.search": {
+        const indexerPath = join(here, "..", "src", "obsidian", "indexer.mjs");
+        const { ObsidianIndexer } = await import(indexerPath);
+        const indexer = new ObsidianIndexer(config.vaultPath || "");
+        await indexer.buildIndex();
+        const lowerQuery = toolArgs.query.toLowerCase();
+        const results = [];
+        for (const [title, path] of indexer.titleIndex) {
+          if (title.includes(lowerQuery)) results.push({ type: "title", title, path, score: 1 });
+        }
+        return results.slice(0, toolArgs.limit || 10);
+      }
+      case "obsidian.read": {
+        const { readFile } = await import("node:fs/promises");
+        const { resolve, join: pathJoin } = await import("node:path");
+        const root = resolve(config.vaultPath || "");
+        const fullPath = pathJoin(root, toolArgs.notePath);
+        if (!fullPath.startsWith(root + "\\") && !fullPath.startsWith(root + "/")) {
+          throw new Error("Ruta fuera de la bóveda");
+        }
+        const content = await readFile(fullPath, "utf-8");
+        return { path: toolArgs.notePath, content };
+      }
+      case "obsidian.saveMemory": {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+          return { ok: false, error: "Ventana principal no disponible para confirmación" };
+        }
+        const result = await dialog.showMessageBox(mainWindow, {
+          type: "question",
+          title: "Guardar en Obsidian",
+          message: `¿Guardar "${toolArgs.title}" en la bóveda de Obsidian?`,
+          detail: "La nota se guardará en <Vault>/Bit/Conversaciones/ con frontmatter estructurado.",
+          buttons: ["Cancelar", "Guardar"],
+          defaultId: 1,
+          cancelId: 0,
+          noLink: true,
+        });
+        if (result.response === 0) {
+          return { ok: false, cancelled: true };
+        }
+        const vault = new ObsidianVault(config.vaultPath || "");
+        return await vault.saveConversationContext(toolArgs.title, toolArgs.content);
+      }
+      default:
+        throw new Error(`Herramienta desconocida: ${toolName}`);
+    }
+  };
+
+  const result = await runAgentTurn({
+    message,
+    history: request.history || [],
+    imageDataUrl: request.imageDataUrl || null,
+    config: { ...config, model },
+    deps: { chatClient, ollamaClient, executeTool, vaultConfig: { vaultPath: config.vaultPath || "" } },
+  });
+
+  return { model, text: result.text, toolCalls: result.toolCalls, rounds: result.rounds };
 });
 
 function overlayBounds(expanded = false) {
@@ -200,9 +296,7 @@ ipcMain.handle("bit:speak", async (_event, text) => {
 
   // Inicializar SpeechQueue e InterruptionManager si no existen
   if (!speechQueue) {
-    speechQueue = new SpeechQueue((msg) => sendToSidecar(msg));
-    speechQueue.setReadyHandler(() => {}); // Se llama automáticamente en handleVoiceMessage
-
+    speechQueue = new SpeechQueue((msg) => sendToSidecar(msg), { waitForReady: true });
     interruptionManager = new InterruptionManager(speechQueue, (msg) => sendToSidecar(msg));
     interruptionManager.setEnabled(false); // VAD activado por configuración
   }
@@ -293,6 +387,87 @@ ipcMain.handle("bit:ensure-piper-model", async (_event, request = {}) => {
   if (!validation.ok) throw new Error(validation.error);
 
   return ensurePiperModel(request.modelName, request.voicesDir, showDownloadConfirmation);
+});
+
+// ===== CONFIG IPC HANDLERS =====
+
+ipcMain.handle("config:get", async (_event, key) => {
+  return configGet(key);
+});
+
+ipcMain.handle("config:set", async (_event, key, value) => {
+  return configSet(key, value);
+});
+
+ipcMain.handle("config:pickSong", async (_event) => {
+  return configPickSong(dialog.showOpenDialog.bind(dialog));
+});
+
+ipcMain.handle("config:removeSong", async (_event) => {
+  return configRemoveSong();
+});
+
+ipcMain.handle("boot:getSong", async (_event) => {
+  const result = await bootGetSong();
+  if (!result.ok) return { ok: false, error: result.error };
+  return { ok: true, bytes: result.bytes, songName: result.songName };
+});
+
+// ===== WEBCAM IPC HANDLERS =====
+
+ipcMain.handle("bit:system-capture-webcam", async (_event, request = {}) => {
+  const validation = validateToolInput("bit:system-capture-webcam", request);
+  if (!validation.ok) throw new Error(validation.error);
+
+  const config = await getStartupConfig();
+  if (!config.webcamEnabled) {
+    return { ok: false, error: "La cámara está desactivada en Ajustes" };
+  }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return { ok: false, error: "Ventana principal no disponible para captura de cámara" };
+  }
+
+  const captureId = "webcam-" + Date.now();
+  const timeoutMs = 10000;
+
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error("Timeout de captura de cámara (10 s)")), timeoutMs);
+  });
+
+  const capturePromise = new Promise((resolve, reject) => {
+    const handler = (_event, { id, dataUrl }) => {
+      if (id !== captureId) return;
+      try {
+        if (!dataUrl) {
+          reject(new Error("No se recibió imagen de la cámara"));
+          return;
+        }
+        // Validar data URL
+        const { imageDataUrlToBase64 } = await import("../src/screen/vision-request.mjs");
+        const base64 = imageDataUrlToBase64(dataUrl);
+        if (!base64) {
+          reject(new Error("La imagen de la cámara no es válida"));
+          return;
+        }
+        // Analizar con modelo de visión
+        const visionModel = config.visionModel || "llava";
+        const maxSide = 1280;
+        resolve(captureAndAnalyze({ prompt: request.prompt, visionModel, maxSide }));
+      } catch (error) {
+        reject(error);
+      }
+    };
+    ipcMain.once(`webcam:capture-result:${captureId}`, handler);
+    setTimeout(() => {
+      ipcMain.removeListener(`webcam:capture-result:${captureId}`, handler);
+    }, timeoutMs);
+  });
+
+  // Pedir captura al renderer
+  mainWindow.webContents.send("webcam:capture-request", { id: captureId, prompt: request.prompt });
+
+  return Promise.race([capturePromise, timeoutPromise]);
 });
 
 // HUD click → open main window, hide overlay
@@ -404,11 +579,37 @@ function createOverlayWindow() {
   overlayWindow.on("closed", () => { overlayWindow = undefined; });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => callback({ cancel: !isAllowedUrl(details.url) }));
+
+  // Permisos de cámara web: solo "media" (video) para index.html propia y solo si webcamEnabled
+  const config = await getStartupConfig();
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission !== "media") {
+      callback(false);
+      return;
+    }
+    const url = webContents.getURL();
+    try {
+      const parsed = new URL(url);
+      const isOwnPage = parsed.origin === "file://" || parsed.origin.indexOf("localhost") !== -1 || parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      if (!isOwnPage) {
+        callback(false);
+        return;
+      }
+      callback(config.webcamEnabled === true);
+    } catch {
+      callback(false);
+    }
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission !== "media") return false;
+    return config.webcamEnabled === true;
+  });
+
   createMainWindow();
   createOverlayWindow();
-  app.on("activate", () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); if (!overlayWindow || overlayWindow.isDestroyed()) createOverlayWindow(); });
+  app.on("activate", () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); if (!overlayWindow || !overlayWindow.isDestroyed()) createOverlayWindow(); });
 });
 
 app.on("window-all-closed", () => { if (voiceProcess && !voiceProcess.killed) voiceProcess.kill(); if (process.platform !== "darwin") app.quit(); });
