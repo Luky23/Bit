@@ -5,15 +5,44 @@
  */
 
 import { mkdir, readFile, writeFile, readdir, stat, copyFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import pkg from "electron";
 const { app } = pkg;
 import { isAllowedAudioFile } from "../voice/settings.mjs";
+import { validateProjectsRoot } from "../projects/workspace.mjs";
 
 const MUSIC_DIR_NAME = "music";
 const MAX_SONG_MB = 30;
 const MAX_SONG_BYTES = MAX_SONG_MB * 1024 * 1024;
-const SONG_NAME_RE = /^[A-Za-z0-9._ -]+$/;
+const WINDOWS_RESERVED_NAME_RE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
+
+export function isSafeSongName(value) {
+  if (
+    typeof value !== "string" ||
+    value.length === 0 ||
+    value.length > 255 ||
+    value === "." ||
+    value === ".." ||
+    /[<>:"/\\|?*\u0000-\u001f]/u.test(value) ||
+    /[ .]$/u.test(value) ||
+    WINDOWS_RESERVED_NAME_RE.test(value.split(".", 1)[0].replace(/[ .]+$/u, "")) ||
+    !isAllowedAudioFile(value)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function normalizeUserName(value) {
+  if (typeof value !== "string") {
+    return { ok: false, error: "El nombre debe tener hasta 40 letras y solo puede incluir espacios, puntos, guiones o apóstrofos" };
+  }
+  const normalized = value.normalize("NFC");
+  if (normalized.length > 40 || /[^\p{L}\p{M} .'-]/u.test(normalized)) {
+    return { ok: false, error: "El nombre debe tener hasta 40 letras y solo puede incluir espacios, puntos, guiones o apóstrofos" };
+  }
+  return { ok: true, value: normalized.trim().replace(/\s+/gu, " ") };
+}
 
 // Esquema de configuración de inicio
 const STARTUP_DEFAULTS = {
@@ -25,6 +54,11 @@ const STARTUP_DEFAULTS = {
   duckLevel: 0.25,
   webcamEnabled: false,
   visionModel: "",
+  screenAnalysisEnabled: false,
+  speechEnabled: true,
+  userName: "",
+  whisperModelPath: "",
+  projectsRoot: "",
 };
 
 /**
@@ -43,7 +77,7 @@ function musicDir() {
 }
 
 function songPath(songName) {
-  if (!SONG_NAME_RE.test(songName)) throw new Error("Nombre de canción no válido");
+  if (!isSafeSongName(songName)) throw new Error("Nombre de canción no válido");
   return join(musicDir(), songName);
 }
 
@@ -55,7 +89,12 @@ async function readConfig() {
   try {
     const raw = await readFile(configPath(), "utf8");
     const parsed = JSON.parse(raw);
-    return { ...STARTUP_DEFAULTS, ...parsed };
+    const config = { ...STARTUP_DEFAULTS, ...parsed };
+    if (parsed && Object.hasOwn(parsed, "userName")) {
+      const userName = normalizeUserName(parsed.userName);
+      config.userName = userName.ok ? userName.value : STARTUP_DEFAULTS.userName;
+    }
+    return config;
   } catch {
     return { ...STARTUP_DEFAULTS };
   }
@@ -117,13 +156,41 @@ export async function configSet(key, value) {
       return { ok: false, error: "duckLevel debe ser 0-1" };
     }
     config[key] = v;
-  } else if (key === "webcamEnabled" || key === "startupEnabled") {
+  } else if (key === "webcamEnabled" || key === "startupEnabled" || key === "screenAnalysisEnabled") {
     config[key] = value === true;
-  } else if (key === "startupSong" || key === "visionModel") {
+  } else if (key === "speechEnabled") {
+    if (typeof value !== "boolean") {
+      return { ok: false, error: "speechEnabled debe ser boolean" };
+    }
+    config[key] = value;
+  } else if (key === "userName") {
+    const userName = normalizeUserName(value);
+    if (!userName.ok) return userName;
+    config[key] = userName.value;
+  } else if (key === "startupSong") {
+    if (typeof value !== "string" || (value !== "" && !isSafeSongName(value))) {
+      return { ok: false, error: "startupSong debe ser un nombre local de archivo de audio válido" };
+    }
+    config[key] = value.normalize("NFC");
+  } else if (key === "visionModel") {
     if (value !== undefined && value !== null && typeof value !== "string") {
       return { ok: false, error: `${key} debe ser string` };
     }
     config[key] = value;
+  } else if (key === "whisperModelPath") {
+    if (typeof value !== "string" || value.length > 1024 || (value !== "" && !isAbsolute(value))) {
+      return { ok: false, error: "whisperModelPath debe ser una ruta local válida" };
+    }
+    config[key] = value;
+  } else if (key === "projectsRoot") {
+    if (
+      typeof value !== "string" ||
+      value.length > 1024 ||
+      (value !== "" && (!isAbsolute(value) || value.startsWith("\\\\") || value.startsWith("//")))
+    ) {
+      return { ok: false, error: "projectsRoot debe ser una carpeta local absoluta, no una ruta de red" };
+    }
+    config[key] = value ? resolve(value) : "";
   } else {
     config[key] = value;
   }
@@ -145,15 +212,16 @@ export async function configPickSong(showOpenDialog) {
   });
 
   if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
-    return { ok: false, error: "No se seleccionó ningún archivo" };
+    return { ok: false, cancelled: true };
   }
 
   const filePath = result.filePaths[0];
-  const fileName = filePath.split(/[\\/]/).pop();
+  const selectedName = filePath.split(/[\\/]/).pop();
 
-  if (!isAllowedAudioFile(fileName)) {
+  if (!isAllowedAudioFile(selectedName)) {
     return { ok: false, error: "Formato de audio no permitido (mp3, wav, ogg, m4a, flac)" };
   }
+  const fileName = selectedName.normalize("NFC");
 
   // Verificar tamaño
   try {
@@ -166,7 +234,7 @@ export async function configPickSong(showOpenDialog) {
   }
 
   // Sanitizar nombre
-  if (!SONG_NAME_RE.test(fileName)) {
+  if (!isSafeSongName(fileName)) {
     return { ok: false, error: "Nombre de archivo no válido" };
   }
 
@@ -179,19 +247,69 @@ export async function configPickSong(showOpenDialog) {
     return { ok: false, error: `No se pudo copiar la canción: ${error.message}` };
   }
 
-  // Guardar solo el nombre en config
-  await configSet("startupSong", fileName);
+  const savedSong = await configSet("startupSong", fileName);
+  if (!savedSong.ok) return savedSong;
+  const enabled = await configSet("startupEnabled", true);
+  if (!enabled.ok) return enabled;
 
   return { ok: true, songName: fileName };
 }
 
 /**
- * Quita la canción (vuelve al sonido sintético).
+ * Quita la canción y desactiva el sonido de inicio.
  * @returns {Promise<{ok: boolean}>}
  */
 export async function configRemoveSong() {
-  await configSet("startupSong", "");
+  const removed = await configSet("startupSong", "");
+  if (!removed.ok) return removed;
+  const disabled = await configSet("startupEnabled", false);
+  if (!disabled.ok) return disabled;
   return { ok: true };
+}
+
+export async function configPickWhisperModel(showOpenDialog) {
+  const result = await showOpenDialog({
+    title: "Elegir modelo local de transcripción",
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { ok: false, cancelled: true };
+  }
+
+  const modelPath = resolve(result.filePaths[0]);
+  let modelStats;
+  let configStats;
+  try {
+    [modelStats, configStats] = await Promise.all([
+      stat(join(modelPath, "model.bin")),
+      stat(join(modelPath, "config.json")),
+    ]);
+  } catch {
+    return { ok: false, error: "La carpeta debe contener un modelo local CTranslate2 con model.bin y config.json" };
+  }
+  if (!modelStats.isFile() || !configStats.isFile()) {
+    return { ok: false, error: "La carpeta debe contener un modelo local CTranslate2 con model.bin y config.json" };
+  }
+
+  const saved = await configSet("whisperModelPath", modelPath);
+  if (!saved.ok) return saved;
+  return { ok: true, modelPath };
+}
+
+export async function configPickProjectsRoot(showOpenDialog) {
+  const result = await showOpenDialog({
+    title: "Elegir carpeta local para proyectos de Bit",
+    properties: ["openDirectory"],
+  });
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return { ok: false, cancelled: true };
+  }
+
+  const projectsRoot = resolve(result.filePaths[0]);
+  await validateProjectsRoot(projectsRoot);
+  const saved = await configSet("projectsRoot", projectsRoot);
+  if (!saved.ok) return saved;
+  return { ok: true, projectsRoot };
 }
 
 /**
@@ -205,7 +323,7 @@ export async function bootGetSong() {
     return { ok: true, bytes: null, songName: null };
   }
 
-  if (!SONG_NAME_RE.test(songName)) {
+  if (!isSafeSongName(songName)) {
     return { ok: false, error: "Nombre de canción no válido en configuración" };
   }
 
@@ -218,8 +336,8 @@ export async function bootGetSong() {
     const { readFile } = await import("node:fs/promises");
     const buffer = await readFile(path);
     return { ok: true, bytes: new Uint8Array(buffer), songName };
-  } catch {
-    return { ok: true, bytes: null, songName: null };
+  } catch (error) {
+    return { ok: false, error: `No se pudo leer la canción de inicio: ${error.message}` };
   }
 }
 
