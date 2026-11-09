@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, access } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { isUrlAllowed, downloadSecureAsset } from "../src/core/downloader.mjs";
 import { createHash } from "node:crypto";
@@ -101,7 +101,7 @@ test("downloader: downloadSecureAsset rechaza path fuera de directorio permitido
   const dir = await createTempDir();
   try {
     // Path absoluto fuera de LOCALAPPDATA/Bit
-    const dest = join(dir, "..", "evil.exe");
+    const dest = resolve(dir, "..", "..", "evil.exe");
     const result = await downloadSecureAsset(
       "https://huggingface.co/file",
       dest,
@@ -121,8 +121,7 @@ test("downloader: downloadSecureAsset falla con hash incorrecto (mock fetch)", a
   const dir = await createTempDir();
   try {
     const dest = join(dir, "out.bin");
-    // Mock fetch que devuelve contenido conocido
-    global.fetch = async (url) => ({
+    const fetchExternal = async (url) => ({
       ok: true,
       status: 200,
       statusText: "OK",
@@ -139,13 +138,13 @@ test("downloader: downloadSecureAsset falla con hash incorrecto (mock fetch)", a
       dest,
       "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // hash de string vacío, no coincide
       "test-file",
-      async () => true
+      async () => true,
+      fetchExternal
     );
 
     assert.equal(result.ok, false);
     assert.ok(result.error.includes("Hash mismatch"));
   } finally {
     await rm(dir, { recursive: true, force: true });
-    delete global.fetch;
   }
 });

@@ -4,6 +4,7 @@ const SCHEMAS = Object.freeze({
     properties: {
       model: { type: "string", maxLength: 128, pattern: "^[a-z0-9._:-]+$" },
       message: { type: "string", minLength: 1, maxLength: 8000 },
+      requestId: { type: "string", minLength: 8, maxLength: 80, pattern: "^[a-zA-Z0-9_-]+$" },
       imageDataUrl: { type: "string", format: "data-url", maxLength: 12_582_912 },
       history: { type: "array", maxItems: 20, items: { type: "object" } }
     },
@@ -25,6 +26,18 @@ const SCHEMAS = Object.freeze({
     additionalProperties: false
   },
   "bit:stop-speaking": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:voice-capture-start": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:voice-capture-stop": {
     type: "object",
     properties: {},
     required: [],
@@ -83,6 +96,83 @@ const SCHEMAS = Object.freeze({
     required: ["vaultPath", "title", "content"],
     additionalProperties: false
   },
+  "bit:config-pick-projects-root": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:workspace-list-projects": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:workspace-create-project": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 }
+    },
+    required: ["project"],
+    additionalProperties: false
+  },
+  "bit:workspace-list-files": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", maxLength: 500 }
+    },
+    required: ["project"],
+    additionalProperties: false
+  },
+  "bit:workspace-read-file": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["project", "path"],
+    additionalProperties: false
+  },
+  "bit:workspace-create-file": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      content: { type: "string", maxLength: 1000000 }
+    },
+    required: ["project", "path", "content"],
+    additionalProperties: false
+  },
+  "bit:workspace-update-file": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      content: { type: "string", maxLength: 1000000 }
+    },
+    required: ["project", "path", "content"],
+    additionalProperties: false
+  },
+  "bit:workspace-list-backups": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["project"],
+    additionalProperties: false
+  },
+  "bit:workspace-restore-backup": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      backupId: { type: "string", minLength: 1, maxLength: 80 }
+    },
+    required: ["project", "path", "backupId"],
+    additionalProperties: false
+  },
   "bit:download-asset": {
     type: "object",
     properties: {
@@ -139,6 +229,15 @@ const SCHEMAS = Object.freeze({
     required: ["query"],
     additionalProperties: false
   },
+  "bit:obsidian-graph": {
+    type: "object",
+    properties: {
+      notePath: { type: "string", minLength: 1, maxLength: 500 },
+      limit: { type: "integer", minimum: 1, maximum: 1000, default: 200 }
+    },
+    required: [],
+    additionalProperties: false
+  },
   "bit:obsidian-read": {
     type: "object",
     properties: {
@@ -154,6 +253,14 @@ const SCHEMAS = Object.freeze({
       content: { type: "string", minLength: 1, maxLength: 200000 }
     },
     required: ["title", "content"],
+    additionalProperties: false
+  },
+  "bit:web-search": {
+    type: "object",
+    properties: {
+      query: { type: "string", minLength: 1, maxLength: 300 }
+    },
+    required: ["query"],
     additionalProperties: false
   }
 });
@@ -223,6 +330,14 @@ export function validateToolInput(toolName, input) {
   if (!schema) return { ok: true };
   const error = validateValue(input, schema);
   return error ? { ok: false, error } : { ok: true };
+}
+
+export function toolSchemaName(toolName) {
+  if (typeof toolName !== "string") throw new Error("Nombre de herramienta no válido");
+  const [namespace, name, ...extra] = toolName.split(".");
+  if (!namespace || !name || extra.length > 0) throw new Error("Nombre de herramienta no válido");
+  const kebabName = name.replace(/[A-Z]/gu, (letter) => `-${letter.toLowerCase()}`);
+  return `bit:${namespace}-${kebabName}`;
 }
 
 export function validateToolOutput(toolName, output) {

@@ -82,6 +82,60 @@ test("indexer: construye índice de títulos, alias y etiquetas", async () => {
   }
 });
 
+test("indexer: refresca solo archivos modificados, nuevos o eliminados", async () => {
+  const vault = await createTempVault();
+  try {
+    const first = join(vault, "Notas", "primera.md");
+    const removed = join(vault, "Notas", "eliminar.md");
+    await writeFile(first, "---\ntitle: Primera\n---\nContenido inicial");
+    await writeFile(removed, "---\ntitle: Eliminar\n---\nContenido");
+    const indexer = new ObsidianIndexer(vault);
+    await indexer.buildIndex();
+    await writeFile(first, "---\ntitle: Primera actualizada\n---\nContenido nuevo");
+    await writeFile(join(vault, "Notas", "nueva.md"), "---\ntitle: Nueva\n---\nContenido");
+    await rm(removed);
+    await indexer.refresh();
+    assert.equal(indexer.getByTitle("primera actualizada"), join("Notas", "primera.md"));
+    assert.equal(indexer.getByTitle("nueva"), join("Notas", "nueva.md"));
+    assert.equal(indexer.getByTitle("eliminar"), undefined);
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+  }
+});
+
+test("indexer: resuelve wikilinks, backlinks y el subgrafo de una nota", async () => {
+  const vault = await createTempVault();
+  try {
+    await mkdir(join(vault, "Referencias"), { recursive: true });
+    await writeFile(
+      join(vault, "Notas", "a.md"),
+      "---\ntitle: Nota A\n---\n[[Nota B#sección|B]] [[Referencias/Nota C]] [[Desconocida]]\n`[[Falsa]]`\n```md\n[[También falsa]]\n```"
+    );
+    await writeFile(join(vault, "Notas", "b.md"), "---\ntitle: Nota B\n---\nContenido");
+    await writeFile(join(vault, "Referencias", "c.md"), "---\ntitle: Nota C\naliases: C alternativo\n---\nContenido");
+
+    const indexer = new ObsidianIndexer(vault);
+    await indexer.buildIndex();
+
+    assert.deepEqual(
+      indexer.index.get(join("Notas", "a.md")).links.map(normalizePath),
+      ["Notas/b.md", "Referencias/c.md"]
+    );
+    assert.deepEqual(indexer.getBacklinks("Nota B").map(normalizePath), ["Notas/a.md"]);
+    assert.equal(normalizePath(indexer.resolveBacklink("Referencias/Nota C")), "Referencias/c.md");
+    assert.equal(normalizePath(indexer.resolveBacklink("C alternativo")), "Referencias/c.md");
+
+    const graph = indexer.getGraph("Notas/b.md");
+    assert.deepEqual(graph.nodes.map((node) => normalizePath(node.path)).sort(), ["Notas/a.md", "Notas/b.md"]);
+    assert.deepEqual(graph.edges.map((edge) => ({
+      from: normalizePath(edge.from),
+      to: normalizePath(edge.to)
+    })), [{ from: "Notas/a.md", to: "Notas/b.md" }]);
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+  }
+});
+
 test("vault: escritura atómica en Bit/Conversaciones con frontmatter", async () => {
   const vault = await createTempVault();
   try {
@@ -99,6 +153,33 @@ test("vault: escritura atómica en Bit/Conversaciones con frontmatter", async ()
     assert.ok(content.includes("type: bit-conversation"));
     assert.ok(content.includes("bit_version: 1"));
     assert.ok(content.includes("# Hola"));
+    assert.ok(content.includes("[[Bit/Inicio]]"));
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+  }
+});
+
+test("vault: prepara las notas del grafo sin sobrescribir las existentes", async () => {
+  const vault = await createTempVault();
+  try {
+    const ov = new ObsidianVault(vault);
+    const first = await ov.initializeMemoryGraph();
+    assert.equal(first.created.length, 4);
+    assert.equal(first.existing.length, 0);
+
+    const roadmapPath = join(vault, "Bit", "Hoja de ruta.md");
+    const originalRoadmap = await import("node:fs/promises").then(fs => fs.readFile(roadmapPath, "utf-8"));
+    assert.ok(originalRoadmap.includes("[[Bit/Capacidades]]"));
+    assert.ok(originalRoadmap.includes("aplauso"));
+    assert.ok(originalRoadmap.includes("cámara"));
+
+    const second = await ov.initializeMemoryGraph();
+    assert.equal(second.created.length, 0);
+    assert.equal(second.existing.length, 4);
+    assert.equal(
+      await import("node:fs/promises").then(fs => fs.readFile(roadmapPath, "utf-8")),
+      originalRoadmap
+    );
   } finally {
     await rm(vault, { recursive: true, force: true });
   }
@@ -154,6 +235,26 @@ test("vault: nombre de archivo sanitizado en saveConversationContext", async () 
     assert.ok(!filename.includes("/"));
     assert.ok(!filename.includes("\\"));
     assert.ok(!filename.includes(":"));
+  } finally {
+    await rm(vault, { recursive: true, force: true });
+  }
+});
+
+test("vault: lee solo Markdown dentro de la bóveda y limita el tamaño", async () => {
+  const vault = await createTempVault();
+  try {
+    const ov = new ObsidianVault(vault);
+    await writeFile(join(vault, "Notas", "segura.md"), "Nota externa no confiable");
+    await writeFile(join(vault, "Notas", "grande.md"), "x".repeat(600 * 1024));
+    assert.deepEqual(await ov.readNote(join("Notas", "segura.md")), {
+      path: join("Notas", "segura.md"),
+      content: "Nota externa no confiable",
+      bytes: Buffer.byteLength("Nota externa no confiable", "utf8"),
+      external: true,
+    });
+    await assert.rejects(ov.readNote(join("..", "escape.md")), /fuera de la bóveda/iu);
+    await assert.rejects(ov.readNote(join("Notas", "grande.md")), /límite/iu);
+    await assert.rejects(ov.readNote(join("Notas", "segura.txt")), /Markdown/iu);
   } finally {
     await rm(vault, { recursive: true, force: true });
   }

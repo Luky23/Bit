@@ -21,6 +21,13 @@ test("bit:chat acepta mensaje válido y modelo opcional", () => {
   assert.equal(result.ok, true);
 });
 
+test("bit:obsidian-graph valida sus parámetros y limita el tamaño de respuesta", () => {
+  assert.equal(validateToolInput("bit:obsidian-graph", {}).ok, true);
+  assert.equal(validateToolInput("bit:obsidian-graph", { notePath: "Bit/Inicio.md", limit: 25 }).ok, true);
+  assert.equal(validateToolInput("bit:obsidian-graph", { limit: 1001 }).ok, false);
+  assert.equal(validateToolInput("bit:obsidian-graph", { notePath: "", extra: true }).ok, false);
+});
+
 test("bit:chat rechaza modelo con caracteres inválidos", () => {
   const result = validateToolInput("bit:chat", { message: "hola", model: "qwen 3b" });
   assert.equal(result.ok, false);

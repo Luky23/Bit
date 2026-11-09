@@ -1,3 +1,5 @@
 @echo off
+setlocal
+cd /d "%~dp0"
 echo Iniciando entorno local de Bit...
-npm start
+call npm.cmd start

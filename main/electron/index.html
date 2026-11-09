@@ -454,5 +454,23 @@
     }
     document.getElementById('settings').addEventListener('click', loadStartupSoundSetting);
   </script>
+  <script>
+    window.bitRuntime.onEmergencyStop(() => {
+      window.BitUI?.setState('idle');
+      window.BitUI?.addMessage('Detención de emergencia activada.', 'system');
+    });
+    window.bitRuntime.onChatChunk(({ text }) => {
+      if (typeof text !== 'string' || !text) return;
+      const pending = [...document.querySelectorAll('#chat .message.system, #chat .message[data-streaming="true"]')]
+        .reverse()
+        .find(node => node.textContent === 'Pensando…' || node.dataset.streaming === 'true');
+      if (!pending) return;
+      pending.dataset.streaming = 'true';
+      pending.className = 'message assistant';
+      pending.textContent = (pending.textContent === 'Pensando…' ? '' : pending.textContent) + text;
+      const chat = document.getElementById('chat');
+      chat.scrollTop = chat.scrollHeight;
+    });
+  </script>
 </body>
 </html>

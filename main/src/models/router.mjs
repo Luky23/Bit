@@ -1,4 +1,4 @@
-const HEAVY = /\b(c[oó]digo|programa|programar|p[aá]gina|web|documento|planilla|presentaci[oó]n|plan de varios|pensalo mejor|razon[aá])\b/i;
+const HEAVY = /\b(c[oó]digo|programa|programar|p[aá]gina|web|documento|planilla|presentaci[oó]n|proyecto|proyectos|archivo|archivos|respaldo|respaldos|restaurar|crear|escribir|modificar|editar|actualizar|plan de varios|pensalo mejor|razon[aá])\b/i;
 const VISION = /\b(pantalla|screen|se[ñn]ala|señalar|ves|ver esto|captura)\b/i;
 const LIGHT = /\b(hola|buenos d[ií]as|buenas tardes|buenas noches|charla|voz|resumen|recordatorio|record[aá]me)\b/i;
 

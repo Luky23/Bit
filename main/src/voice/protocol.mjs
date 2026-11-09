@@ -1,7 +1,7 @@
 const MAX_LINE_BYTES = 1_048_576;
 const TYPES = new Set([
   "hello", "audio", "transcript", "speak", "stop", "error", "level", "ready",
-  "vad-calibrate", "vad-process", "vad-trigger", "stt-start", "stt-stop"
+  "vad-calibrate", "vad-process", "vad-trigger", "stt-configure", "stt-start", "stt-stop"
 ]);
 
 export function parseVoiceLine(line) {
@@ -20,6 +20,9 @@ export function parseVoiceLine(line) {
   }
   if (value.type === "vad-process" && typeof value.pcmBase64 !== "string") {
     throw new Error("vad-process sin pcmBase64");
+  }
+  if (value.type === "stt-configure" && (typeof value.modelPath !== "string" || !value.modelPath)) {
+    throw new Error("stt-configure sin modelPath");
   }
   return value;
 }

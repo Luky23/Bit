@@ -1,7 +1,7 @@
 """Sidecar Piper local: JSONL por stdin/stdout, sin sockets ni shell.
 
 Protocolo:
-  Entrada (stdin):  {"type": "speak", "text": "..."} | {"type": "stop"} | {"type": "vad-calibrate"} | {"type": "stt-start"} | {"type": "stt-stop"}
+  Entrada (stdin):  {"type": "speak", "text": "..."} | {"type": "stop"} | {"type": "stt-configure", "modelPath": "..."} | {"type": "stt-start"} | {"type": "stt-stop"}
   Salida (stdout):  {"type": "ready"} | {"type": "audio", "pcmBase64": "...", "sampleRate": 22050, "sampleWidth": 2, "channels": 1} | {"type": "transcript", "text": "..."} | {"type": "level", "rms": 0.0} | {"type": "error", "error": "..."}
 """
 
@@ -22,6 +22,7 @@ _STT_AVAILABLE = False
 
 try:
     from piper import PiperVoice
+    from piper.config import SynthesisConfig
     _PIPER_AVAILABLE = True
 except ImportError:
     pass
@@ -40,6 +41,12 @@ except ImportError:
     pass
 
 
+def create_assistant_synthesis_config():
+    if not _PIPER_AVAILABLE:
+        raise RuntimeError("piper-tts no instalado. Ejecutá scripts/setup-voice.ps1")
+    return SynthesisConfig(length_scale=1.12, noise_scale=0.55, noise_w_scale=0.65)
+
+
 def send(message: dict[str, object]) -> None:
     sys.stdout.write(json.dumps(message, ensure_ascii=False) + "\n")
     sys.stdout.flush()
@@ -56,10 +63,11 @@ class PiperTTS:
         if not _PIPER_AVAILABLE:
             raise RuntimeError("piper-tts no instalado. Ejecutá scripts/setup-voice.ps1")
         self.voice = PiperVoice.load(str(model_path), config_path=str(config_path) if config_path else None)
+        self.synthesis_config = create_assistant_synthesis_config()
 
     def synthesize(self, text: str):
         """Genera chunks de audio PCM (int16) para un texto."""
-        for chunk in self.voice.synthesize(text):
+        for chunk in self.voice.synthesize(text, syn_config=self.synthesis_config):
             yield {
                 "type": "audio",
                 "sampleRate": chunk.sample_rate,
@@ -115,16 +123,14 @@ class SileroVAD:
 class WhisperSTT:
     """Speech-to-Text usando faster-whisper (CPU)."""
 
-    def __init__(self, model_size: str = "small"):
+    def __init__(self, model_dir: Path | None):
         if not _STT_AVAILABLE:
             raise RuntimeError("faster-whisper no instalado. Ejecutá scripts/setup-voice.ps1")
-        import os
-        model_dir = Path(os.environ.get("BIT_WHISPER_MODEL", ""))
-        if model_dir and model_dir.is_dir():
-            self.model = WhisperModel(str(model_dir), device="cpu", compute_type="int8")
-        else:
-            # Descarga automática del modelo (solo la primera vez, en cache de huggingface)
-            self.model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        if model_dir is None or not model_dir.is_dir():
+            raise RuntimeError("Elegí un modelo local de transcripción desde Ajustes; no se descargan modelos automáticamente")
+        if not (model_dir / "model.bin").is_file() or not (model_dir / "config.json").is_file():
+            raise RuntimeError("El modelo local debe contener model.bin y config.json")
+        self.model = WhisperModel(str(model_dir), device="cpu", compute_type="int8", local_files_only=True)
 
     def transcribe(self, audio_path: Path) -> str:
         """Transcribe un archivo de audio WAV."""
@@ -172,31 +178,34 @@ class AudioRecorder:
 
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--model", required=True, help="Ruta al modelo Piper .onnx")
+    parser.add_argument("--model", required=False, help="Ruta al modelo Piper .onnx")
     parser.add_argument("--config", required=False, help="Ruta al config .json de Piper")
+    parser.add_argument("--whisper-model", required=False, help="Directorio de un modelo faster-whisper local")
     args = parser.parse_args()
 
-    model = Path(args.model).resolve()
-    if model.suffix.lower() != ".onnx" or not model.is_file():
+    model = Path(args.model).resolve() if args.model else None
+    if model is not None and (model.suffix.lower() != ".onnx" or not model.is_file()):
         print("modelo Piper inválido", file=sys.stderr)
         return 2
 
     config = Path(args.config).resolve() if args.config else None
-    if config is not None and (config.suffix.lower() != ".json" or not config.is_file()):
+    if config is not None and (config.suffix.lower() != ".json" or not config.is_file() or model is None):
         print("configuración Piper inválida", file=sys.stderr)
         return 2
 
-    # Inicializar Piper TTS
-    try:
-        tts = PiperTTS(model, config)
-    except Exception as e:
-        print(f"Error cargando Piper: {e}", file=sys.stderr)
-        return 3
+    tts: PiperTTS | None = None
+    if model is not None:
+        try:
+            tts = PiperTTS(model, config)
+        except Exception as e:
+            print(f"Error cargando Piper: {e}", file=sys.stderr)
+            return 3
 
     # VAD y STT opcionales (se inicializan bajo demanda)
     vad: SileroVAD | None = None
     stt: WhisperSTT | None = None
     recorder: AudioRecorder | None = None
+    whisper_model = Path(args.whisper_model).resolve() if args.whisper_model else None
 
     send({"type": "ready"})
 
@@ -214,9 +223,26 @@ def main() -> int:
                 if not isinstance(request.get("text"), str):
                     send_error("mensaje speak inválido")
                     continue
+                if tts is None:
+                    send_error("Voz Piper no configurada; seleccione un modelo local")
+                    continue
                 text = request["text"]
                 for chunk in tts.synthesize(text):
                     send(chunk)
+                send({"type": "ready"})
+                continue
+
+            if msg_type == "stt-configure":
+                model_path = request.get("modelPath")
+                if not isinstance(model_path, str) or not model_path:
+                    send_error("ruta de modelo STT inválida")
+                    continue
+                candidate = Path(model_path).resolve()
+                if not candidate.is_dir() or not (candidate / "model.bin").is_file() or not (candidate / "config.json").is_file():
+                    send_error("El modelo STT local debe contener model.bin y config.json")
+                    continue
+                whisper_model = candidate
+                stt = None
                 send({"type": "ready"})
                 continue
 
@@ -254,26 +280,28 @@ def main() -> int:
                     continue
                 # Guardar temporalmente
                 import tempfile
-                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                    import wave
-                    with wave.open(tmp.name, "wb") as wf:
+                import wave
+                tmp_path: Path | None = None
+                try:
+                    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                        tmp_path = Path(tmp.name)
+                    with wave.open(str(tmp_path), "wb") as wf:
                         wf.setnchannels(1)
                         wf.setsampwidth(2)
                         wf.setframerate(recorder.sample_rate)
                         wf.writeframes(audio_data)
-                    tmp_path = Path(tmp.name)
-                try:
                     if stt is None:
-                        stt = WhisperSTT()
+                        stt = WhisperSTT(whisper_model)
                     text = stt.transcribe(tmp_path)
                     send({"type": "transcript", "text": text})
                 except Exception as e:
                     send_error(f"Transcripción fallida: {e}")
                 finally:
-                    try:
-                        tmp_path.unlink()
-                    except OSError:
-                        pass
+                    if tmp_path is not None:
+                        try:
+                            tmp_path.unlink()
+                        except OSError:
+                            pass
                 continue
 
             # Mensaje desconocido

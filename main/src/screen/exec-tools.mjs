@@ -1,11 +1,11 @@
 /**
  * App Execution Module - Abre aplicaciones nativas con consentimiento explícito
- * Zero-Trust: Validación estricta, whitelist, confirmación nativa obligatoria
+ * Zero-Trust: validación estricta, whitelist y confirmación para toda apertura o ejecución
  */
 
 import pkg from "electron";
 const { shell, dialog } = pkg;
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 /**
@@ -28,13 +28,18 @@ const ALLOWED_EXECUTABLES = new Set([
 /**
  * Patrones permitidos para URLs/rutas
  */
-const URL_PROTOCOLS = new Set(["https:", "http:", "mailto:", "tel:"]);
+const URL_PROTOCOLS = new Set(["file:", "http:", "https:", "mailto:", "tel:"]);
+const WINDOWS_PROTOCOLS = new Set(["ms-settings:", "ms-photos:"]);
 const FILE_EXTENSIONS = new Set([
-  ".txt", ".md", ".json", ".js", ".ts", ".py", ".html", ".css",
-  ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+  ".txt", ".md", ".json", ".css",
+  ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif",
   ".mp3", ".wav", ".mp4", ".mkv", ".mov",
   ".zip", ".rar", ".7z", ".tar", ".gz",
 ]);
+
+function isLoopbackHost(hostname) {
+  return ["127.0.0.1", "localhost", "::1"].includes(hostname);
+}
 
 /**
  * Valida si un target es seguro para ejecutar
@@ -64,9 +69,19 @@ export function validateExecutionTarget(target) {
     return { ok: false, reason: "Patrón peligroso detectado (variables entorno)", type: "blocked" };
   }
 
-  // 1. URL con protocolo conocido (solo http/https/mailto/tel, NO rutas de Windows como C:\)
+  // 1. URLs locales. Las públicas deben pasar por net-gateway.
   try {
     const url = new URL(trimmed);
+    if (url.protocol === "file:") {
+      if (url.hostname && url.hostname !== "localhost") {
+        return { ok: false, reason: "No se permiten rutas file: hacia ubicaciones de red", type: "blocked" };
+      }
+      const extension = extname(decodeURIComponent(url.pathname)).toLowerCase();
+      if ([".js", ".ts", ".py", ".html", ".svg"].includes(extension)) {
+        return { ok: false, reason: "Bit no puede abrir ni ejecutar scripts o documentos activos", type: "blocked" };
+      }
+      if (FILE_EXTENSIONS.has(extension)) return { ok: true, type: "url" };
+    }
     if (URL_PROTOCOLS.has(url.protocol) && !/^[a-z]:\\/i.test(trimmed)) {
       return { ok: true, type: "url" };
     }
@@ -74,12 +89,11 @@ export function validateExecutionTarget(target) {
 
   // 2. Protocolo Windows especial - BLOQUEAR protocolos de confianza baja
   if (/^[a-z-]+:/i.test(trimmed) && !trimmed.includes("\\") && !trimmed.includes("/")) {
-    const lowTrustProtocols = ["ms-msdt:", "ms-remote:", "cmd:", "telnet:", "search-ms:", "javascript:"];
     const trimmedLower = trimmed.toLowerCase();
-    if (lowTrustProtocols.some(p => trimmedLower.startsWith(p))) {
-      return { ok: false, reason: "Protocolo de confianza baja bloqueado", type: "blocked" };
+    if (WINDOWS_PROTOCOLS.has(trimmedLower)) {
+      return { ok: true, type: "protocol" };
     }
-    return { ok: true, type: "protocol" };
+    return { ok: false, reason: "Protocolo no permitido", type: "blocked" };
   }
 
   // 3. Ruta a archivo con extensión permitida (solo nombre de archivo, sin ruta)
@@ -112,13 +126,20 @@ export function validateExecutionTarget(target) {
 
   return {
     ok: false,
-    reason: "Objetivo no permitido: solo ejecutables en whitelist (sin args), URLs http/https, protocolos Windows, o nombres de archivo simples con extensiones permitidas",
+    reason: "Objetivo no permitido: solo ejecutables locales en whitelist, archivos permitidos o protocolos Windows aprobados",
     type: "blocked",
   };
 }
 
+export function requiresExecutionAuthorization() {
+  // Abrir una aplicación, un archivo, una pestaña o una superficie del sistema
+  // modifica el estado visible del equipo. La lista blanca limita qué se puede
+  // abrir, pero no sustituye el consentimiento del usuario.
+  return true;
+}
+
 /**
- * Ejecuta un comando/aplicación con confirmación nativa
+ * Ejecuta un objetivo local validado y solicita confirmación para acciones sensibles
  * Para ejecutables usa spawn (desacoplado) en lugar de execFile para no matar la app al pasar el timeout.
  * @param {Object} options
  * @param {string} options.target - Comando, app, URL o ruta
@@ -131,24 +152,29 @@ export async function executeWithConfirmation({ target, args = "", mainWindow })
   if (!validation.ok) {
     return { ok: false, error: validation.reason };
   }
+  if (validation.type === "url") {
+    const url = new URL(target);
+    if ((url.protocol === "http:" || url.protocol === "https:") && !isLoopbackHost(url.hostname)) {
+      return { ok: false, error: "Las direcciones de internet deben consultarse mediante net-gateway" };
+    }
+  }
 
-  // Mostrar diálogo de confirmación nativa (target COMPLETO, sin truncar)
-  const displayArgs = args ? ` con args: ${args}` : "";
+  if (requiresExecutionAuthorization()) {
+    const displayArgs = args ? ` con argumentos: ${args}` : "";
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      title: "Autorizar acción sensible",
+      message: "¿Desea permitir esta acción?",
+      detail: `${target}${displayArgs}\n\nTipo: ${validation.type}. Si puede modificar el equipo o abrir contenido externo, cancele si no lo solicitó.`,
+      buttons: ["Cancelar", "Permitir"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
 
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: "question",
-    title: "Ejecutar aplicación / abrir recurso",
-    message: `¿Permitir ejecutar/abrir?`,
-    detail: `${target}${displayArgs}\n\nTipo: ${validation.type}`,
-    buttons: ["Cancelar", "Permitir"],
-    defaultId: 1,
-    cancelId: 0,
-    noLink: true,
-    icon: undefined,
-  });
-
-  if (result.response === 0) {
-    return { ok: false, cancelled: true };
+    if (result.response !== 1) {
+      return { ok: false, cancelled: true };
+    }
   }
 
   try {

@@ -57,9 +57,20 @@ export async function captureScreenBase64({ maxSide = 1280 } = {}) {
  * @returns {Promise<string>} Respuesta del modelo visual
  */
 export async function analyzeScreenWithVision({ prompt, visionModel = "llava", maxSide = 1280 }) {
-  const { imageBase64, width, height } = await captureScreenBase64({ maxSide });
+  const { imageBase64 } = await captureScreenBase64({ maxSide });
+  return analyzeImageWithVision({ prompt, visionModel, imageBase64 });
+}
 
-  // Llamar a Ollama /api/chat con imagen
+export async function analyzeImageWithVision({ prompt, visionModel = "llava", imageBase64 }) {
+  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("La pregunta de pantalla no puede estar vacía");
+  if (
+    typeof imageBase64 !== "string" ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(imageBase64) ||
+    Buffer.byteLength(imageBase64, "base64") > MAX_IMAGE_BYTES
+  ) {
+    throw new Error("La imagen de pantalla no es válida o es demasiado grande");
+  }
+
   const response = await fetch("http://127.0.0.1:11434/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -80,7 +91,9 @@ export async function analyzeScreenWithVision({ prompt, visionModel = "llava", m
   }
 
   const data = await response.json();
-  return String(data.message?.content ?? "");
+  const analysis = data.message?.content;
+  if (typeof analysis !== "string" || !analysis.trim()) throw new Error("El modelo visual no devolvió un análisis");
+  return analysis;
 }
 
 /**

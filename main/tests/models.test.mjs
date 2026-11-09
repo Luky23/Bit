@@ -56,6 +56,40 @@ test("Ollama queda restringido a loopback y status compara el tag completo", asy
   assert.equal(calls.length, 2);
 });
 
+test("Ollama permite cancelar una generación local con AbortSignal", async () => {
+  const controller = new AbortController();
+  let requestOptions;
+  const client = new OllamaClient({
+    fetchImpl: async (_url, options) => {
+      requestOptions = options;
+      return { ok: true, json: async () => ({ message: { content: "Resumen" } }) };
+    },
+  });
+
+  await client.generate("qwen2.5:3b", { stream: false }, { signal: controller.signal });
+  assert.equal(requestOptions.signal, controller.signal);
+});
+
+test("Ollama libera solo el modelo indicado con keep_alive cero", async () => {
+  let request;
+  const client = new OllamaClient({
+    fetchImpl: async (url, options) => {
+      request = { url: String(url), options };
+      return { ok: true, json: async () => ({ done: true }) };
+    },
+  });
+
+  assert.deepEqual(await client.unload("qwen2.5:3b"), { done: true });
+  assert.equal(request.url, "http://127.0.0.1:11434/api/generate");
+  assert.deepEqual(JSON.parse(request.options.body), {
+    model: "qwen2.5:3b",
+    prompt: "",
+    stream: false,
+    keep_alive: 0,
+  });
+  await assert.rejects(() => client.unload(""), /nombre del modelo/);
+});
+
 test("pedidos concurrentes del manager se serializan", async () => {
   const order = [];
   const client = {

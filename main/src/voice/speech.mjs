@@ -1,5 +1,80 @@
 import { encodeVoiceMessage } from "./protocol.mjs";
 
+const CODE_LINE = /^(?:(?:const|let|var|function|return|import|export|class|def|async|await|print|console|if|else|for|while|switch|case|try|catch|finally|throw|new|using|namespace|package)\b|\/\/|[{}[\]();]|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*(?:=>|=)\s*.+|[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*\s*\([^)]*\)\s*[;{]?$)/iu;
+
+function isCodeLine(line) {
+  const candidate = line.trim()
+    .replace(/^(?:[-*+]|\d+[.)])\s+/u, "")
+    .replace(/^>\s?/u, "");
+  if (!candidate) return false;
+  if (CODE_LINE.test(candidate)) return true;
+  if (/^\s{4,}\S/u.test(line)) return true;
+  return /(?:=>|===?|!==?|&&|\|\||\+\+|--|->|::|[{};])/.test(candidate)
+    && !/[.!?]\s/u.test(candidate);
+}
+
+/**
+ * Prepara una versión hablable sin cambiar el texto que se muestra en el chat.
+ */
+export function prepareSpeechText(text, preferredName = "") {
+  if (typeof text !== "string" || !text.trim()) return "";
+  text = text.normalize("NFC");
+
+  let removedCode = false;
+  const withoutCodeBlocks = text.replace(/```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)/gu, () => {
+    removedCode = true;
+    return " ";
+  });
+  const withoutCodeLines = withoutCodeBlocks.split(/\r?\n/u).filter((line) => {
+    if (!isCodeLine(line)) return true;
+    removedCode = true;
+    return false;
+  }).join("\n");
+  const readable = withoutCodeLines
+    .replace(/`[^`\n]+`/gu, () => {
+      removedCode = true;
+      return " ";
+    })
+    .replace(/!?\[([^\]]*)\]\([^)]+\)/gu, "$1")
+    .replace(/https?:\/\/\S+/giu, " ")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/^\s{0,3}#{1,6}\s*/gmu, "")
+    .replace(/^\s*>\s?/gmu, "")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gmu, "")
+    .replace(/[^\p{L}\p{M}\p{N}\s,.;:!?'-]/gu, " ")
+    .replace(/\p{Lm}/gu, " ")
+    .replace(/\s+([,.;:!?])/gu, "$1")
+    .replace(/([,;:])(?=\S)/gu, "$1 ")
+    .replace(/(?:,\s*){2,}/gu, ", ")
+    .replace(/\s+/gu, " ")
+    .trim();
+
+  const speechText = readable || (removedCode ? "La respuesta incluye código que puede consultar en el chat." : "");
+  const name = typeof preferredName === "string"
+    ? preferredName.normalize("NFC")
+      .replace(/[^\p{L}\p{M}\s.'-]/gu, " ")
+      .replace(/\p{Lm}/gu, " ")
+      .replace(/\s+/gu, " ")
+      .trim()
+    : "";
+  if (!speechText || !name) return speechText;
+
+  const normalize = (value) => value.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const normalizedSpeech = normalize(speechText);
+  const normalizedName = normalize(name);
+  const greetings = ["hola", "buenos dias", "buenas tardes", "buenas noches"];
+  const alreadyAddressed = normalizedSpeech.startsWith(`${normalizedName},`)
+    || normalizedSpeech.startsWith(`${normalizedName}.`)
+    || normalizedSpeech.startsWith(`${normalizedName} `)
+    || greetings.some((greeting) =>
+      [", ", " "].some((separator) => normalizedSpeech.startsWith(`${greeting}${separator}${normalizedName}`))
+    );
+
+  if (alreadyAddressed) return speechText;
+  const continuation = speechText.replace(/^\p{Lu}/u, (letter) => letter.toLocaleLowerCase("es"));
+  return `${name}, ${continuation}`;
+}
+
 /**
  * Divide un texto en oraciones completas.
  * Respeta puntos, interrogaciones, exclamaciones y elipsis.
@@ -43,19 +118,23 @@ export class SpeechQueue {
     this.items = [];
     this.running = false;
     this.cancelled = false;
+    this.generation = 0;
     this.currentPromise = null;
     this._readyResolve = null; // Resolver pendiente de notifyReady()
+    this._readyReject = null;
+    this.idleWaiters = [];
   }
 
   /**
    * Encola texto para ser hablado. Segmenta en oraciones.
    * @param {string} text
    */
-  enqueue(text) {
+  enqueue(text, preferredName = "") {
     this.cancelled = false;
-    const sentences = splitSentences(text);
+    this.generation++;
+    const sentences = splitSentences(prepareSpeechText(text, preferredName));
+    this.items = sentences;
     if (sentences.length === 0) return;
-    this.items.push(...sentences);
     void this.#drain();
   }
 
@@ -69,7 +148,9 @@ export class SpeechQueue {
     if (this._readyResolve) {
       this._readyResolve();
       this._readyResolve = null;
+      this._readyReject = null;
     }
+    if (!this.running) this.#settleIdle();
     // Enviar comando stop al sidecar
     try {
       this.sendToSidecar(encodeVoiceMessage({ type: "stop" }));
@@ -86,7 +167,28 @@ export class SpeechQueue {
     if (this._readyResolve) {
       const resolve = this._readyResolve;
       this._readyResolve = null;
+      this._readyReject = null;
       resolve();
+    }
+  }
+
+  notifyError(error) {
+    if (!this._readyReject) return;
+    const reject = this._readyReject;
+    this._readyResolve = null;
+    this._readyReject = null;
+    reject(error);
+  }
+
+  waitForIdle() {
+    if (!this.isActive) return Promise.resolve();
+    return new Promise((resolve, reject) => this.idleWaiters.push({ resolve, reject }));
+  }
+
+  #settleIdle(error) {
+    for (const waiter of this.idleWaiters.splice(0)) {
+      if (error) waiter.reject(error);
+      else waiter.resolve();
     }
   }
 
@@ -97,19 +199,28 @@ export class SpeechQueue {
     return this.running || this.items.length > 0;
   }
 
+  get isWaitingForReady() {
+    return this._readyResolve !== null;
+  }
+
   async #drain() {
     if (this.running) return;
     this.running = true;
+    const generation = this.generation;
 
     try {
-      while (!this.cancelled && this.items.length > 0) {
+      while (!this.cancelled && generation === this.generation && this.items.length > 0) {
         const sentence = this.items.shift();
         if (!sentence) continue;
 
         await this.#speakSentence(sentence);
       }
+    } catch (error) {
+      this.#settleIdle(error);
     } finally {
       this.running = false;
+      if (!this.cancelled && this.items.length > 0) void this.#drain();
+      else this.#settleIdle();
     }
   }
 
@@ -130,6 +241,7 @@ export class SpeechQueue {
       if (this.waitForReady) {
         timeout = setTimeout(() => {
           this._readyResolve = null;
+          this._readyReject = null;
           reject(new Error("Timeout esperando ready del sidecar"));
         }, 30000);
       }
@@ -152,6 +264,10 @@ export class SpeechQueue {
         this._readyResolve = () => {
           cleanup();
           resolve();
+        };
+        this._readyReject = (error) => {
+          cleanup();
+          reject(error);
         };
       } else {
         // Comportamiento anterior: resolver inmediatamente después de enviar

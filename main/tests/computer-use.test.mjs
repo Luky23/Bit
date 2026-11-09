@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { validateToolInput, listSchemas } from "../src/core/validation.mjs";
-import { validateExecutionTarget } from "../src/screen/exec-tools.mjs";
+import { requiresExecutionAuthorization, validateExecutionTarget } from "../src/screen/exec-tools.mjs";
 
 test("validation: esquemas de computer use registrados", () => {
   const schemas = listSchemas();
@@ -52,7 +52,7 @@ test("exec-tools: validateExecutionTarget permite ejecutables en whitelist", () 
   assert.deepEqual(validateExecutionTarget("code.exe"), { ok: true, type: "executable" });
 });
 
-test("exec-tools: validateExecutionTarget permite URLs https/http", () => {
+test("exec-tools: valida URLs web mientras que el ejecutor reserva internet para net-gateway", () => {
   assert.deepEqual(validateExecutionTarget("https://github.com"), { ok: true, type: "url" });
   assert.deepEqual(validateExecutionTarget("http://localhost:3000"), { ok: true, type: "url" });
 });
@@ -60,12 +60,26 @@ test("exec-tools: validateExecutionTarget permite URLs https/http", () => {
 test("exec-tools: validateExecutionTarget permite protocolos Windows", () => {
   assert.deepEqual(validateExecutionTarget("ms-settings:"), { ok: true, type: "protocol" });
   assert.deepEqual(validateExecutionTarget("ms-photos:"), { ok: true, type: "protocol" });
+  assert.equal(validateExecutionTarget("javascript:alert(1)").ok, false);
+  assert.equal(validateExecutionTarget("custom-protocol:run").ok, false);
 });
 
 test("exec-tools: validateExecutionTarget permite archivos con extensiones permitidas", () => {
   assert.deepEqual(validateExecutionTarget("documento.pdf"), { ok: true, type: "file" });
-  assert.deepEqual(validateExecutionTarget("script.js"), { ok: true, type: "file" });
   assert.deepEqual(validateExecutionTarget("nota.md"), { ok: true, type: "file" });
+});
+
+test("exec-tools: bloquea scripts, documentos activos y rutas file: remotas", () => {
+  for (const target of [
+    "script.js",
+    "tool.py",
+    "page.html",
+    "vector.svg",
+    "file:///C:/Users/Luca/script.js",
+    "file://servidor/compartido/nota.txt",
+  ]) {
+    assert.equal(validateExecutionTarget(target).ok, false, target);
+  }
 });
 
 test("exec-tools: validateExecutionTarget permite .exe en directorios seguros", () => {
@@ -93,4 +107,14 @@ test("exec-tools: validateExecutionTarget BLOQUEA extensiones no permitidas", ()
 test("exec-tools: validateExecutionTarget BLOQUEA rutas arbitrarias", () => {
   assert.equal(validateExecutionTarget("C:\\Users\\user\\AppData\\Local\\Temp\\x.exe").ok, false);
   assert.equal(validateExecutionTarget("C:\\Windows\\Temp\\x.exe").ok, false);
+});
+
+test("exec-tools: toda apertura o ejecución requiere autorización", () => {
+  assert.equal(requiresExecutionAuthorization({ target: "calc.exe", type: "executable" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "C:\\Program Files\\App\\app.exe", type: "executable" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "msconfig.exe", type: "executable" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "nota.pdf", type: "file" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "script.js", type: "file" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "calc.exe", args: "--unsafe", type: "executable" }), true);
+  assert.equal(requiresExecutionAuthorization({ target: "ms-settings:", type: "protocol" }), true);
 });

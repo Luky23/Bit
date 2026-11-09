@@ -11,7 +11,10 @@ import { ObsidianVault } from "../src/obsidian/vault.mjs";
 const HASH = "a".repeat(64);
 
 test("abuso exec: shells y scripts NO deben ejecutarse", () => {
-  for (const t of ["powershell.exe", "pwsh.exe", "cmd.exe", "regedit.exe", "script.js", "tool.py"])
+  for (const t of [
+    "powershell.exe", "pwsh.exe", "cmd.exe", "regedit.exe", "script.js", "tool.py",
+    "file:///C:/Users/Luca/script.js", "file://servidor/compartido/nota.txt",
+  ])
     assert.equal(validateExecutionTarget(t).ok, false, t);
 });
 test("abuso exec: protocolos peligrosos bloqueados", () => {

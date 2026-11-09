@@ -372,6 +372,7 @@ export async function runAgentTurn({
   imageDataUrl = null,
   config = {},
   deps = {},
+  onChunk,
 }) {
   const {
     chatClient,
@@ -567,7 +568,7 @@ export async function runAgentTurn({
 
     const requestBody = {
       model: route.model,
-      stream: false,
+      stream: typeof onChunk === "function" && !mayNeedTools && !webSearchRequested && !imageDataUrl,
       messages: currentMessages,
       keep_alive: route.role === "fast" ? "10m" : "0",
       options: { temperature: 0.3, num_predict: route.role === "fast" ? webSearchRequested ? 256 : 128 : 512 },
@@ -587,7 +588,7 @@ export async function runAgentTurn({
 
     let response;
     try {
-      response = await chatClient.generate(route.model, requestBody);
+      response = await chatClient.generate(route.model, requestBody, { onChunk: requestBody.stream ? onChunk : undefined });
     } catch (error) {
       return {
         text: `Error al comunicarse con el modelo: ${error.message}`,

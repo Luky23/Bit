@@ -20,9 +20,21 @@ export class OllamaClient {
 
   capabilities(model) { return this.capabilityCache.get(model); }
 
-  async generate(model, request) {
-    const response = await this.fetch(new URL("/api/chat", this.baseUrl), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, ...request }) });
+  async generate(model, request, { signal } = {}) {
+    const response = await this.fetch(new URL("/api/chat", this.baseUrl), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, ...request }), signal });
     if (!response.ok) throw new Error(`Ollama /api/chat: ${response.status}`);
+    return response.json();
+  }
+
+  async unload(model, { signal } = {}) {
+    if (typeof model !== "string" || !model.trim()) throw new Error("Se requiere el nombre del modelo para descargarlo de memoria");
+    const response = await this.fetch(new URL("/api/generate", this.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model, prompt: "", stream: false, keep_alive: 0 }),
+      signal,
+    });
+    if (!response.ok) throw new Error(`Ollama no pudo liberar el modelo ${model}: ${response.status}`);
     return response.json();
   }
 

@@ -14,7 +14,7 @@ Empezar por la FASE 1 y seguir en orden: las fases dependen de las anteriores.
 
 ## 0. Qué se construye
 
-Bit: asistente tipo Jarvis, local y privado, para Windows. Estilo formal y respetuoso, en español.
+Bit: asistente tipo Jarvis, local y privado, para Windows. Personalidad formal, serena, atenta y precisa; confianza tranquila, iniciativa útil sin insistir y humor sutil cuando encaje. Habla en español, trata al usuario de usted y usa su nombre configurado con naturalidad. No dramatiza ni finge capacidades o acciones.
 
 **Equipo:** Samsung Galaxy Book3 común, gráficos integrados, 16 GB de RAM. Todo se ejecuta en CPU.
 
@@ -116,9 +116,11 @@ Pregunta solo lo peligroso o lo que modifica algo (regla 3).
 1. La bóveda viene de una versión vieja de Bit. **Paso 0 (usuario):** hace una copia de seguridad. Bit la abre primero en modo solo lectura y entrega un informe de compatibilidad (estructura, frontmatter, enlaces rotos, formato antiguo).
 2. Migración de formato viejo solo con vista previa y respaldo; nunca tocar `.obsidian`; escritura solo bajo una carpeta propia (`Bit/`), con nombres válidos en Windows y escritura atómica.
 3. **Pedir autorización explícita antes de guardar** el contexto de la conversación o un resumen de un proyecto en la bóveda.
-4. Corregir los fallos conocidos: la raíz por defecto era el repo; backlinks resueltos por nombre de archivo y alias como Obsidian (verificar con test); parseo de frontmatter, aliases, tags y `#etiquetas`; límites configurables con aviso "indexadas X de Y"; exclusiones (`.obsidian`, `.trash`, ocultas, symlinks, conflictos de sincronización, carpetas privadas).
-5. Embeddings locales opcionales (`/api/embed`). Tests con una bóveda ficticia; la real nunca entra al repo.
-**Aceptación:** informe de compatibilidad sobre la bóveda real (sin copiar su contenido al repo) y tests con fixtures.
+4. Construir un grafo de wikilinks resolviendo títulos, alias, rutas, encabezados y backlinks; ignorar enlaces dentro de código y no crear aristas para referencias rotas.
+5. Preparar desde Ajustes, con confirmación nativa, notas iniciales enlazadas de índice, hoja de ruta, capacidades e instrucciones para Bit. No sobrescribir notas existentes; añadir `[[Bit/Inicio]]` a memorias nuevas guardadas.
+6. Corregir los fallos conocidos: la raíz por defecto era el repo; parseo de frontmatter, aliases, tags y `#etiquetas`; límites configurables con aviso "indexadas X de Y"; exclusiones (`.obsidian`, `.trash`, ocultas, symlinks, conflictos de sincronización, carpetas privadas).
+7. Embeddings locales opcionales (`/api/embed`). Tests con una bóveda ficticia; la real nunca entra al repo.
+**Aceptación:** informe de compatibilidad sobre la bóveda real (sin copiar su contenido al repo), tests con fixtures y validación manual de la vista de grafo en Obsidian.
 
 ## FASE 10 — Pantalla: ver y señalar
 1. Captura bajo demanda, con consentimiento inicial, lista de exclusión, imagen solo en memoria y auditoría sin contenido; reducir a ~1280 px de lado largo antes de enviarla.

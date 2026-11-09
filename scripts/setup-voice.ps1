@@ -1,21 +1,17 @@
 <#
 .SYNOPSIS
-    Configura el entorno de voz local de Bit (Piper TTS + Silero VAD + faster-whisper STT).
+    Configura el entorno de voz local de Bit (Piper TTS + faster-whisper STT).
 
 .DESCRIPTION
     Este script crea un entorno virtual Python en main/voice-sidecar/.venv,
-    instala las dependencias (requirements.txt con versiones fijadas) y descarga
-    los modelos necesarios. NO ejecuta codigo automatico desde la app; el usuario
-    debe revisar y ejecutar este script manualmente.
+    e instala las dependencias declaradas. El usuario debe revisar y ejecutar
+    este script manualmente. No descarga modelos de voz, VAD ni transcripcion.
 
 .NOTAS
     - Requiere Python 3.10+ instalado y en PATH.
     - Los modelos de voz (.onnx, .json) NO se incluyen en el repo; deben colocarse
       manualmente en %LOCALAPPDATA%\Bit\voices\ tras la instalacion.
-    - Silero VAD: descargar silero_vad.onnx de https://github.com/snakers4/silero-vad
-    - Piper: descargar modelos .onnx/.json de https://huggingface.co/rhasspy/piper-voices
-    - faster-whisper: los modelos se descargan automaticamente a la cache de HuggingFace
-      la primera vez que se usan (small/base para CPU).
+    - El modelo STT debe estar convertido para CTranslate2 y se selecciona desde Ajustes.
 #>
 
 param(
@@ -78,38 +74,24 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "Creando carpeta de voces en $voicesDir..." -ForegroundColor Yellow
 New-Item -ItemType Directory -Force -Path $voicesDir | Out-Null
 
-# Descargar modelo Silero VAD
-$vadModelUrl = "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
-$vadModelPath = Join-Path $voicesDir "silero_vad.onnx"
-if (-not (Test-Path $vadModelPath)) {
-    Write-Host "Descargando modelo Silero VAD..." -ForegroundColor Yellow
-    try {
-        Invoke-WebRequest -Uri $vadModelUrl -OutFile $vadModelPath -UseBasicParsing
-        Write-Host "  Silero VAD descargado en $vadModelPath" -ForegroundColor Green
-    } catch {
-        Write-Warning "No se pudo descargar Silero VAD automaticamente: $_"
-        Write-Host "  Descargalo manualmente desde: $vadModelUrl" -ForegroundColor Yellow
-        Write-Host "  Y colocalo en: $vadModelPath" -ForegroundColor Yellow
-    }
-} else {
-    Write-Host "  Silero VAD ya existe en $vadModelPath" -ForegroundColor Green
-}
-
 # Instrucciones para modelos Piper
 Write-Host "" -ForegroundColor Cyan
 Write-Host "=== PROXIMOS PASOS MANUALES ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "1. Modelos Piper TTS (espanol recomendado):" -ForegroundColor Yellow
-Write-Host "   Visita: https://huggingface.co/rhasspy/piper-voices/tree/main/es_ES" -ForegroundColor Gray
-Write-Host "   Descarga: es_ES-davefx-medium.onnx y es_ES-davefx-medium.onnx.json" -ForegroundColor Gray
+Write-Host "   Coloca localmente es_ES-davefx-medium.onnx y su archivo .json" -ForegroundColor Gray
 Write-Host "   Colocalos en: $voicesDir\" -ForegroundColor Gray
 Write-Host ""
-Write-Host "2. Verificar instalacion:" -ForegroundColor Yellow
+Write-Host "2. Transcripcion local (opcional):" -ForegroundColor Yellow
+Write-Host "   Coloca un modelo faster-whisper convertido para CTranslate2 fuera del repo." -ForegroundColor Gray
+Write-Host "   Selecciona la carpeta desde Ajustes; debe contener model.bin y config.json." -ForegroundColor Gray
+Write-Host "   Bit no descarga modelos STT automaticamente." -ForegroundColor Gray
+Write-Host ""
+Write-Host "3. Verificar instalacion:" -ForegroundColor Yellow
 Write-Host "   $env:LOCALAPPDATA\Bit\voices\es_ES-davefx-medium.onnx" -ForegroundColor Gray
 Write-Host "   $env:LOCALAPPDATA\Bit\voices\es_ES-davefx-medium.onnx.json" -ForegroundColor Gray
-Write-Host "   $env:LOCALAPPDATA\Bit\voices\silero_vad.onnx" -ForegroundColor Gray
 Write-Host ""
-Write-Host "3. Probar sidecar manualmente:" -ForegroundColor Yellow
+Write-Host "4. Probar sidecar manualmente:" -ForegroundColor Yellow
 $testCmd = "`"$pythonExe`" `"$voiceSidecarDir\sidecar.py`" --model `"$voicesDir\es_ES-davefx-medium.onnx`" --config `"$voicesDir\es_ES-davefx-medium.onnx.json`""
 Write-Host "   $testCmd" -ForegroundColor Gray
 # Usar comillas simples para el JSON en PowerShell

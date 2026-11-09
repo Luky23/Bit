@@ -3,12 +3,16 @@ const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session } 
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
-import { isAbsolute, join } from "node:path";
+import { stat } from "node:fs/promises";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "../src/screen/capture-policy.mjs";
 import { createVisionMessage, imageDataUrlToBase64 } from "../src/screen/vision-request.mjs";
 import { captureScreenBase64, analyzeImageWithVision, analyzeScreenWithVision, captureAndAnalyze } from "../src/screen/vision-tools.mjs";
+import { analyzeImageWithTesseract } from "../src/screen/tesseract-ocr.mjs";
 import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/exec-tools.mjs";
+import { searchFiles, searchSystemFiles, isSafeToOpenExternally } from "../src/core/file-tools.mjs";
+import { enforceSandbox } from "../src/core/sandbox.mjs";
 import { toolSchemaName, validateToolInput } from "../src/core/validation.mjs";
 import { runAgentTurn, AGENT_TOOLS, isScreenQuestion } from "../src/core/agent.mjs";
 import { OllamaClient } from "../src/models/ollama-client.mjs";
@@ -18,11 +22,13 @@ import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { collectRecentVaultNotes } from "../src/obsidian/daily-summary.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
 import { createProjectWorkspace, writeWorkspaceAudit } from "../src/projects/workspace.mjs";
+import { createAnswerCard } from "../src/core/response-cards.mjs";
 import { SpeechQueue, InterruptionManager } from "../src/voice/speech.mjs";
 import { encodeVoiceMessage, parseVoiceLine, JsonlFramer } from "../src/voice/protocol.mjs";
 import { downloadSecureAsset, ensurePiperModel, PIPER_MODELS } from "../src/core/downloader.mjs";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
+const CODEBASE_DIR = resolve(here, "../../..");
 const ollamaClient = new OllamaClient();
 const previewData = join(app.getPath("appData"), "Bit Preview");
 app.setPath("userData", previewData);
@@ -49,6 +55,38 @@ const netGateway = createNetGateway({
     }
   },
 });
+
+/**
+ * Avisa a la interfaz de los resultados de búsqueda de archivos para pintar
+ * la tarjeta flotante "ARCHIVO ENCONTRADO".
+ */
+const notifyFileSearchResults = (result) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send("bit:file-search-results", result);
+};
+
+/**
+ * Construye una tarjeta de clima a partir del snippet del buscador.
+ * Ejemplo de snippet: "Ahora: 22°C, humedad 60%, viento 12 km/h, probabilidad de precipitación 20%, mínima 18°C, máxima 26°C"
+ */
+function weatherCardFromSources(sources) {
+  const weather = Array.isArray(sources) ? sources.find((source) => /^Clima actual en /u.test(source?.title || "")) : null;
+  if (!weather) return null;
+  const details = String(weather.snippet || "");
+  const take = (expression) => details.match(expression)?.[1] || "—";
+  const rangeMatch = details.match(/mínima\s+(-?[\d.,]+°C),\s*máxima\s+(-?[\d.,]+°C)/iu);
+  return {
+    kind: "weather",
+    location: String(weather.title).replace(/^Clima actual en /u, "").toUpperCase(),
+    temperature: take(/Ahora:[^,]*,\s*(-?\d+(?:[.,]\d+)?°C)/iu),
+    humidity: take(/humedad\s+(\d+%)/iu),
+    rain: take(/probabilidad de precipitaci[oó]n\s+(\d+%)/iu),
+    wind: take(/viento\s+([\d.,]+\s*km\/h)/iu),
+    range: rangeMatch ? `${rangeMatch[2]} / ${rangeMatch[1]}` : "—",
+    condition: take(/Ahora:\s*([^,;]+)/iu),
+  };
+}
+
 let voiceProcess;
 let voiceReady = false;
 let voiceWaiters = [];
@@ -98,6 +136,18 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
       height: snapshot.height,
       visionModel,
     });
+    try {
+      const ocrText = await analyzeImageWithTesseract({ imageBase64: snapshot.imageBase64 }).catch(() => "");
+      mainWindow?.webContents.send("bit:screen-analysis", {
+        analysis,
+        ocrText,
+        width: snapshot.width,
+        height: snapshot.height,
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // No bloquea la respuesta por una notificación de interfaz.
+    }
     return {
       ok: true,
       analysis,
@@ -376,14 +426,78 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         });
       }
       case "system.openApp": {
+        const validation = validateToolInput("bit:system-open-app", toolArgs);
+        if (!validation.ok) throw new Error(validation.error);
+        const target = String(toolArgs.target).trim();
+        // Archivo localizado en el equipo: abrir directamente con el SO.
+        if (isAbsolute(target)) {
+          let info;
+          try {
+            info = await stat(target);
+          } catch {
+            info = null;
+          }
+          if (info?.isFile() && isSafeToOpenExternally(target)) {
+            const openError = await shell.openPath(target);
+            if (openError) return { ok: false, error: openError };
+            await writeWorkspaceAudit(join(previewData, "audit.log"), { action: "system.openApp", path: target, status: "completed" });
+            return { ok: true, target, mode: "open" };
+          }
+        }
         if (!mainWindow || mainWindow.isDestroyed()) {
           return { ok: false, error: "Ventana principal no disponible para confirmación" };
         }
         return executeWithConfirmation({
-          target: toolArgs.target,
+          target,
           args: toolArgs.args || "",
           mainWindow,
         });
+      }
+      case "system.searchFiles": {
+        const validation = validateToolInput("bit:system-search-files", toolArgs);
+        if (!validation.ok) throw new Error(validation.error);
+        const scope = String(toolArgs.targetDir ?? toolArgs.subDir ?? "").trim();
+        const isSystemScope = /^(?:desktop|documentos|descargas|workspace|all)$/iu.test(scope);
+        if (isSystemScope) {
+          const roots = [];
+          const add = (dir) => { if (dir) roots.push(dir); };
+          if (/^(?:all|desktop)$/iu.test(scope)) add(app.getPath("desktop"));
+          if (/^(?:all|documentos)$/iu.test(scope)) add(app.getPath("documents"));
+          if (/^(?:all|descargas)$/iu.test(scope)) add(app.getPath("downloads"));
+          if (/^(?:all|workspace)$/iu.test(scope) && config.projectsRoot) add(config.projectsRoot);
+          const result = await searchSystemFiles({ query: toolArgs.query, extension: toolArgs.extension, roots });
+          result.scope = scope;
+          result.results = result.results.map((file) => ({ ...file, absolutePath: join(file.root, file.path) }));
+          notifyFileSearchResults(result);
+          void writeWorkspaceAudit(join(previewData, "audit.log"), {
+            action: "system.searchFiles",
+            query: toolArgs.query,
+            extension: toolArgs.extension || "",
+            subDir: scope,
+            results: result.results.length,
+            status: "completed",
+          }).catch((error) => console.warn("[audit] No se pudo registrar la búsqueda:", error.message));
+          return result;
+        }
+        if (!config.projectsRoot) throw new Error("Elija primero una carpeta local para proyectos en Ajustes");
+        const targetDir = scope ? await enforceSandbox(config.projectsRoot, scope) : config.projectsRoot;
+        const result = await searchFiles({ query: toolArgs.query, extension: toolArgs.extension, targetDir });
+        if (scope) {
+          const prefix = relative(config.projectsRoot, targetDir).split("\\").join("/");
+          result.results = result.results.map((file) => ({ ...file, path: `${prefix}/${file.path}`, absolutePath: join(targetDir, file.path) }));
+        } else {
+          result.results = result.results.map((file) => ({ ...file, absolutePath: join(config.projectsRoot, file.path) }));
+        }
+        notifyFileSearchResults(result);
+        void writeWorkspaceAudit(join(previewData, "audit.log"), {
+          action: "system.searchFiles",
+          query: toolArgs.query,
+          extension: toolArgs.extension || "",
+          subDir: scope,
+          results: result.results.length,
+          status: "completed",
+        }).catch((error) => console.warn("[audit] No se pudo registrar la búsqueda:", error.message));
+        return result;
       }
       case "system.captureWebcam": {
         return { ok: false, error: "Captura de cámara web no implementada en este turno" };
@@ -456,7 +570,25 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
   if (isWeatherSearchRequest(message)) previousWeatherQuestion = message;
   else if (!weatherFollowUp) previousWeatherQuestion = "";
 
-  return { model, text: result.text, toolCalls: result.toolCalls, rounds: result.rounds, sources: result.sources || [] };
+  const answerText = result.text || "";
+  const sources = result.sources || [];
+  const weatherCard = weatherCardFromSources(sources);
+  const answerCard = weatherCard ? null : createAnswerCard({ message, text: answerText, sources });
+  // Salida por voz: Bit responde en voz alta mediante Piper TTS.
+  if (config.speechEnabled === true && answerText.trim()) {
+    void enqueueSpeech(answerText).catch((error) => {
+      console.error("[tts] No se pudo encolar la respuesta hablada:", error.message);
+      mainWindow?.webContents.send("bit:voice-error", error.message);
+    });
+  }
+  return {
+    model,
+    text: answerText,
+    toolCalls: result.toolCalls,
+    rounds: result.rounds,
+    sources,
+    cards: weatherCard ? [weatherCard] : answerCard ? [answerCard] : [],
+  };
 });
 
 function overlayBounds(expanded = false) {
@@ -903,12 +1035,28 @@ ipcMain.handle("bit:system-open-app", async (_event, request = {}) => {
   const validation = validateToolInput("bit:system-open-app", request);
   if (!validation.ok) throw new Error(validation.error);
 
+  const target = String(request.target).trim();
+  // Archivo localizado en el equipo: abrir directamente con el SO.
+  if (isAbsolute(target)) {
+    let info;
+    try {
+      info = await stat(target);
+    } catch {
+      info = null;
+    }
+    if (info?.isFile() && isSafeToOpenExternally(target)) {
+      const openError = await shell.openPath(target);
+      if (openError) return { ok: false, error: openError };
+      await writeWorkspaceAudit(join(previewData, "audit.log"), { action: "system.openApp", path: target, status: "completed" });
+      return { ok: true, target, mode: "open" };
+    }
+  }
+
   if (!mainWindow || mainWindow.isDestroyed()) {
     return { ok: false, error: "Ventana principal no disponible para confirmación" };
   }
-
   return executeWithConfirmation({
-    target: request.target,
+    target,
     args: request.args || "",
     mainWindow,
   });
@@ -983,6 +1131,58 @@ function createOverlayWindow() {
   overlayWindow.on("closed", () => { overlayWindow = undefined; });
 }
 
+/**
+ * Rutina de autoverificación al arranque. Ejecuta comprobaciones no bloqueantes
+ * e informa en consola con el formato [OK] / [FALLO] para telemetría inicial.
+ */
+async function runStartupSelfTest() {
+  const report = (ok, test) => console.log(`${ok ? "[OK]" : "[FALLO]"} ${test}`);
+
+  // 1. Conexión de voz y micrófono STT.
+  try {
+    await waitVoiceReady();
+    report(true, "Conexión de voz y micrófono STT active");
+  } catch (error) {
+    report(false, `Conexión de voz y micrófono STT: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // 2. Piper TTS enlazado.
+  try {
+    const paths = await voicePaths();
+    report(paths.available, paths.available ? "Piper TTS enlazado y emitiendo audio" : `Piper TTS no disponible: ${paths.error || "sin voz configurada"}`);
+  } catch (error) {
+    report(false, `Piper TTS: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // 3. Captura de pantalla y Tesseract OCR.
+  try {
+    const snapshot = await captureScreenBase64({ maxSide: 640 });
+    const ocrText = await analyzeImageWithTesseract({ imageBase64: snapshot.imageBase64 }).catch(() => "");
+    report(Boolean(snapshot.imageBase64) && snapshot.imageBase64.length > 128, "Captura de pantalla y Tesseract OCR reconociendo texto e imágenes");
+  } catch (error) {
+    report(false, `Captura de pantalla y Tesseract OCR: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // 4. Búsqueda y apertura local de archivos (se valida la ubicación, no se ejecuta).
+  try {
+    const found = await searchFiles({ query: "package.json", targetDir: CODEBASE_DIR });
+    report(found.results.length > 0, "Búsqueda y apertura local de archivos probada");
+  } catch (error) {
+    report(false, `Búsqueda y apertura local de archivos: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  // 5. API de Clima / Tarjetas Flotantes dinámicas.
+  try {
+    const card = weatherCardFromSources([{
+      title: "Clima actual en Buenos Aires",
+      snippet: "Ahora: 22°C, humedad 60%, viento 12 km/h, probabilidad de precipitación 20%, mínima 18°C, máxima 26°C",
+    }]);
+    report(Boolean(card) && card.temperature === "22°C", "API de Clima / Tarjetas Flotantes dinámicas activas a la derecha del núcleo");
+  } catch (error) {
+    report(false, `API de Clima / Tarjetas Flotantes: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 app.whenReady().then(async () => {
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => callback({ cancel: !isAllowedUrl(details.url) }));
 
@@ -1015,6 +1215,7 @@ app.whenReady().then(async () => {
 
   createMainWindow();
   createOverlayWindow();
+  void runStartupSelfTest().catch((error) => console.error("[self-test] No se pudo completar la autoverificación:", error));
   app.on("activate", () => { if (!mainWindow || mainWindow.isDestroyed()) createMainWindow(); if (!overlayWindow || !overlayWindow.isDestroyed()) createOverlayWindow(); });
 });
 

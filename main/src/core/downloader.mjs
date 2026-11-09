@@ -13,18 +13,7 @@ import { unlink, access, constants } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import { pipeline } from "node:stream/promises";
-
-/**
- * Dominios permitidos para descargas (whitelist estricta)
- * No se permiten subdominios comodín - solo exactos o específicos listados
- */
-const ALLOWED_DOMAINS = new Set([
-  "huggingface.co",
-  "cdn.jsdelivr.net",
-  "raw.githubusercontent.com",
-  "github.com",
-  "objects.githubusercontent.com",
-]);
+import { isDownloadUrlAllowed } from "../net-gateway.mjs";
 
 /**
  * Verifica si una URL es segura para descargar
@@ -32,26 +21,15 @@ const ALLOWED_DOMAINS = new Set([
  * @returns {boolean}
  */
 export function isUrlAllowed(url) {
-  try {
-    // Remover sintaxis de enlace markdown [texto](url) si está presente
-    if (url.startsWith('[') && url.includes('](')) {
-      const closeBracket = url.indexOf('](');
-      if (closeBracket > 0) {
-        url = url.substring(closeBracket + 2);
-        // Remover paréntesis final de cierre si está presente
-        if (url.endsWith(')')) {
-          url = url.substring(0, url.length - 1);
-        }
-      }
+  if (typeof url !== "string") return false;
+  if (url.startsWith("[") && url.includes("](")) {
+    const closeBracket = url.indexOf("](");
+    if (closeBracket > 0) {
+      url = url.substring(closeBracket + 2);
+      if (url.endsWith(")")) url = url.substring(0, url.length - 1);
     }
-    const parsed = new URL(url);
-    // Solo HTTPS
-    if (parsed.protocol !== "https:") return false;
-    // Dominio en whitelist
-    return ALLOWED_DOMAINS.has(parsed.hostname);
-  } catch {
-    return false;
   }
+  return isDownloadUrlAllowed(url);
 }
 
 /**
@@ -79,7 +57,7 @@ async function calculateSha256(filePath) {
  * @param {Function} showConfirmation - Función async que muestra dialog nativo y retorna true/false
  * @returns {Promise<{ok: boolean, path?: string, error?: string, cancelled?: boolean}>}
  */
-export async function downloadSecureAsset(url, destPath, expectedHash, assetName, showConfirmation) {
+export async function downloadSecureAsset(url, destPath, expectedHash, assetName, showConfirmation, fetchExternal) {
   // Remover sintaxis de enlace markdown [texto](url) si está presente
   if (url.startsWith('[') && url.includes('](')) {
     const closeBracket = url.indexOf('](');
@@ -93,7 +71,9 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
 
   // Validación 1: URL permitida
   if (!isUrlAllowed(url)) {
-    return { ok: false, error: `Dominio no permitido: ${new URL(url).hostname}. Solo: ${Array.from(ALLOWED_DOMAINS).join(", ")}` };
+    let hostname = "inválido";
+    try { hostname = new URL(url).hostname; } catch {}
+    return { ok: false, error: `Dominio no permitido: ${hostname}. Solo se aceptan hosts de descarga aprobados por el gateway` };
   }
 
   // Validación 2: Hash formato correcto
@@ -102,12 +82,12 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
   }
 
   // Validación 3: Path absoluto y dentro de directorio permitido
-  const resolvedDest = resolve(destPath);
-  // Rechazar path traversal en la ruta original
+  // RECHAZAR: primero verificar path traversal en la cadena original ANTES de que path.join la normalice
   if (destPath.includes("..")) {
     return { ok: false, error: "Ruta de destino no permitida (path traversal)" };
   }
-  // Permitir descargas en AppData/Bit/voices o directorios temporales del sistema
+  const resolvedDest = resolve(destPath);
+  // Permitir descargas en AppData/Bit/ (subdirectorio específico, no cualquier cosa en LOCALAPPDATA)
   const allowedBase = process.env.LOCALAPPDATA ? resolve(process.env.LOCALAPPDATA, "Bit") : null;
   let pathAllowed = false;
   if (allowedBase && (resolvedDest.startsWith(allowedBase + "\\") || resolvedDest.startsWith(allowedBase + "/") || resolvedDest === allowedBase)) {
@@ -134,8 +114,8 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
   }
 
   try {
-    // Descargar con stream (fetch nativo Node 18+)
-    const response = await fetch(url, {
+    if (typeof fetchExternal !== "function") throw new Error("La descarga necesita el gateway de red");
+    const response = await fetchExternal(url, {
       method: "GET",
       headers: { "User-Agent": "Bit-Assistant/1.0 (secure-downloader)" },
       // Timeout de 5 minutos
@@ -237,7 +217,7 @@ export async function checkPiperModelExists(modelName, voicesDir) {
  * @param {Function} showConfirmation
  * @returns {Promise<{ok: boolean, onnx?: string, json?: string, error?: string, cancelled?: boolean}>}
  */
-export async function ensurePiperModel(modelName, voicesDir, showConfirmation) {
+export async function ensurePiperModel(modelName, voicesDir, showConfirmation, fetchExternal) {
   const model = PIPER_MODELS[modelName];
   if (!model) return { ok: false, error: `Modelo desconocido: ${modelName}` };
 
@@ -249,7 +229,7 @@ export async function ensurePiperModel(modelName, voicesDir, showConfirmation) {
   const results = {};
   for (const [key, asset] of Object.entries(model)) {
     const destPath = join(voicesDir, `${modelName}.onnx${key === "json" ? ".json" : ""}`);
-    const result = await downloadSecureAsset(asset.url, destPath, asset.hash, `${modelName}.${key === "onnx" ? "onnx" : "json"}`, showConfirmation);
+    const result = await downloadSecureAsset(asset.url, destPath, asset.hash, `${modelName}.${key === "onnx" ? "onnx" : "json"}`, showConfirmation, fetchExternal);
     if (!result.ok) {
       // Si falla uno, limpiar el otro si se descargó
       if (results.onnx?.ok) await unlink(results.onnx.path).catch(() => {});
