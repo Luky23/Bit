@@ -20,6 +20,12 @@
       --accent: #4de8ff;
       --accent-dim: rgba(77, 232, 255, 0.15);
       --accent-glow: rgba(77, 232, 255, 0.4);
+      --jarvis-cyan: #00f3ff;
+      --jarvis-cyan-dim: rgba(0, 243, 255, 0.10);
+      --jarvis-dark: #050a0e;
+      --jarvis-grid: rgba(0, 243, 255, 0.05);
+      --jarvis-scan: rgba(0, 243, 255, 0.35);
+      --jarvis-text: #c8faff;
       --danger: #ff5d7a;
       --danger-dim: rgba(255, 93, 122, 0.15);
       --telemetry-bg: rgba(0, 0, 0, 0.6);
@@ -39,32 +45,22 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html, body {
       margin: 0; width: 100%; height: 100%;
-      background: transparent; overflow: hidden;
+      background: var(--jarvis-dark); overflow: hidden;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
 
-    /* Full-screen transparent container with padding to prevent clipping */
-    #app {
-      width: 100vw; height: 100vh;
-      position: fixed; top: 0; left: 0;
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px; /* Prevents glow/shadow clipping at window edges */
-      pointer-events: none; /* Let clicks pass through to HUD core */
-    }
+    #app { width: 100%; height: 100%; position: relative; overflow: hidden; }
 
-    /* ===== HUD CORE (Centered, Interactive) ===== */
+    /* ===== HUD CORE (ORB) ===== */
     .hud-core {
-      position: relative;
-      width: 96px; height: 96px;
-      pointer-events: auto; /* Re-enable for HUD interaction */
-      cursor: pointer;
-      transition: var(--transition);
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 72px; height: 72px;
+      pointer-events: none;
       z-index: 10;
-    }
-
-    .hud-core:hover {
-      filter: brightness(1.15);
+      transition: var(--transition);
     }
 
     /* Concentric rings */
@@ -116,18 +112,18 @@
       position: absolute;
       inset: 50%;
       transform: translate(-50%, -50%);
-      width: 22px; height: 22px;
+      width: 18px; height: 18px;
       border-radius: 50%;
       background: var(--accent);
-      box-shadow: 0 0 16px var(--accent), 0 0 32px var(--accent-glow);
+      box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent-glow);
       opacity: 0;
       transition: var(--transition), opacity 0.3s ease;
     }
 
-    .hud-core.idle .core-center { opacity: 0.15; width: 18px; height: 18px; }
+    .hud-core.idle .core-center { opacity: 0.15; width: 14px; height: 14px; }
     .hud-core.listening .core-center { opacity: 0.9; animation: pulse 1.5s ease-in-out infinite; }
     .hud-core.speaking .core-center { opacity: 1; animation: pulse 0.6s ease-in-out infinite; }
-    .hud-core.processing .core-center { opacity: 0.8; background: #ffcc00; box-shadow: 0 0 16px rgba(255,204,0,0.6), 0 0 32px rgba(255,204,0,0.3); }
+    .hud-core.processing .core-center { opacity: 0.8; background: #ffcc00; box-shadow: 0 0 12px rgba(255,204,0,0.6), 0 0 24px rgba(255,204,0,0.3); }
 
     @keyframes pulse {
       0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
@@ -139,7 +135,7 @@
       position: absolute;
       top: 50%; left: 50%;
       transform: translate(-50%, -50%);
-      width: 112px; height: 112px;
+      width: 88px; height: 88px;
       pointer-events: none;
       opacity: 0;
       transition: opacity 0.3s ease;
@@ -148,10 +144,10 @@
     .core-bar {
       position: absolute;
       top: 50%; left: 50%;
-      width: 2px; height: 22px;
+      width: 2px; height: 18px;
       background: linear-gradient(180deg, transparent, var(--accent));
       border-radius: 1px;
-      transform-origin: center -36px;
+      transform-origin: center -28px;
       opacity: 0;
       transition: opacity 0.1s ease, height 0.08s ease, transform 0.08s ease;
     }
@@ -161,8 +157,8 @@
 
     /* ===== EXPANDED PANEL ===== */
     .panel {
-      position: fixed;
-      inset: 24px;
+      position: absolute;
+      inset: 0;
       padding: 16px;
       border: 1px solid var(--border-glass);
       border-radius: var(--radius-lg);
@@ -176,7 +172,6 @@
       transition: opacity 0.22s ease, transform 0.22s ease;
       display: flex; flex-direction: column;
       overflow: hidden;
-      z-index: 20;
     }
 
     .expanded .hud-core { display: none; }
@@ -368,22 +363,170 @@
     }
     .open-main:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); color: var(--text-primary); }
 
-    /* Reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    /* ===== STATE INDICATOR (on orb when collapsed) ===== */
+    .state-badge {
+      position: absolute;
+      bottom: -4px; right: -4px;
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      border: 2px solid #000;
+      background: var(--text-muted);
+      opacity: 0;
+      transform: scale(0.8);
+      transition: var(--transition-fast);
+      pointer-events: none;
+      z-index: 5;
+    }
+    .orb-button:hover .state-badge { opacity: 1; transform: scale(1); }
+    .orb-button.listening .state-badge { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulseDot 1.2s ease-in-out infinite; opacity: 1; transform: scale(1); }
+    .orb-button.speaking .state-badge { background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulseDot 0.5s ease-in-out infinite; opacity: 1; transform: scale(1); }
+    .orb-button.processing .state-badge { background: #ffcc00; box-shadow: 0 0 8px rgba(255,204,0,0.7); opacity: 1; transform: scale(1); }
+
+    /* ===== JARVIS-STYLE BACKGROUND ===== */
+    .hud-bg {
+      position: absolute; inset: 0; z-index: 0; pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(0, 243, 255, 0.06), transparent 55%),
+        linear-gradient(180deg, #04080c 0%, #070d14 100%);
+      overflow: hidden;
+    }
+
+    /* Retícula sutil */
+    .grid {
+      position: absolute; inset: 0;
+      background-size: 80px 80px;
+      background-image:
+        linear-gradient(var(--jarvis-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--jarvis-grid) 1px, transparent 1px);
+      opacity: 0.5;
+      animation: gridPulse 6s ease-in-out infinite;
+    }
+
+    /* Escaneo radial */
+    .scan-ring {
+      position: absolute; top: 50%; left: 50%;
+      width: 620px; height: 620px;
+      margin-top: -310px; margin-left: -310px;
+      border: 1px solid transparent;
+      border-top: 2px solid var(--jarvis-cyan);
+      border-right: 2px solid var(--jarvis-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 30px var(--jarvis-scan);
+      opacity: 0.55;
+      animation: scanRotate 10s linear infinite;
+    }
+
+    /* Línea de escaneo horizontal */
+    .scan-line {
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--jarvis-cyan), transparent);
+      box-shadow: 0 0 14px var(--jarvis-scan);
+      opacity: 0;
+      animation: scanMove 7s ease-in-out infinite;
+    }
+
+    /* Partículas flotantes */
+    .particles {
+      position: absolute; inset: 0;
+    }
+    .particle {
+      position: absolute;
+      width: 2px; height: 2px;
+      background: var(--jarvis-cyan);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--jarvis-cyan);
+      opacity: 0;
+      animation: floatParticle 12s ease-in-out infinite;
+    }
+
+    /* Marcos HUD en esquinas */
+    .corner-frame {
+      position: absolute;
+      width: 90px; height: 90px;
+      border: 1px solid var(--jarvis-grid);
+      pointer-events: none;
+      opacity: 0.6;
+    }
+    .corner-frame::before,
+    .corner-frame::after {
+      content: ""; position: absolute; width: 24px; height: 24px;
+      border: 1px solid var(--jarvis-cyan);
+      box-shadow: 0 0 12px var(--jarvis-scan);
+    }
+    .corner-frame.tl { top: 24px; left: 24px; }
+    .corner-frame.tl::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+    .corner-frame.tl::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+    .corner-frame.tr { top: 24px; right: 24px; }
+    .corner-frame.tr::before { top: -1px; right: -1px; border-left: none; border-bottom: none; }
+    .corner-frame.tr::after { bottom: -1px; left: -1px; border-right: none; border-top: none; }
+    .corner-frame.bl { bottom: 24px; left: 24px; }
+    .corner-frame.bl::before { top: -1px; left: -1px; border-right: none; border-top: none; }
+    .corner-frame.bl::after { bottom: -1px; right: -1px; border-left: none; border-bottom: none; }
+    .corner-frame.br { bottom: 24px; right: 24px; }
+    .corner-frame.br::before { top: -1px; right: -1px; border-left: none; border-top: none; }
+    .corner-frame.br::after { bottom: -1px; left: -1px; border-right: none; border-bottom: none; }
+    .corner-frame { animation: cornerPulse 5s ease-in-out infinite; }
+
+    .hud-label {
+      position: absolute; bottom: 28px; left: 28px;
+      font: 8px "Consolas", "Courier New", monospace;
+      letter-spacing: 0.35em; text-transform: uppercase;
+      color: var(--jarvis-text);
+      opacity: 0.55;
+      text-shadow: 0 0 10px var(--jarvis-cyan-dim);
+      pointer-events: none;
+    }
+
+    @keyframes scanRotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes scanMove {
+      0% { transform: translateY(-100%); opacity: 0; }
+      15% { opacity: 0.9; }
+      85% { opacity: 0.9; }
+      100% { transform: translateY(100%); opacity: 0; }
+    }
+    @keyframes floatParticle {
+      0%, 100% { transform: translate(0, 0) scale(1); opacity: 0; }
+      20% { opacity: 0.7; }
+      80% { opacity: 0.7; }
+      100% { transform: translate(var(--tx), var(--ty)) scale(0.6); opacity: 0; }
+    }
+    @keyframes gridPulse {
+      0%, 100% { opacity: 0.4; }
+      50% { opacity: 0.8; }
+    }
+    @keyframes cornerPulse {
+      0%, 100% { opacity: 0.5; border-color: var(--jarvis-grid); }
+      50% { opacity: 0.9; border-color: var(--jarvis-cyan); }
     }
   </style>
 </head>
 <body>
   <div id="app">
-    <!-- HUD Core (Collapsed State) - Click to open main window -->
-    <div class="hud-core idle" id="hudCore" aria-label="Bit - Click para abrir" role="button" tabindex="0">
-      <div class="core-ring ring-1"></div>
-      <div class="core-ring ring-2"></div>
-      <div class="core-ring ring-3"></div>
-      <div class="core-center"></div>
-      <div class="core-bars" id="coreBars"></div>
+    <!-- Jarvis-style background -->
+    <div class="hud-bg" aria-hidden="true">
+      <div class="grid"></div>
+      <div class="scan-ring"></div>
+      <div class="scan-line"></div>
+      <div class="particles" id="particles"></div>
+      <div class="corner-frame tl"></div>
+      <div class="corner-frame tr"></div>
+      <div class="corner-frame bl"></div>
+      <div class="corner-frame br"></div>
+      <div class="hud-label">BIT / LOCAL CORE</div>
     </div>
+
+    <!-- HUD Core (Collapsed State) -->
+    <button id="orb" class="orb-button" aria-label="Abrir Bit" title="Bit">
+      <div class="hud-core idle" id="hudCore" aria-hidden="true">
+        <div class="core-ring ring-1"></div>
+        <div class="core-ring ring-2"></div>
+        <div class="core-ring ring-3"></div>
+        <div class="core-center"></div>
+        <div class="core-bars" id="coreBars"></div>
+      </div>
+      <span class="state-badge" id="stateBadge" aria-hidden="true"></span>
+    </button>
 
     <!-- Expanded Panel -->
     <section class="panel" aria-label="Bit HUD" id="panel">
@@ -433,12 +576,16 @@
     // ===== STATE MANAGEMENT =====
     const State = { IDLE: 'idle', LISTENING: 'listening', SPEAKING: 'speaking', PROCESSING: 'processing' };
     let currentState = State.IDLE;
+    let capturedImage = "";
     let audioContext;
-        let coreBars = [];
+    let nextAudioTime = 0;
+    let coreBars = [];
     let barAnimationId = null;
 
     // DOM
+    const orb = $('orb');
     const hudCore = $('hudCore');
+    const stateBadge = $('stateBadge');
     const coreBarsEl = $('coreBars');
     const panel = $('panel');
     const panelContent = $('panelContent');
@@ -455,6 +602,7 @@
       if (type === 'dim') line.classList.add('dim');
       line.innerHTML = `<span class="timestamp">[${ts}]</span><span class="tag ${type === 'warn' ? 'warn' : type === 'error' ? 'error' : type === 'ok' ? 'ok' : ''}">[${tag}]</span>${text}`;
       telemetryEl.appendChild(line);
+      // Keep max 50 lines
       while (telemetryEl.children.length > 50) telemetryEl.removeChild(telemetryEl.firstChild);
       telemetryEl.scrollTop = telemetryEl.scrollHeight;
     }
@@ -464,15 +612,20 @@
       if (currentState === newState) return;
       currentState = newState;
 
+      // Update HUD core classes
       hudCore.className = 'hud-core ' + newState;
+      orb.className = 'orb-button ' + newState;
 
+      // Update panel status dot
       statusDot.className = 'status-dot';
       if (newState === State.LISTENING) statusDot.classList.add('active');
       else if (newState === State.SPEAKING) statusDot.classList.add('speaking');
       else if (newState === State.PROCESSING) statusDot.classList.add('processing');
 
+      // Telemetry
       logTelemetry('STATE', `Transición → ${newState.toUpperCase()}`, 'info');
 
+      // Cancel bar animation on state change
       if (barAnimationId) { cancelAnimationFrame(barAnimationId); barAnimationId = null; }
       if (newState === State.LISTENING || newState === State.SPEAKING) animateCoreBars();
     }
@@ -485,9 +638,9 @@
       for (let i = 0; i < count; i++) {
         const bar = document.createElement('div');
         bar.className = 'core-bar';
-        bar.style.transform = `rotate(${i * (360 / count)}deg) translateY(-36px)`;
+        bar.style.transform = `rotate(${i * (360 / count)}deg) translateY(-28px)`;
         coreBarsEl.appendChild(bar);
-        coreBars.push({ el: bar, baseHeight: 22, baseOpacity: 0.25 });
+        coreBars.push({ el: bar, baseHeight: 18, baseOpacity: 0.25 });
       }
     }
     createCoreBars();
@@ -496,9 +649,10 @@
       if (currentState !== State.LISTENING && currentState !== State.SPEAKING) return;
       const now = Date.now();
       coreBars.forEach((bar, i) => {
+        // Pseudo-random but deterministic per bar using time
         const phase = (now * 0.003 + i * 0.4) % (Math.PI * 2);
         const amplitude = 0.3 + 0.7 * Math.max(0, Math.sin(phase));
-        const h = Math.max(4, 22 + amplitude * 32);
+        const h = Math.max(4, 18 + amplitude * 28);
         const o = 0.15 + amplitude * 0.8;
         bar.el.style.height = h + 'px';
         bar.el.style.opacity = o;
@@ -516,33 +670,25 @@
       document.body.classList.remove('expanded');
       void window.bitRuntime.setOverlayExpanded(false);
     }
+    orb.addEventListener('click', openPanel);
     $('close').addEventListener('click', closePanel);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 
-    // ===== HUD CLICK → OPEN MAIN WINDOW =====
-    function onHudClick() {
-      if (document.body.classList.contains('expanded')) return;
-      // Send IPC to main process to show main window and hide overlay
-      if (window.ipcRenderer && window.ipcRenderer.send) {
-        window.ipcRenderer.send('hud-clicked');
-      }
-      // Also trigger panel open for immediate feedback
-      openPanel();
-    }
-    hudCore.addEventListener('click', onHudClick);
-    hudCore.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onHudClick(); } });
-
     // ===== VOICE LEVEL FROM SIDECAR =====
     let vadActive = false;
-    
+    window.bitRuntime.onVoiceAudio?.(null); // ensure bridge ready
+
+    // Listen for voice level events from main process
     const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel((msg) => {
       if (msg.type === 'level') {
         const rms = msg.rms ?? 0;
+        // Smooth transition to listening when voice detected
         if (rms > 0.015 && currentState === State.IDLE && !vadActive) {
           vadActive = true;
           setState(State.LISTENING);
         } else if (rms < 0.005 && vadActive && currentState === State.LISTENING) {
           vadActive = false;
+          // Don't auto-return to idle; wait for user action or timeout
         }
       } else if (msg.type === 'vad-trigger') {
         if (msg.speech && currentState === State.IDLE) {
@@ -553,11 +699,14 @@
         }
       } else if (msg.type === 'transcript') {
         if (msg.text && currentState === State.LISTENING) {
+          // Auto-submit transcript as prompt
           $('prompt').value = msg.text;
           logTelemetry('VAD', `Transcripción: "${msg.text.slice(0,40)}..."`, 'ok');
         }
       }
     });
+
+    // Cleanup on unload
     window.addEventListener('beforeunload', cleanupVoiceLevel);
 
     // ===== CHAT =====
@@ -567,12 +716,15 @@
       node.textContent = text;
       messagesEl.appendChild(node);
       messagesEl.scrollTop = messagesEl.scrollHeight;
+      // Limit messages
       while (messagesEl.children.length > 50) messagesEl.removeChild(messagesEl.firstChild);
       return node;
     }
 
+    // Vision model persistence
     $('vision-model').value = localStorage.getItem('bit.visionModel') || '';
 
+    // Screen capture
     $('capture').addEventListener('click', async () => {
       const btn = $('capture');
       btn.disabled = true;
@@ -596,7 +748,7 @@
       }
     });
 
-
+    // Chat submit
     $('chat-form').addEventListener('submit', async event => {
       event.preventDefault();
       const prompt = $('prompt').value.trim();
@@ -632,12 +784,14 @@
       }
     });
 
+    // Stop speaking
     $('stop').addEventListener('click', () => {
       void window.bitRuntime.stopSpeaking();
       setState(State.IDLE);
       logTelemetry('TTS', 'Interrumpido por usuario', 'warn');
     });
 
+    // Open main window
     $('open-main').addEventListener('click', () => {
       void window.bitRuntime.openMain();
       logTelemetry('UI', 'Abrir ventana principal', 'info');
@@ -663,7 +817,9 @@
         source.start(nextAudioTime);
         nextAudioTime += buffer.duration;
 
+        // Speaking state during playback
         if (currentState !== State.SPEAKING) setState(State.SPEAKING);
+        // Auto-return to idle after buffer ends
         setTimeout(() => {
           if (currentState === State.SPEAKING) setState(State.IDLE);
         }, buffer.duration * 1000 + 500);
@@ -672,8 +828,32 @@
       }
     });
 
+    // ===== PARTICLES =====
+    function createParticles() {
+      const container = $('particles');
+      const count = 26;
+      for (let i = 0; i < count; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        const x = Math.random() * 100;
+        const y = Math.random() * 100;
+        const tx = (Math.random() - 0.5) * 120;
+        const ty = (Math.random() - 0.5) * 120;
+        const delay = Math.random() * 12;
+        const dur = 10 + Math.random() * 8;
+        p.style.left = x + '%';
+        p.style.top = y + '%';
+        p.style.setProperty('--tx', tx + 'px');
+        p.style.setProperty('--ty', ty + 'px');
+        p.style.animationDelay = delay + 's';
+        p.style.animationDuration = dur + 's';
+        p.style.opacity = 0.2 + Math.random() * 0.6;
+        container.appendChild(p);
+      }
+    }
+
     // ===== INIT =====
-    let nextAudioTime = 0;
+    createParticles();
     logTelemetry('SYS', 'Bit v0.1.0-preview inicializado', 'ok');
     logTelemetry('SYS', 'Privacidad: solo localhost · Zero-Trust', 'info');
     logTelemetry('SYS', 'Modelos: qwen2.5:3b (rápido) / qwen2.5-coder:7b (pesado)', 'info');
