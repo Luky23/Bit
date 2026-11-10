@@ -7,4 +7,4 @@ const prompts = [
 ];
 
 console.log("Evaluación local preparada (sin red ni modelos):");
-console.table(prompts.map((prompt) => ({ prompt, fast: "pendiente", heavy: "pendiente", latencyMs: "manual con Ollama local" })));
+console.table(prompts.map((prompt) => ({ prompt, fast: "pendiente", heavy: "pendiente", latencyMs: "manual con GGUF y node-llama-cpp" })));

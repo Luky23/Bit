@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSafeSongName, normalizeUserName } from "../src/core/config.mjs";
+import { isSafeLocalModelId, isSafeSongName, normalizeUserName } from "../src/core/config.mjs";
+
+test("config: acepta tags locales de Ollama y bloquea rutas", () => {
+  assert.equal(isSafeLocalModelId("qwen2.5:3b"), true);
+  assert.equal(isSafeLocalModelId("qwen2.5vl:3b"), true);
+  assert.equal(isSafeLocalModelId("../modelo"), false);
+  assert.equal(isSafeLocalModelId("http://servidor"), false);
+});
 
 test("config: normaliza el nombre preferido", () => {
   assert.deepEqual(normalizeUserName("  Lucía   Pérez "), { ok: true, value: "Lucía Pérez" });

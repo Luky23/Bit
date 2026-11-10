@@ -4,6 +4,22 @@ import { readFile } from "node:fs/promises";
 import { JsonlFramer, encodeVoiceMessage, parseVoiceLine } from "../src/voice/protocol.mjs";
 import { prepareSpeechText, SpeechQueue, splitSentences } from "../src/voice/speech.mjs";
 import { isAllowedAudioFile, validateVoiceSettings } from "../src/voice/settings.mjs";
+import { localVoiceDirectories } from "../src/core/config.mjs";
+
+test("las voces locales incluyen la instalación privada existente de Bit", () => {
+  assert.deepEqual(localVoiceDirectories({
+    userData: "C:\\Users\\Luca\\AppData\\Roaming\\Bit Preview",
+    appPath: "C:\\Bit",
+    resourcesPath: "C:\\Bit\\resources",
+    localAppData: "C:\\Users\\Luca\\AppData\\Local",
+  }), [
+    "C:\\Users\\Luca\\AppData\\Roaming\\Bit Preview\\voices",
+    "C:\\Bit\\voices",
+    "C:\\Bit\\resources\\voices",
+    "C:\\Users\\Luca\\AppData\\Local\\Bit\\voices",
+    "C:\\Users\\Luca\\AppData\\Local\\Bit\\Piper\\voices",
+  ]);
+});
 
 test("protocolo de voz valida y enmarca JSONL", () => {
   const framer = new JsonlFramer();
@@ -148,13 +164,29 @@ test("voz ajusta endpointing y limita extensiones de audio", () => {
   assert.equal(isAllowedAudioFile("programa.exe"), false);
 });
 
-test("main resuelve Python y el sidecar desde el directorio de Electron del repo", async () => {
+test("main resuelve un sidecar Piper empaquetado y conserva fallback de desarrollo", async () => {
   const source = await readFile(new URL("../electron/main.mjs", import.meta.url), "utf8");
 
-  assert.match(source, /const sidecarDir = join\(here, "\.\.", "voice-sidecar"\)/);
+  assert.match(source, /const sidecarDir = app\.isPackaged \? join\(process\.resourcesPath, "voice-sidecar"\) : join\(here, "\.\.", "voice-sidecar"\)/);
+  assert.match(source, /const executable = join\(sidecarDir, "piper-sidecar\.exe"\)/);
   assert.match(source, /python: join\(sidecarDir, "\.venv", "Scripts", "python\.exe"\)/);
   assert.match(source, /sidecar: join\(sidecarDir, "sidecar\.py"\)/);
-  assert.doesNotMatch(source, /join\(app\.getAppPath\(\), "main", "voice-sidecar"/);
+  assert.match(source, /spawn\(paths\.executable \|\| paths\.python, args/);
+});
+
+test("Piper es opcional al iniciar y admite una voz ONNX sin JSON lateral", async () => {
+  const source = await readFile(new URL("../electron/main.mjs", import.meta.url), "utf8");
+
+  assert.match(source, /available: Boolean\(voice\)/u);
+  assert.match(source, /if \(paths\.available && existsSync\(paths\.model\)\)/u);
+  assert.match(source, /if \(existsSync\(paths\.config\)\) args\.push\("--config", paths\.config\)/u);
+  assert.match(source, /if \(!paths\.available\) \{/u);
+});
+
+test("sidecar: fija UTF-8 para conservar tildes en la tubería local", async () => {
+  const source = await readFile(new URL("../voice-sidecar/sidecar.py", import.meta.url), "utf8");
+  assert.match(source, /sys\.stdin\.reconfigure\(encoding="utf-8"\)/u);
+  assert.match(source, /sys\.stdout\.reconfigure\(encoding="utf-8"\)/u);
 });
 
 test("Piper aplica un perfil de voz sereno y de ritmo medido", async () => {

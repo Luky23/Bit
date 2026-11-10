@@ -1,5 +1,6 @@
 node_modules/
 .venv/
+.bit/
 __pycache__/
 dist/
 .env
@@ -9,6 +10,7 @@ dist/
 *.onnx
 userData/
 userData-preview/
+/data/
 vault/
 boveda/
 notas/

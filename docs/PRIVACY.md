@@ -1,8 +1,8 @@
 # Privacidad de las actualizaciones de modelos
 
-Las actualizaciones están desactivadas por defecto. Bit solo llama a la API local de Ollama en `127.0.0.1`; si Ollama descarga datos desde su registro, esa conexión pertenece a Ollama y no a Bit. Bit no cambia de modelo por su cuenta.
+Las actualizaciones están desactivadas por defecto. Bit carga modelos GGUF directamente mediante `node-llama-cpp`; no usa Ollama ni una API de chat HTTP. Bit no cambia ni descarga modelos por su cuenta.
 
-Para actualizar, el usuario debe activar la función, seleccionar los tags y aprobar cada operación. Bit comprueba espacio, crea una copia con fecha, muestra el progreso y ejecuta una prueba de humo. Si falla, restaura la copia automáticamente. Los modelos recomendados nuevos solo se anuncian mediante `models-catalog.json`, revisado por cambios del repositorio.
+Para descargar un modelo del catálogo fijo, el usuario pulsa el botón correspondiente y aprueba el diálogo nativo. Bit reanuda el archivo parcial cuando es posible, muestra progreso y verifica el SHA256 antes de aceptar el GGUF. Si la verificación falla, elimina el parcial.
 
 ## Búsquedas web
 
@@ -13,7 +13,7 @@ Las búsquedas se realizan desde `net-gateway` por HTTPS, con un límite de tiem
 Las descargas de voz/modelos también pasan por `net-gateway`, usan hosts permitidos y requieren consentimiento antes de comenzar.
 
 El nombre preferido se guarda localmente en `userData/config.json`. Bit lo usa en el saludo de inicio y para dirigirse al usuario ocasionalmente; puede borrarse desde Ajustes.
-El contexto reciente de la conversación se mantiene solo en memoria mientras la ventana está abierta y se envía únicamente a Ollama en `127.0.0.1` para dar continuidad a las respuestas. No se guarda en disco ni se incluye en búsquedas web.
+El contexto reciente de la conversación se mantiene solo en memoria mientras la ventana está abierta y se entrega únicamente al modelo GGUF local. No se guarda en disco ni se incluye en búsquedas web.
 
 ## Proyectos locales
 
@@ -21,7 +21,7 @@ El usuario elige la carpeta de proyectos en Ajustes. Bit rechaza rutas UNC, enla
 
 Crear, modificar o restaurar requiere confirmación nativa desde el proceso principal. Antes de reemplazar un archivo, Bit conserva su contenido anterior bajo `.bit-backups/`; al restaurar también conserva la versión actual. Las copias no tienen caducidad automática, pueden crecer con el uso y no tienen cifrado propio de Bit. La privacidad en reposo depende de la cuenta de Windows, del cifrado del disco y de la carpeta elegida. No elija OneDrive, Dropbox, unidades de red ni otras carpetas sincronizadas para proyectos confidenciales. Las lecturas y escrituras se registran en `userData/audit.log` sin registrar el contenido de los archivos.
 
-Si el usuario pide analizar un archivo, su texto se envía al modelo local Ollama en `127.0.0.1`. No se adjunta a búsquedas web ni a servicios remotos. Las solicitudes con captura de pantalla no ofrecen herramientas de escritura de proyectos en ese turno.
+Si el usuario pide analizar un archivo, su texto se entrega al modelo GGUF local. No se adjunta a búsquedas web ni a servicios remotos. Las solicitudes con captura de pantalla no ofrecen herramientas de escritura de proyectos en ese turno.
 
 Antes de publicar, comprobar manualmente en la interfaz de Windows: elegir una carpeta local no sincronizada; crear un proyecto y archivo de prueba; cancelar y luego aprobar una modificación; verificar que la copia anterior aparece en `.bit-backups/`; restaurarla y comprobar que la versión reemplazada también quedó respaldada. Confirmar que la carpeta de proyectos dentro de un repositorio Git se rechaza y que `audit.log` no contiene el texto de prueba.
 
@@ -29,4 +29,4 @@ Antes de publicar, comprobar manualmente en la interfaz de Windows: elegir una c
 
 Las herramientas de control se ejecutan en el proceso local de Bit. Abrir una aplicación conocida o un documento permitido no requiere autorización adicional; las acciones sensibles (por ejemplo, abrir protocolos del sistema, lanzar ejecutables con argumentos o abrir archivos activos como scripts) muestran un diálogo nativo cuya opción predeterminada es cancelar. Las descargas siempre requieren confirmación explícita y verifican el hash. Bit bloquea la apertura directa de direcciones públicas desde el ejecutor local para evitar tráfico fuera del gateway.
 
-Al cerrar la ventana principal, también se cierra el HUD de Bit y se termina la aplicación; no queda un proceso de Bit oculto en segundo plano. Antes de salir, se solicita a Ollama en loopback que descargue de la RAM los modelos que Bit dejó residentes. El cierre espera hasta 30 segundos a que Ollama responda, porque el límite anterior podía vencer antes de que terminara la descarga de memoria. Esto no cierra el servicio independiente de Ollama ni afecta los archivos de modelos instalados. Si Ollama no responde dentro del límite, Bit continúa cerrándose y registra el error localmente.
+Al cerrar la ventana principal, también se cierra el HUD y termina la aplicación. Bit libera directamente las sesiones, contextos y modelos GGUF residentes antes de salir; los archivos del modelo no se modifican.

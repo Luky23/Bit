@@ -288,7 +288,8 @@ export class InterruptionManager {
     this.sidecarSender = sidecarSender;
     this.vadEnabled = false;
     this.listening = false;
-    this.vadThreshold = 0.5;
+    // RMS normalizado de PCM16; 0.5 solo detectaría voces saturadas.
+    this.vadThreshold = 0.015;
     this.silenceFrames = 0;
     this.speechFrames = 0;
     this.requiredSpeechFrames = 3; // ~100ms a 32ms/frame

@@ -5,8 +5,9 @@
 
 import pkg from "electron";
 const { shell, dialog } = pkg;
-import { extname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { stat } from "node:fs/promises";
+import { enforceSandbox } from "../core/sandbox.mjs";
 
 /**
  * Lista blanca de ejecutables permitidos (nombres base, sin ruta)
@@ -28,7 +29,7 @@ const ALLOWED_EXECUTABLES = new Set([
 /**
  * Patrones permitidos para URLs/rutas
  */
-const URL_PROTOCOLS = new Set(["file:", "http:", "https:", "mailto:", "tel:"]);
+const URL_PROTOCOLS = new Set(["http:", "https:", "mailto:", "tel:"]);
 const WINDOWS_PROTOCOLS = new Set(["ms-settings:", "ms-photos:"]);
 const FILE_EXTENSIONS = new Set([
   ".txt", ".md", ".json", ".css",
@@ -36,6 +37,14 @@ const FILE_EXTENSIONS = new Set([
   ".mp3", ".wav", ".mp4", ".mkv", ".mov",
   ".zip", ".rar", ".7z", ".tar", ".gz",
 ]);
+
+/**
+ * Instaladores, gestores de paquetes, shells y comandos destructivos.
+ * Se aplica a cualquier objetivo antes de cualquier validación permisiva.
+ * NOTA: `spawn` corre con `shell: false`, así que el control real es el primer
+ * token; esta regex es defensa en profundidad.
+ */
+const DANGEROUS_COMMAND_RE = /\b(npm|choco|winget|msiexec|apt|pip|powershell|pwsh|cmd|regedit|format|shutdown|reboot|rm|del|taskkill)\b/i;
 
 function isLoopbackHost(hostname) {
   return ["127.0.0.1", "localhost", "::1"].includes(hostname);
@@ -61,6 +70,10 @@ export function validateExecutionTarget(target) {
   if (trimmed.includes('..')) {
     return { ok: false, reason: "Patrón peligroso detectado (path traversal)", type: "blocked" };
   }
+  // Instaladores, gestores de paquetes, variables de entorno y shells destructivos.
+  if (DANGEROUS_COMMAND_RE.test(trimmed)) {
+    return { ok: false, reason: "Patrón peligroso detectado (comando o gestor bloqueado)", type: "blocked" };
+  }
   const destructivePatterns = /\b(rm|del|format|shutdown|reboot|taskkill|rd|rmdir)\b/i;
   if (destructivePatterns.test(trimmed)) {
     return { ok: false, reason: "Patrón peligroso detectado (comando destructivo)", type: "blocked" };
@@ -73,14 +86,7 @@ export function validateExecutionTarget(target) {
   try {
     const url = new URL(trimmed);
     if (url.protocol === "file:") {
-      if (url.hostname && url.hostname !== "localhost") {
-        return { ok: false, reason: "No se permiten rutas file: hacia ubicaciones de red", type: "blocked" };
-      }
-      const extension = extname(decodeURIComponent(url.pathname)).toLowerCase();
-      if ([".js", ".ts", ".py", ".html", ".svg"].includes(extension)) {
-        return { ok: false, reason: "Bit no puede abrir ni ejecutar scripts o documentos activos", type: "blocked" };
-      }
-      if (FILE_EXTENSIONS.has(extension)) return { ok: true, type: "url" };
+      return { ok: false, reason: "Las rutas file: solo se abren mediante el sandbox local de Bit", type: "blocked" };
     }
     if (URL_PROTOCOLS.has(url.protocol) && !/^[a-z]:\\/i.test(trimmed)) {
       return { ok: true, type: "url" };
@@ -96,10 +102,11 @@ export function validateExecutionTarget(target) {
     return { ok: false, reason: "Protocolo no permitido", type: "blocked" };
   }
 
-  // 3. Ruta a archivo con extensión permitida (solo nombre de archivo, sin ruta)
+  // 3. Los documentos se abren exclusivamente por `openSandboxedFile`, que
+  // valida su pertenencia al raíz local antes de llamar a shell.openPath.
   const ext = trimmed.toLowerCase().substring(trimmed.toLowerCase().lastIndexOf("."));
   if (FILE_EXTENSIONS.has(ext) && !trimmed.includes("\\") && !trimmed.includes("/")) {
-    return { ok: true, type: "file" };
+    return { ok: false, reason: "Los documentos deben abrirse desde la carpeta segura de Bit", type: "blocked" };
   }
 
   // 4. Ejecutable en whitelist (SOLO nombre base, SIN argumentos, SIN ruta)
@@ -131,10 +138,45 @@ export function validateExecutionTarget(target) {
   };
 }
 
-export function requiresExecutionAuthorization() {
-  // Abrir una aplicación, un archivo, una pestaña o una superficie del sistema
-  // modifica el estado visible del equipo. La lista blanca limita qué se puede
-  // abrir, pero no sustituye el consentimiento del usuario.
+/**
+ * Resuelve y comprueba un documento dentro del sandbox antes de abrirlo. Esta
+ * ruta no usa diálogos porque no ejecuta procesos ni admite destinos externos.
+ *
+ * @param {{root: string, target: string}} options
+ * @returns {Promise<{ok: boolean, absolutePath?: string, error?: string}>}
+ */
+export async function resolveSandboxedFile({ root, target }) {
+  let absolutePath;
+  try {
+    absolutePath = await enforceSandbox(root, target);
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+  const info = await stat(absolutePath).catch(() => null);
+  if (!info?.isFile()) return { ok: false, error: "El archivo no existe dentro de la carpeta segura de Bit" };
+  return { ok: true, absolutePath };
+}
+
+/**
+ * Decide si una operación validada requiere confirmación nativa.
+ *
+ * Regla 3: se pregunta solo ante algo peligroso o que modifica el equipo.
+ *  - Abrir una aplicación permitida es reversible y segura -> NO PREGUNTA.
+ *  - Abrir un protocolo de configuración del sistema -> PREGUNTA.
+ *  - Abrir un documento local o una URL de loopback es una operación segura de
+ *    solo lectura -> NO PREGUNTA.
+ *
+ * Ante la duda (sin argumentos o tipo desconocido) se pregunta.
+ *
+ * @param {{type?: string}} [targetInfo] Resultado de `validateExecutionTarget`
+ * @returns {boolean}
+ */
+export function requiresExecutionAuthorization(targetInfo) {
+  if (!targetInfo || typeof targetInfo !== "object") return true;
+  const type = targetInfo.type;
+  if (type === "protocol") return true;
+  if (type === "executable") return typeof targetInfo.args === "string" && targetInfo.args.trim().length > 0;
+  if (type === "file" || type === "url") return false;
   return true;
 }
 
@@ -159,7 +201,7 @@ export async function executeWithConfirmation({ target, args = "", mainWindow })
     }
   }
 
-  if (requiresExecutionAuthorization()) {
+  if (requiresExecutionAuthorization({ ...validation, args })) {
     const displayArgs = args ? ` con argumentos: ${args}` : "";
     const result = await dialog.showMessageBox(mainWindow, {
       type: "warning",

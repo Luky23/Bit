@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; img-src 'none'; font-src 'none'; media-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bit controla la computadora</title>
+  <style>
+    :root { color-scheme: dark; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; pointer-events: none; }
+    .automation-frame {
+      position: fixed; inset: 4px; border: 3px solid #63efff; border-radius: 12px;
+      box-shadow: inset 0 0 22px rgba(69, 231, 255, .52), 0 0 24px rgba(69, 231, 255, .82), 0 0 72px rgba(82, 111, 255, .42);
+      animation: frame-pulse 1.15s ease-in-out infinite alternate;
+    }
+    .automation-status {
+      position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+      padding: 9px 15px; border: 1px solid rgba(184, 251, 255, .9); border-radius: 999px;
+      color: #effeff; background: rgba(3, 18, 31, .88); box-shadow: 0 0 22px rgba(78, 231, 255, .62);
+      font: 700 11px/1 "Segoe UI", sans-serif; letter-spacing: .15em; white-space: nowrap;
+    }
+    .automation-status small { margin-left: 10px; color: #9bdded; font-weight: 500; letter-spacing: .08em; }
+    #automation-cursor {
+      position: fixed; z-index: 2; width: 38px; height: 38px; opacity: 0;
+      transform: translate(-7px, -7px); transition: opacity .12s ease;
+    }
+    #automation-cursor.visible { opacity: 1; }
+    #automation-cursor::before {
+      content: ""; position: absolute; width: 16px; height: 23px; left: 5px; top: 2px;
+      background: linear-gradient(135deg, #f4ffff 0 40%, #41dbff 41% 100%);
+      clip-path: polygon(0 0, 0 100%, 31% 71%, 49% 100%, 66% 91%, 47% 62%, 100% 62%);
+      filter: drop-shadow(0 0 4px #49ecff) drop-shadow(0 0 10px #4c8fff);
+    }
+    #automation-cursor::after {
+      content: ""; position: absolute; inset: 0; border: 2px solid rgba(104, 241, 255, .96); border-radius: 50%;
+      box-shadow: 0 0 12px #45e7ff, inset 0 0 9px rgba(93, 232, 255, .5); animation: cursor-orbit .8s linear infinite;
+    }
+    @keyframes frame-pulse { from { opacity: .72; } to { opacity: 1; } }
+    @keyframes cursor-orbit { to { transform: rotate(360deg) scale(1.08); } }
+    @media (prefers-reduced-motion: reduce) { .automation-frame, #automation-cursor::after { animation: none; } }
+  </style>
+</head>
+<body>
+  <div class="automation-frame" aria-hidden="true"></div>
+  <div class="automation-status">BIT CONTROLA LA COMPUTADORA <small>CTRL + ALT + ESC PARA DETENER</small></div>
+  <div id="automation-cursor" aria-hidden="true"></div>
+  <script>
+    (() => {
+      const cursor = document.getElementById("automation-cursor");
+      const off = window.bitAutomation.onCursor(({ visible, x, y } = {}) => {
+        cursor.style.left = `${Math.round(Number(x) || 0)}px`;
+        cursor.style.top = `${Math.round(Number(y) || 0)}px`;
+        cursor.classList.toggle("visible", visible === true);
+      });
+      window.addEventListener("beforeunload", off);
+    })();
+  </script>
+</body>
+</html>

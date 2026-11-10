@@ -2,861 +2,185 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none';">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bit</title>
+  <link rel="stylesheet" href="./hud-tokens.css">
   <style>
-    :root {
-      color-scheme: dark;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --bg-glass: rgba(0, 0, 0, 0.55);
-      --bg-glass-strong: rgba(0, 0, 0, 0.75);
-      --bg-panel: rgba(3, 8, 15, 0.7);
-      --border-glass: rgba(255, 255, 255, 0.06);
-      --border-glass-hover: rgba(255, 255, 255, 0.12);
-      --text-primary: rgba(255, 255, 255, 0.95);
-      --text-secondary: rgba(255, 255, 255, 0.55);
-      --text-muted: rgba(255, 255, 255, 0.35);
-      --accent: #4de8ff;
-      --accent-dim: rgba(77, 232, 255, 0.15);
-      --accent-glow: rgba(77, 232, 255, 0.4);
-      --jarvis-cyan: #00f3ff;
-      --jarvis-cyan-dim: rgba(0, 243, 255, 0.10);
-      --jarvis-dark: #050a0e;
-      --jarvis-grid: rgba(0, 243, 255, 0.05);
-      --jarvis-scan: rgba(0, 243, 255, 0.35);
-      --jarvis-text: #c8faff;
-      --danger: #ff5d7a;
-      --danger-dim: rgba(255, 93, 122, 0.15);
-      --telemetry-bg: rgba(0, 0, 0, 0.6);
-      --shadow-core: 0 0 32px rgba(77, 232, 255, 0.18), 0 0 80px rgba(77, 232, 255, 0.06);
-      --shadow-core-active: 0 0 48px rgba(77, 232, 255, 0.5), 0 0 120px rgba(77, 232, 255, 0.25);
-      --radius-sm: 6px;
-      --radius-md: 10px;
-      --radius-lg: 14px;
-      --transition: all 0.25s cubic-bezier(0.2, 0.5, 0.3, 1);
-      --transition-fast: all 0.1s ease-out;
-    }
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{--core-size:140px;width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px var(--hud-cyan))}.orb-button:hover .reactor-core{filter:drop-shadow(0 0 28px rgba(0,243,255,.7));transform:scale(calc(1.03 + var(--voice-level) * .16))}.reactor-core{margin:auto}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}.ring-1{animation-duration:4.5s}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px #55eaff)}.orb-button:hover .orb{filter:drop-shadow(0 0 28px #55eaffaa);transform:scale(calc(1.03 + var(--voice-level) * .16))}.orb{position:relative;width:140px;height:140px;margin:auto;border-radius:50%;display:grid;place-items:center;filter:drop-shadow(0 0 20px #55eaff77)}.orb:before{content:"";position:absolute;inset:0;border:1px solid #71ecfb88;border-radius:50%;box-shadow:inset 0 0 18px #50e7ff55,0 0 20px #50e7ff55}.orb:after{content:"";position:absolute;inset:-18px;border:1px dashed #9b83ff77;border-radius:50%;animation:orb-spin 14s linear infinite}.orb-core{position:relative;width:72px;height:72px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f2ffff,#77e3f2 13%,#17789a 45%,#061b2b 72%);box-shadow:0 0 28px #4fe9ff,0 0 70px #2bc9f355;z-index:1}.orb-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 14px #00d9ff88);pointer-events:none}.orbital-ring{display:none}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}@keyframes orb-spin{to{transform:rotate(360deg)}}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px #55eaff)}.orb-button:hover .orb{transform:scale(calc(1.03 + var(--voice-level) * .16))}.orb{position:relative;width:140px;height:140px;margin:auto;border-radius:50%;display:grid;place-items:center;filter:drop-shadow(0 0 14px #00d9ff88)}.orb:before,.orb:after{display:none}.orb-core{position:absolute;inset:0;width:100%;height:100%;background:transparent;box-shadow:none}.orb-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 14px #00d9ff88);pointer-events:none}.core-halo{display:none}.orbital-ring{display:none}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}
+    .orb { filter: drop-shadow(0 0 9px #00d9ff66); }
+    .orb-button:hover .orb { filter: drop-shadow(0 0 14px #00d9ff77); }
+    .orb-core { box-shadow: none; }
+    .orb.speaking .orb-canvas { filter: drop-shadow(0 0 10px #00d9ff66); }
 
-    @media (prefers-reduced-motion: reduce) {
-      :root { --transition: none; --transition-fast: none; }
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      margin: 0; width: 100%; height: 100%;
-      background: var(--jarvis-dark); overflow: hidden;
-      -webkit-font-smoothing: antialiased;
-      -moz-osx-font-smoothing: grayscale;
-    }
-
-    #app { width: 100%; height: 100%; position: relative; overflow: hidden; }
-
-    /* ===== HUD CORE (ORB) ===== */
-    .hud-core {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 72px; height: 72px;
-      pointer-events: none;
-      z-index: 10;
-      transition: var(--transition);
-    }
-
-    /* Concentric rings */
-    .core-ring {
-      position: absolute;
+    /* ========================================================================
+       MARCO NEÓN PARA RASTREO DE PANTALLA (bajo consumo, pointer-events none)
+       ======================================================================== */
+    #neon-frame {
+      position: fixed;
       inset: 0;
-      border-radius: 50%;
-      border: 1px solid transparent;
-      animation: rotate linear infinite;
-      opacity: 0;
-      transition: opacity 0.4s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+      z-index: 2147483647;
+      pointer-events: none;       /* no bloquea clics del mouse */
+      display: none;
+      background: transparent;
+    }
+    #neon-frame.visible { display: block; }
+
+    #neon-frame svg {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
 
-    .ring-1 { animation-duration: 20s; }
-    .ring-2 { animation-duration: 35s; animation-direction: reverse; }
-    .ring-3 { animation-duration: 50s; }
-
-    @keyframes rotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-
-    /* Core states */
-    .hud-core.idle .core-ring {
-      opacity: 0.25;
-      border-color: var(--border-glass);
+    #neon-frame rect {
+      fill: none;
+      stroke: #00f3ff;
+      stroke-width: 3px;
+      filter: drop-shadow(0 0 8px rgba(0,243,255,0.8));
     }
 
-    .hud-core.listening .core-ring {
-      opacity: 0.6;
-      border-color: var(--accent);
-      box-shadow: inset 0 0 20px var(--accent-dim), 0 0 30px var(--accent-glow);
-      animation-duration: 8s;
-    }
-    .hud-core.listening .ring-2 { animation-duration: 12s; }
-    .hud-core.listening .ring-3 { animation-duration: 18s; }
-
-    .hud-core.speaking .core-ring {
-      opacity: 0.85;
-      border-color: var(--accent);
-      box-shadow: inset 0 0 30px var(--accent-dim), 0 0 60px var(--accent-glow);
+    @keyframes neon-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
     }
 
-    .hud-core.processing .core-ring {
-      opacity: 0.5;
-      border-color: #ffcc00;
-      box-shadow: inset 0 0 20px rgba(255, 204, 0, 0.2), 0 0 30px rgba(255, 204, 0, 0.15);
+    #neon-frame.blinking rect {
+      animation: neon-blink 1.2s ease-in-out infinite;
     }
 
-    /* Center core dot */
-    .core-center {
-      position: absolute;
-      inset: 50%;
-      transform: translate(-50%, -50%);
-      width: 18px; height: 18px;
-      border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 12px var(--accent), 0 0 24px var(--accent-glow);
-      opacity: 0;
-      transition: var(--transition), opacity 0.3s ease;
-    }
-
-    .hud-core.idle .core-center { opacity: 0.15; width: 14px; height: 14px; }
-    .hud-core.listening .core-center { opacity: 0.9; animation: pulse 1.5s ease-in-out infinite; }
-    .hud-core.speaking .core-center { opacity: 1; animation: pulse 0.6s ease-in-out infinite; }
-    .hud-core.processing .core-center { opacity: 0.8; background: #ffcc00; box-shadow: 0 0 12px rgba(255,204,0,0.6), 0 0 24px rgba(255,204,0,0.3); }
-
-    @keyframes pulse {
-      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
-      50% { transform: translate(-50%, -50%) scale(1.35); opacity: 1; }
-    }
-
-    /* Audio reactive bars around core */
-    .core-bars {
-      position: absolute;
-      top: 50%; left: 50%;
-      transform: translate(-50%, -50%);
-      width: 88px; height: 88px;
+    /* Telemetría de rendimiento en el HUD del overlay */
+    #hud-perf {
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      z-index: 2147483647;
+      font: 11px "Consolas", "Monaco", monospace;
+      color: #00f3ff;
+      background: rgba(1, 4, 9, 0.85);
+      border: 1px solid rgba(0, 243, 255, 0.35);
+      border-radius: 8px;
+      padding: 6px 10px;
       pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.3s ease;
+      text-shadow: 0 0 6px rgba(0, 243, 255, 0.6);
+      display: none;
     }
-
-    .core-bar {
-      position: absolute;
-      top: 50%; left: 50%;
-      width: 2px; height: 18px;
-      background: linear-gradient(180deg, transparent, var(--accent));
-      border-radius: 1px;
-      transform-origin: center -28px;
-      opacity: 0;
-      transition: opacity 0.1s ease, height 0.08s ease, transform 0.08s ease;
-    }
-
-    .hud-core.listening .core-bars,
-    .hud-core.speaking .core-bars { opacity: 1; }
-
-    /* ===== EXPANDED PANEL ===== */
-    .panel {
-      position: absolute;
-      inset: 0;
-      padding: 16px;
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-lg);
-      background: var(--bg-panel);
-      backdrop-filter: blur(28px) saturate(200%);
-      -webkit-backdrop-filter: blur(28px) saturate(200%);
-      box-shadow: 0 28px 72px rgba(0,0,0,0.6), 0 0 60px rgba(77,232,255,0.04);
-      opacity: 0;
-      pointer-events: none;
-      transform: translateY(-8px) scale(0.98);
-      transition: opacity 0.22s ease, transform 0.22s ease;
-      display: flex; flex-direction: column;
-      overflow: hidden;
-    }
-
-    .expanded .hud-core { display: none; }
-    .expanded .panel {
-      opacity: 1;
-      pointer-events: auto;
-      transform: translateY(0) scale(1);
-    }
-
-    /* Panel header */
-    .panel-header {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 14px; padding-bottom: 10px;
-      border-bottom: 1px solid var(--border-glass);
-    }
-
-    .panel-title {
-      display: flex; align-items: center; gap: 8px;
-    }
-
-    .panel-title strong {
-      font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
-      color: var(--text-secondary); font-weight: 500;
-    }
-
-    .status-dot {
-      width: 6px; height: 6px; border-radius: 50%;
-      background: var(--text-muted);
-      transition: var(--transition-fast);
-    }
-    .status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent), 0 0 16px var(--accent-glow); animation: pulseDot 1.2s ease-in-out infinite; }
-    .status-dot.speaking { background: var(--accent); box-shadow: 0 0 12px var(--accent); animation: pulseDot 0.5s ease-in-out infinite; }
-    .status-dot.processing { background: #ffcc00; box-shadow: 0 0 10px rgba(255,204,0,0.7); }
-
-    @keyframes pulseDot { 0%,100%{opacity:1} 50%{opacity:0.4} }
-
-    .panel-header button {
-      border: none; background: transparent; color: var(--text-muted);
-      font-size: 20px; line-height: 1; cursor: pointer;
-      width: 28px; height: 28px; border-radius: var(--radius-sm);
-      display: flex; align-items: center; justify-content: center;
-      transition: var(--transition-fast);
-    }
-    .panel-header button:hover { background: var(--bg-glass-strong); color: var(--text-primary); }
-
-    /* Telemetry log */
-    .telemetry {
-      position: absolute;
-      bottom: 0; left: 0; right: 0;
-      max-height: 120px;
-      background: var(--telemetry-bg);
-      border-top: 1px solid var(--border-glass);
-      border-radius: 0 0 var(--radius-lg) var(--radius-lg);
-      padding: 8px 12px;
-      font-family: "JetBrains Mono", "Fira Code", "Consolas", monospace;
-      font-size: 9.5px; line-height: 1.5;
-      color: var(--text-secondary);
-      overflow-y: auto;
-      opacity: 0.7;
-      transition: opacity 0.2s ease;
-    }
-    .telemetry:hover { opacity: 1; }
-    .telemetry::-webkit-scrollbar { width: 3px; }
-    .telemetry::-webkit-scrollbar-track { background: transparent; }
-    .telemetry::-webkit-scrollbar-thumb { background: var(--border-glass); border-radius: 1.5px; }
-
-    .telemetry-line {
-      padding: 1px 0; white-space: pre-wrap; word-break: break-word;
-      animation: fadeInUp 0.3s ease;
-      opacity: 0.85;
-    }
-    .telemetry-line.dim { opacity: 0.45; }
-    .telemetry-line .timestamp { color: var(--text-muted); margin-right: 6px; }
-    .telemetry-line .tag { color: var(--accent); font-weight: 500; margin-right: 4px; }
-    .telemetry-line .tag.warn { color: #ffcc00; }
-    .telemetry-line .tag.error { color: var(--danger); }
-    .telemetry-line .tag.ok { color: #4eff99; }
-
-    @keyframes fadeInUp {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 0.85; transform: none; }
-    }
-
-    /* Panel content */
-    .panel-content {
-      flex: 1; display: flex; flex-direction: column;
-      overflow: hidden;
-    }
-
-    /* Chat / Messages */
-    .messages {
-      flex: 1; overflow-y: auto; padding-right: 4px;
-      margin-bottom: 14px;
-      display: flex; flex-direction: column; gap: 8px;
-    }
-    .messages::-webkit-scrollbar { width: 4px; }
-    .messages::-webkit-scrollbar-track { background: transparent; }
-    .messages::-webkit-scrollbar-thumb { background: var(--border-glass); border-radius: 2px; }
-
-    .message {
-      padding: 10px 12px;
-      border-left: 2px solid var(--accent);
-      background: rgba(8, 20, 30, 0.5);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      font-size: 12.5px; line-height: 1.5; white-space: pre-wrap;
-      color: var(--text-primary);
-      animation: fadeInUp 0.25s ease;
-    }
-    .message.user {
-      border-left: none; border-right: 2px solid #aa82ff;
-      background: rgba(28, 18, 42, 0.55);
-      border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-      margin-left: auto; max-width: 85%;
-    }
-    .message.system { border-color: var(--text-muted); background: rgba(10,10,15,0.5); font-size: 11px; color: var(--text-secondary); }
-
-    /* Input form */
-    .chat-form { display: flex; flex-direction: column; gap: 10px; }
-
-    .input-group { display: flex; flex-direction: column; gap: 6px; }
-    .input-row { display: flex; gap: 8px; }
-    .input-row > * { flex: 1; }
-
-    textarea, input {
-      width: 100%; resize: none;
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-md);
-      background: var(--bg-glass);
-      backdrop-filter: blur(16px) saturate(150%);
-      -webkit-backdrop-filter: blur(16px) saturate(150%);
-      color: var(--text-primary);
-      padding: 11px 14px;
-      font: inherit; font-size: 12.5px;
-      transition: var(--transition-fast);
-      outline: none;
-    }
-    textarea::placeholder, input::placeholder { color: var(--text-muted); opacity: 0.6; }
-    textarea:focus, input:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-dim);
-      background: var(--bg-glass-strong);
-    }
-    textarea { min-height: 68px; max-height: 130px; line-height: 1.5; }
-
-    .vision-row { display: flex; gap: 8px; }
-    .vision-row input { flex: 1; }
-
-    .actions { display: flex; gap: 8px; margin-top: 4px; }
-
-    button.primary, button.secondary, button.tertiary {
-      border: none; border-radius: var(--radius-sm);
-      font: inherit; font-size: 11.5px; font-weight: 500;
-      padding: 10px 16px; cursor: pointer;
-      transition: var(--transition-fast);
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    button.primary {
-      background: var(--accent); color: #001219;
-      box-shadow: 0 4px 16px rgba(77,232,255,0.25);
-    }
-    button.primary:hover { background: #3dd5e6; box-shadow: 0 6px 24px rgba(77,232,255,0.4); }
-    button.primary:active { transform: scale(0.98); }
-    button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
-    button.secondary {
-      background: var(--bg-glass); color: var(--text-primary);
-      border: 1px solid var(--border-glass);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    }
-    button.secondary:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); }
-    button.tertiary { background: transparent; color: var(--text-secondary); padding: 8px 12px; }
-    button.tertiary:hover { color: var(--text-primary); background: var(--bg-glass); }
-    button.danger { color: #ff99aa; }
-    button.danger:hover { background: var(--danger-dim); color: #ffcce0; }
-
-    .capture-state {
-      min-height: 16px; font-size: 10px; color: var(--text-muted);
-      transition: var(--transition-fast);
-    }
-    .capture-state.message.error { color: #ff99aa; }
-
-    .open-main {
-      width: 100%; margin-top: 6px;
-      background: var(--bg-glass); color: var(--text-secondary);
-      border: 1px solid var(--border-glass);
-      border-radius: var(--radius-md);
-      padding: 9px; font: inherit; font-size: 11px;
-      cursor: pointer; transition: var(--transition-fast);
-      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-    }
-    .open-main:hover { background: var(--bg-glass-strong); border-color: var(--border-glass-hover); color: var(--text-primary); }
-
-    /* ===== STATE INDICATOR (on orb when collapsed) ===== */
-    .state-badge {
-      position: absolute;
-      bottom: -4px; right: -4px;
-      width: 10px; height: 10px;
-      border-radius: 50%;
-      border: 2px solid #000;
-      background: var(--text-muted);
-      opacity: 0;
-      transform: scale(0.8);
-      transition: var(--transition-fast);
-      pointer-events: none;
-      z-index: 5;
-    }
-    .orb-button:hover .state-badge { opacity: 1; transform: scale(1); }
-    .orb-button.listening .state-badge { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulseDot 1.2s ease-in-out infinite; opacity: 1; transform: scale(1); }
-    .orb-button.speaking .state-badge { background: var(--accent); box-shadow: 0 0 10px var(--accent); animation: pulseDot 0.5s ease-in-out infinite; opacity: 1; transform: scale(1); }
-    .orb-button.processing .state-badge { background: #ffcc00; box-shadow: 0 0 8px rgba(255,204,0,0.7); opacity: 1; transform: scale(1); }
-
-    /* ===== JARVIS-STYLE BACKGROUND ===== */
-    .hud-bg {
-      position: absolute; inset: 0; z-index: 0; pointer-events: none;
-      background:
-        radial-gradient(circle at 50% 50%, rgba(0, 243, 255, 0.06), transparent 55%),
-        linear-gradient(180deg, #04080c 0%, #070d14 100%);
-      overflow: hidden;
-    }
-
-    /* Retícula sutil */
-    .grid {
-      position: absolute; inset: 0;
-      background-size: 80px 80px;
-      background-image:
-        linear-gradient(var(--jarvis-grid) 1px, transparent 1px),
-        linear-gradient(90deg, var(--jarvis-grid) 1px, transparent 1px);
-      opacity: 0.5;
-      animation: gridPulse 6s ease-in-out infinite;
-    }
-
-    /* Escaneo radial */
-    .scan-ring {
-      position: absolute; top: 50%; left: 50%;
-      width: 620px; height: 620px;
-      margin-top: -310px; margin-left: -310px;
-      border: 1px solid transparent;
-      border-top: 2px solid var(--jarvis-cyan);
-      border-right: 2px solid var(--jarvis-cyan);
-      border-radius: 50%;
-      box-shadow: 0 0 30px var(--jarvis-scan);
-      opacity: 0.55;
-      animation: scanRotate 10s linear infinite;
-    }
-
-    /* Línea de escaneo horizontal */
-    .scan-line {
-      position: absolute; top: 0; left: 0; right: 0;
-      height: 2px;
-      background: linear-gradient(90deg, transparent, var(--jarvis-cyan), transparent);
-      box-shadow: 0 0 14px var(--jarvis-scan);
-      opacity: 0;
-      animation: scanMove 7s ease-in-out infinite;
-    }
-
-    /* Partículas flotantes */
-    .particles {
-      position: absolute; inset: 0;
-    }
-    .particle {
-      position: absolute;
-      width: 2px; height: 2px;
-      background: var(--jarvis-cyan);
-      border-radius: 50%;
-      box-shadow: 0 0 8px var(--jarvis-cyan);
-      opacity: 0;
-      animation: floatParticle 12s ease-in-out infinite;
-    }
-
-    /* Marcos HUD en esquinas */
-    .corner-frame {
-      position: absolute;
-      width: 90px; height: 90px;
-      border: 1px solid var(--jarvis-grid);
-      pointer-events: none;
-      opacity: 0.6;
-    }
-    .corner-frame::before,
-    .corner-frame::after {
-      content: ""; position: absolute; width: 24px; height: 24px;
-      border: 1px solid var(--jarvis-cyan);
-      box-shadow: 0 0 12px var(--jarvis-scan);
-    }
-    .corner-frame.tl { top: 24px; left: 24px; }
-    .corner-frame.tl::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
-    .corner-frame.tl::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
-    .corner-frame.tr { top: 24px; right: 24px; }
-    .corner-frame.tr::before { top: -1px; right: -1px; border-left: none; border-bottom: none; }
-    .corner-frame.tr::after { bottom: -1px; left: -1px; border-right: none; border-top: none; }
-    .corner-frame.bl { bottom: 24px; left: 24px; }
-    .corner-frame.bl::before { top: -1px; left: -1px; border-right: none; border-top: none; }
-    .corner-frame.bl::after { bottom: -1px; right: -1px; border-left: none; border-bottom: none; }
-    .corner-frame.br { bottom: 24px; right: 24px; }
-    .corner-frame.br::before { top: -1px; right: -1px; border-left: none; border-top: none; }
-    .corner-frame.br::after { bottom: -1px; left: -1px; border-right: none; border-bottom: none; }
-    .corner-frame { animation: cornerPulse 5s ease-in-out infinite; }
-
-    .hud-label {
-      position: absolute; bottom: 28px; left: 28px;
-      font: 8px "Consolas", "Courier New", monospace;
-      letter-spacing: 0.35em; text-transform: uppercase;
-      color: var(--jarvis-text);
-      opacity: 0.55;
-      text-shadow: 0 0 10px var(--jarvis-cyan-dim);
-      pointer-events: none;
-    }
-
-    @keyframes scanRotate { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes scanMove {
-      0% { transform: translateY(-100%); opacity: 0; }
-      15% { opacity: 0.9; }
-      85% { opacity: 0.9; }
-      100% { transform: translateY(100%); opacity: 0; }
-    }
-    @keyframes floatParticle {
-      0%, 100% { transform: translate(0, 0) scale(1); opacity: 0; }
-      20% { opacity: 0.7; }
-      80% { opacity: 0.7; }
-      100% { transform: translate(var(--tx), var(--ty)) scale(0.6); opacity: 0; }
-    }
-    @keyframes gridPulse {
-      0%, 100% { opacity: 0.4; }
-      50% { opacity: 0.8; }
-    }
-    @keyframes cornerPulse {
-      0%, 100% { opacity: 0.5; border-color: var(--jarvis-grid); }
-      50% { opacity: 0.9; border-color: var(--jarvis-cyan); }
-    }
+    #hud-perf.visible { display: block; }
+  </style>
+  <style>
+    .orb { filter: drop-shadow(0 0 9px #00d9ff66); }
+    .orb-button:hover .orb { filter: drop-shadow(0 0 14px #00d9ff77); }
+    .orb-core { box-shadow: none; }
+    .orb.speaking .orb-canvas { filter: drop-shadow(0 0 10px #00d9ff66); }
   </style>
 </head>
 <body>
-  <div id="app">
-    <!-- Jarvis-style background -->
-    <div class="hud-bg" aria-hidden="true">
-      <div class="grid"></div>
-      <div class="scan-ring"></div>
-      <div class="scan-line"></div>
-      <div class="particles" id="particles"></div>
-      <div class="corner-frame tl"></div>
-      <div class="corner-frame tr"></div>
-      <div class="corner-frame bl"></div>
-      <div class="corner-frame br"></div>
-      <div class="hud-label">BIT / LOCAL CORE</div>
-    </div>
+  <button id="overlayOrb" class="orb-button" type="button" aria-label="Abrir Bit y enfocar el campo de texto" title="Abrir Bit">
+    <span id="hudCore" class="orb idle" aria-hidden="true"><canvas class="orb-canvas" id="coreParticles"></canvas><span class="core-halo"></span><span class="orbital-ring ring-1"></span><span class="orbital-ring ring-2"></span><span class="orbital-ring ring-3"></span><span class="orb-core"></span><span class="state-dot"></span></span>
+  </button>
 
-    <!-- HUD Core (Collapsed State) -->
-    <button id="orb" class="orb-button" aria-label="Abrir Bit" title="Bit">
-      <div class="hud-core idle" id="hudCore" aria-hidden="true">
-        <div class="core-ring ring-1"></div>
-        <div class="core-ring ring-2"></div>
-        <div class="core-ring ring-3"></div>
-        <div class="core-center"></div>
-        <div class="core-bars" id="coreBars"></div>
-      </div>
-      <span class="state-badge" id="stateBadge" aria-hidden="true"></span>
-    </button>
-
-    <!-- Expanded Panel -->
-    <section class="panel" aria-label="Bit HUD" id="panel">
-      <header class="panel-header">
-        <div class="panel-title">
-          <span class="status-dot" id="statusDot" aria-hidden="true"></span>
-          <strong>BIT</strong>
-        </div>
-        <button id="close" aria-label="Cerrar" title="Cerrar">×</button>
-      </header>
-
-      <div class="panel-content" id="panelContent">
-        <div id="messages" class="messages" role="log" aria-live="polite">
-          <div class="message system">> [SYS] Bit v0.1.0-preview · Modo HUD activo</div>
-          <div class="message system">> [SYS] Esperando entrada…</div>
-        </div>
-
-        <form id="chat-form" class="chat-form">
-          <div class="input-group">
-            <textarea id="prompt" placeholder="Consulta…" aria-label="Entrada de texto" rows="2"></textarea>
-
-            <div class="input-row vision-row">
-              <input id="vision-model" placeholder="Modelo visión (opcional)" aria-label="Modelo de visión local" autocomplete="off">
-              <button id="capture" type="button" class="secondary" title="Capturar pantalla">▢</button>
-            </div>
-
-            <p id="capture-state" class="capture-state"></p>
-
-            <div class="actions">
-              <button id="send" type="submit" class="primary">Enviar</button>
-              <button id="stop" type="button" class="secondary danger" title="Interrumpir síntesis">■</button>
-            </div>
-          </div>
-        </form>
-
-        <button id="open-main" class="open-main" type="button">Abrir consola completa</button>
-      </div>
-
-      <!-- Telemetry Log -->
-      <div class="telemetry" id="telemetry" aria-label="Telemetría del sistema" role="log" aria-live="polite" aria-atomic="false"></div>
-    </section>
+  <!-- Capa transparente para marco neón de trazado de coordenadas -->
+  <div id="neon-frame">
+    <svg id="neon-svg" preserveAspectRatio="none">
+      <rect id="neon-rect" x="0" y="0" width="0" height="0"/>
+    </svg>
   </div>
 
+  <!-- Telemetría de rendimiento local -->
+  <div id="hud-perf" class="telemetry">
+    <div id="perf-text">[Perf] Iniciando...</div>
+  </div>
+
+  <div id="telemetry" class="telemetry" aria-live="polite"></div>
   <script>
-    const $ = id => document.getElementById(id);
+    const core = document.getElementById('hudCore');
+    let voiceTarget = 0, voiceRendered = 0, speakingTimer;
+    function setVoiceLevel(value) { voiceTarget = Math.max(0, Math.min(1, Number(value) || 0)); }
+    function animateVoice() { voiceRendered += (voiceTarget - voiceRendered) * .24; if (voiceTarget < .01) voiceTarget *= .88; document.documentElement.style.setProperty('--voice-level', voiceRendered.toFixed(3)); requestAnimationFrame(animateVoice); }
+    function setState(state) { core.className = `orb ${state}`; }
+    function trace(text) { document.getElementById('telemetry').textContent = text; }
+    function onHudClick() {
+      void window.bitRuntime.openMain().catch(error => trace(error.stack || error.message));
+    }
+    document.getElementById('overlayOrb').addEventListener('click', onHudClick);
 
-    // ===== STATE MANAGEMENT =====
-    const State = { IDLE: 'idle', LISTENING: 'listening', SPEAKING: 'speaking', PROCESSING: 'processing' };
-    let currentState = State.IDLE;
-    let capturedImage = "";
-    let audioContext;
-    let nextAudioTime = 0;
-    let coreBars = [];
-    let barAnimationId = null;
+    /* ========================================================================
+       MARCO NEÓN: dibuja un rectángulo brillante en la posición indicada,
+       parpadea suavemente y se auto-elimina tras 4 segundos.
+       Recibe {x, y, w, h} en coordenadas de pantalla (ajustadas al overlay).
+       ======================================================================== */
+    const neonFrame = document.getElementById('neon-frame');
+    const neonRect = document.getElementById('neon-rect');
+    const neonSvg = document.getElementById('neon-svg');
+    let neonTimer = null;
 
-    // DOM
-    const orb = $('orb');
-    const hudCore = $('hudCore');
-    const stateBadge = $('stateBadge');
-    const coreBarsEl = $('coreBars');
-    const panel = $('panel');
-    const panelContent = $('panelContent');
-    const statusDot = $('statusDot');
-    const messagesEl = $('messages');
-    const telemetryEl = $('telemetry');
-
-    // ===== TELEMETRY =====
-    function logTelemetry(tag, text, type = 'info') {
-      const now = new Date();
-      const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')}.${now.getMilliseconds().toString().padStart(3,'0')}`;
-      const line = document.createElement('div');
-      line.className = 'telemetry-line';
-      if (type === 'dim') line.classList.add('dim');
-      line.innerHTML = `<span class="timestamp">[${ts}]</span><span class="tag ${type === 'warn' ? 'warn' : type === 'error' ? 'error' : type === 'ok' ? 'ok' : ''}">[${tag}]</span>${text}`;
-      telemetryEl.appendChild(line);
-      // Keep max 50 lines
-      while (telemetryEl.children.length > 50) telemetryEl.removeChild(telemetryEl.firstChild);
-      telemetryEl.scrollTop = telemetryEl.scrollHeight;
+    function drawNeonFrame(x, y, w, h) {
+      if (neonTimer) { clearTimeout(neonTimer); neonTimer = null; }
+      // Ajustar coordenadas al viewport del overlay (cubriendo toda la pantalla)
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      neonSvg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+      neonRect.setAttribute('x', Math.max(0, x));
+      neonRect.setAttribute('y', Math.max(0, y));
+      neonRect.setAttribute('width', Math.max(10, w));
+      neonRect.setAttribute('height', Math.max(10, h));
+      neonFrame.classList.add('visible', 'blinking');
+      // Auto-eliminar tras 4 segundos sin bloquear la GPU
+      neonTimer = setTimeout(() => {
+        neonFrame.classList.remove('visible', 'blinking');
+        neonRect.setAttribute('width', '0');
+        neonRect.setAttribute('height', '0');
+        neonTimer = null;
+      }, 4000);
     }
 
-    // ===== CORE STATE =====
-    function setState(newState) {
-      if (currentState === newState) return;
-      currentState = newState;
-
-      // Update HUD core classes
-      hudCore.className = 'hud-core ' + newState;
-      orb.className = 'orb-button ' + newState;
-
-      // Update panel status dot
-      statusDot.className = 'status-dot';
-      if (newState === State.LISTENING) statusDot.classList.add('active');
-      else if (newState === State.SPEAKING) statusDot.classList.add('speaking');
-      else if (newState === State.PROCESSING) statusDot.classList.add('processing');
-
-      // Telemetry
-      logTelemetry('STATE', `Transición → ${newState.toUpperCase()}`, 'info');
-
-      // Cancel bar animation on state change
-      if (barAnimationId) { cancelAnimationFrame(barAnimationId); barAnimationId = null; }
-      if (newState === State.LISTENING || newState === State.SPEAKING) animateCoreBars();
+    function hideNeonFrame() {
+      if (neonTimer) { clearTimeout(neonTimer); neonTimer = null; }
+      neonFrame.classList.remove('visible', 'blinking');
+      neonRect.setAttribute('width', '0');
+      neonRect.setAttribute('height', '0');
     }
 
-    // ===== CORE BARS (Audio Reactive) =====
-    function createCoreBars() {
-      coreBarsEl.innerHTML = '';
-      coreBars = [];
-      const count = 16;
-      for (let i = 0; i < count; i++) {
-        const bar = document.createElement('div');
-        bar.className = 'core-bar';
-        bar.style.transform = `rotate(${i * (360 / count)}deg) translateY(-28px)`;
-        coreBarsEl.appendChild(bar);
-        coreBars.push({ el: bar, baseHeight: 18, baseOpacity: 0.25 });
-      }
-    }
-    createCoreBars();
-
-    function animateCoreBars() {
-      if (currentState !== State.LISTENING && currentState !== State.SPEAKING) return;
-      const now = Date.now();
-      coreBars.forEach((bar, i) => {
-        // Pseudo-random but deterministic per bar using time
-        const phase = (now * 0.003 + i * 0.4) % (Math.PI * 2);
-        const amplitude = 0.3 + 0.7 * Math.max(0, Math.sin(phase));
-        const h = Math.max(4, 18 + amplitude * 28);
-        const o = 0.15 + amplitude * 0.8;
-        bar.el.style.height = h + 'px';
-        bar.el.style.opacity = o;
-      });
-      barAnimationId = requestAnimationFrame(animateCoreBars);
+    /* ========================================================================
+       TELEMETRÍA DE RENDIMIENTO LOCAL (HUD)
+       ======================================================================== */
+    const perfEl = document.getElementById('hud-perf');
+    const perfText = document.getElementById('perf-text');
+    function setPerf(text) {
+      perfText.textContent = text;
+      perfEl.classList.add('visible');
     }
 
-    // ===== PANEL TOGGLE =====
-    function openPanel() {
-      document.body.classList.add('expanded');
-      void window.bitRuntime.setOverlayExpanded(true).catch(e => logTelemetry('ERR', e.message, 'error'));
-      requestAnimationFrame(() => $('prompt').focus());
+    function drawCoreParticles() {
+      const canvas = document.getElementById('coreParticles'), context = canvas.getContext('2d');
+      const particles = Array.from({ length: 62 }, () => ({ angle: Math.random() * Math.PI * 2, radius: 10 + Math.random() * 48, speed: (Math.random() - .5) * .006, size: .35 + Math.random() }));
+      const ratio = Math.min(devicePixelRatio || 1, 2), box = canvas.getBoundingClientRect(); canvas.width = box.width * ratio; canvas.height = box.height * ratio; context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      function frame() { const centerX = box.width / 2, centerY = box.height / 2; context.clearRect(0, 0, box.width, box.height); for (const p of particles) { p.angle += p.speed * (1 + voiceRendered * 5); context.globalAlpha = .2 + (1 - p.radius / 58) * .42; context.fillStyle = '#4d9da8'; context.beginPath(); context.arc(centerX + Math.cos(p.angle) * p.radius, centerY + Math.sin(p.angle) * p.radius * .72, p.size, 0, Math.PI * 2); context.fill(); } const core = context.createRadialGradient(centerX - 3, centerY - 4, 1, centerX, centerY, 20); core.addColorStop(0, '#c9f7fa'); core.addColorStop(.18, '#4bb8c7'); core.addColorStop(.52, '#08778c66'); core.addColorStop(1, '#08778c00'); context.globalAlpha = 1; context.fillStyle = core; context.beginPath(); context.arc(centerX, centerY, 24, 0, Math.PI * 2); context.fill(); requestAnimationFrame(frame); }
+      frame();
     }
-    function closePanel() {
-      document.body.classList.remove('expanded');
-      void window.bitRuntime.setOverlayExpanded(false);
-    }
-    orb.addEventListener('click', openPanel);
-    $('close').addEventListener('click', closePanel);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
+    function decodeChunk(chunk) { const bytes = Uint8Array.from(atob(chunk.pcmBase64), char => char.charCodeAt(0)), samples = new Int16Array(bytes.buffer); let sum = 0; for (const sample of samples) sum += (sample / 32768) ** 2; return { samples, rms: Math.sqrt(sum / Math.max(1, samples.length)) }; }
+    const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel(message => { if (message?.type === 'level') setVoiceLevel(Math.min(1, (Number(message.rms) || 0) * 12)); });
+    const cleanupAudio = window.bitRuntime.onVoiceAudio(chunk => { try { const { rms } = decodeChunk(chunk); setVoiceLevel(Math.min(1, rms * 9)); setState('speaking'); clearTimeout(speakingTimer); speakingTimer = setTimeout(() => setState('idle'), 180); } catch (error) { trace(error.stack || error.message); setState('error'); } });
 
-    // ===== VOICE LEVEL FROM SIDECAR =====
-    let vadActive = false;
-    window.bitRuntime.onVoiceAudio?.(null); // ensure bridge ready
-
-    // Listen for voice level events from main process
-    const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel((msg) => {
-      if (msg.type === 'level') {
-        const rms = msg.rms ?? 0;
-        // Smooth transition to listening when voice detected
-        if (rms > 0.015 && currentState === State.IDLE && !vadActive) {
-          vadActive = true;
-          setState(State.LISTENING);
-        } else if (rms < 0.005 && vadActive && currentState === State.LISTENING) {
-          vadActive = false;
-          // Don't auto-return to idle; wait for user action or timeout
-        }
-      } else if (msg.type === 'vad-trigger') {
-        if (msg.speech && currentState === State.IDLE) {
-          vadActive = true;
-          setState(State.LISTENING);
-        } else if (!msg.speech && vadActive && currentState === State.LISTENING) {
-          vadActive = false;
-        }
-      } else if (msg.type === 'transcript') {
-        if (msg.text && currentState === State.LISTENING) {
-          // Auto-submit transcript as prompt
-          $('prompt').value = msg.text;
-          logTelemetry('VAD', `Transcripción: "${msg.text.slice(0,40)}..."`, 'ok');
-        }
-      }
+    /* ========================================================================
+       IPC: recibir comando de trazado de marco neón desde el proceso principal
+       ======================================================================== */
+    window.bitRuntime.onOverlayDrawFrame((data) => {
+      if (!data || !data.box_2d) return;
+      const [y1, x1, y2, x2] = data.box_2d;
+      const w = x2 - x1;
+      const h = y2 - y1;
+      drawNeonFrame(x1, y1, w, h);
+      trace(`Marco neón: [${x1}, ${y1}, ${w}x${h}] - ${data.label || ""}`);
     });
 
-    // Cleanup on unload
-    window.addEventListener('beforeunload', cleanupVoiceLevel);
-
-    // ===== CHAT =====
-    function addMessage(text, kind = '') {
-      const node = document.createElement('div');
-      node.className = `message ${kind}`;
-      node.textContent = text;
-      messagesEl.appendChild(node);
-      messagesEl.scrollTop = messagesEl.scrollHeight;
-      // Limit messages
-      while (messagesEl.children.length > 50) messagesEl.removeChild(messagesEl.firstChild);
-      return node;
-    }
-
-    // Vision model persistence
-    $('vision-model').value = localStorage.getItem('bit.visionModel') || '';
-
-    // Screen capture
-    $('capture').addEventListener('click', async () => {
-      const btn = $('capture');
-      btn.disabled = true;
-      setState(State.PROCESSING);
-      logTelemetry('SCRN', 'Iniciando captura de pantalla…', 'info');
-      $('capture-state').textContent = 'Capturando…';
-
-      try {
-        const result = await window.bitRuntime.captureScreen();
-        capturedImage = result.imageDataUrl;
-        $('capture-state').textContent = `Pantalla adjunta · ${result.width}×${result.height}`;
-        localStorage.setItem('bit.visionModel', $('vision-model').value.trim());
-        logTelemetry('SCRN', `Captura OK ${result.width}×${result.height}`, 'ok');
-      } catch (error) {
-        capturedImage = '';
-        $('capture-state').textContent = `Error: ${error.message}`;
-        logTelemetry('SCRN', `Falló: ${error.message}`, 'error');
-      } finally {
-        btn.disabled = false;
-        setState(State.IDLE);
-      }
+    addEventListener('beforeunload', () => {
+      cleanupVoiceLevel();
+      cleanupAudio();
+      if (neonTimer) clearTimeout(neonTimer);
     });
-
-    // Chat submit
-    $('chat-form').addEventListener('submit', async event => {
-      event.preventDefault();
-      const prompt = $('prompt').value.trim();
-      if (!prompt) return;
-
-      const model = $('vision-model').value.trim() || 'qwen2.5:3b';
-      $('prompt').value = '';
-      addMessage(prompt, 'user');
-      logTelemetry('LLM', `Inferencia (${model})…`, 'info');
-      const pending = addMessage('Procesando…', 'system');
-      $('send').disabled = true;
-      setState(State.PROCESSING);
-
-      try {
-        const result = await window.bitRuntime.chat({
-          model,
-          message: prompt,
-          imageDataUrl: capturedImage || undefined
-        });
-        pending.textContent = result.text || 'El modelo no devolvió texto.';
-        pending.classList.remove('system');
-        capturedImage = '';
-        $('capture-state').textContent = '';
-        logTelemetry('LLM', 'Respuesta recibida', 'ok');
-      } catch (error) {
-        pending.textContent = error.message;
-        pending.classList.add('error');
-        logTelemetry('LLM', `Error: ${error.message}`, 'error');
-      } finally {
-        $('send').disabled = false;
-        requestAnimationFrame(() => $('prompt').focus());
-        setState(State.IDLE);
-      }
-    });
-
-    // Stop speaking
-    $('stop').addEventListener('click', () => {
-      void window.bitRuntime.stopSpeaking();
-      setState(State.IDLE);
-      logTelemetry('TTS', 'Interrumpido por usuario', 'warn');
-    });
-
-    // Open main window
-    $('open-main').addEventListener('click', () => {
-      void window.bitRuntime.openMain();
-      logTelemetry('UI', 'Abrir ventana principal', 'info');
-    });
-
-    // ===== VOICE AUDIO STREAMING =====
-    window.bitRuntime.onVoiceAudio(chunk => {
-      try {
-        audioContext ??= new AudioContext();
-        const bytes = Uint8Array.from(atob(chunk.pcmBase64), char => char.charCodeAt(0));
-        const samples = new Int16Array(bytes.buffer);
-        const buffer = audioContext.createBuffer(chunk.channels, samples.length / chunk.channels, chunk.sampleRate);
-        for (let channel = 0; channel < chunk.channels; channel++) {
-          const output = buffer.getChannelData(channel);
-          for (let i = 0; i < output.length; i++) {
-            output[i] = samples[i * chunk.channels + channel] / 32768;
-          }
-        }
-        const source = audioContext.createBufferSource();
-        source.buffer = buffer;
-        source.connect(audioContext.destination);
-        nextAudioTime = Math.max(nextAudioTime, audioContext.currentTime);
-        source.start(nextAudioTime);
-        nextAudioTime += buffer.duration;
-
-        // Speaking state during playback
-        if (currentState !== State.SPEAKING) setState(State.SPEAKING);
-        // Auto-return to idle after buffer ends
-        setTimeout(() => {
-          if (currentState === State.SPEAKING) setState(State.IDLE);
-        }, buffer.duration * 1000 + 500);
-      } catch (error) {
-        logTelemetry('TTS', `Error: ${error.message}`, 'error');
-      }
-    });
-
-    // ===== PARTICLES =====
-    function createParticles() {
-      const container = $('particles');
-      const count = 26;
-      for (let i = 0; i < count; i++) {
-        const p = document.createElement('div');
-        p.className = 'particle';
-        const x = Math.random() * 100;
-        const y = Math.random() * 100;
-        const tx = (Math.random() - 0.5) * 120;
-        const ty = (Math.random() - 0.5) * 120;
-        const delay = Math.random() * 12;
-        const dur = 10 + Math.random() * 8;
-        p.style.left = x + '%';
-        p.style.top = y + '%';
-        p.style.setProperty('--tx', tx + 'px');
-        p.style.setProperty('--ty', ty + 'px');
-        p.style.animationDelay = delay + 's';
-        p.style.animationDuration = dur + 's';
-        p.style.opacity = 0.2 + Math.random() * 0.6;
-        container.appendChild(p);
-      }
-    }
-
-    // ===== INIT =====
-    createParticles();
-    logTelemetry('SYS', 'Bit v0.1.0-preview inicializado', 'ok');
-    logTelemetry('SYS', 'Privacidad: solo localhost · Zero-Trust', 'info');
-    logTelemetry('SYS', 'Modelos: qwen2.5:3b (rápido) / qwen2.5-coder:7b (pesado)', 'info');
+    drawCoreParticles(); animateVoice();
   </script>
 </body>
 </html>

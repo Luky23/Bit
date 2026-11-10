@@ -4,7 +4,6 @@ import { defaultModelConfig, migrateModelConfig } from "../src/models/config.mjs
 import { routeRequest } from "../src/models/router.mjs";
 import { normalizeModelResponse, stripThinkTags } from "../src/models/reasoning.mjs";
 import { toolsForTurn } from "../src/models/prompt.mjs";
-import { OllamaClient } from "../src/models/ollama-client.mjs";
 import { ModelManager } from "../src/models/model-manager.mjs";
 import { ModelUpdater } from "../src/models/model-updater.mjs";
 
@@ -40,54 +39,6 @@ test("no se envían herramientas si el modelo no declara soporte", () => {
   const tools = [{ name: "read", readOnly: true }, { name: "code", category: "coding" }];
   assert.deepEqual(toolsForTurn(tools, { role: "heavy" }, { tools: false }), []);
   assert.deepEqual(toolsForTurn(tools, { role: "heavy" }, { tools: true }).map((x) => x.name), ["read", "code"]);
-});
-
-test("Ollama queda restringido a loopback y status compara el tag completo", async () => {
-  assert.throws(() => new OllamaClient({ baseUrl: "https://example.com" }), /loopback/);
-  const calls = [];
-  const client = new OllamaClient({
-    fetchImpl: async (url) => {
-      calls.push(String(url));
-      return { ok: true, json: async () => ({ models: [{ name: "qwen3:14b" }] }) };
-    }
-  });
-  assert.deepEqual(await client.status("qwen3:14b"), { requested: "qwen3:14b", installed: "qwen3:14b", exact: true });
-  assert.equal((await client.status("qwen3:14b-q4")).exact, false);
-  assert.equal(calls.length, 2);
-});
-
-test("Ollama permite cancelar una generación local con AbortSignal", async () => {
-  const controller = new AbortController();
-  let requestOptions;
-  const client = new OllamaClient({
-    fetchImpl: async (_url, options) => {
-      requestOptions = options;
-      return { ok: true, json: async () => ({ message: { content: "Resumen" } }) };
-    },
-  });
-
-  await client.generate("qwen2.5:3b", { stream: false }, { signal: controller.signal });
-  assert.equal(requestOptions.signal, controller.signal);
-});
-
-test("Ollama libera solo el modelo indicado con keep_alive cero", async () => {
-  let request;
-  const client = new OllamaClient({
-    fetchImpl: async (url, options) => {
-      request = { url: String(url), options };
-      return { ok: true, json: async () => ({ done: true }) };
-    },
-  });
-
-  assert.deepEqual(await client.unload("qwen2.5:3b"), { done: true });
-  assert.equal(request.url, "http://127.0.0.1:11434/api/generate");
-  assert.deepEqual(JSON.parse(request.options.body), {
-    model: "qwen2.5:3b",
-    prompt: "",
-    stream: false,
-    keep_alive: 0,
-  });
-  await assert.rejects(() => client.unload(""), /nombre del modelo/);
 });
 
 test("pedidos concurrentes del manager se serializan", async () => {

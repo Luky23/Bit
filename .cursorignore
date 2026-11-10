@@ -1,0 +1,10 @@
+models/
+voices/
+node_modules/
+.git/
+dist/
+main/voice-sidecar/.venv/
+/Bit/Conversaciones/
+*.md
+debug-*.png
+*.log

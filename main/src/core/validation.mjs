@@ -2,10 +2,11 @@ const SCHEMAS = Object.freeze({
   "bit:chat": {
     type: "object",
     properties: {
-      model: { type: "string", maxLength: 128, pattern: "^[a-z0-9._:-]+$" },
+      model: { type: "string", maxLength: 128, pattern: "^(?:[A-Za-z0-9][A-Za-z0-9._:-]{0,127})?$" },
       message: { type: "string", minLength: 1, maxLength: 8000 },
       requestId: { type: "string", minLength: 8, maxLength: 80, pattern: "^[a-zA-Z0-9_-]+$" },
       imageDataUrl: { type: "string", format: "data-url", maxLength: 12_582_912 },
+      externalContent: { type: "boolean" },
       history: { type: "array", maxItems: 20, items: { type: "object" } }
     },
     required: ["message"],
@@ -43,12 +44,73 @@ const SCHEMAS = Object.freeze({
     required: [],
     additionalProperties: false
   },
+  "bit:voice-pcm": {
+    type: "object",
+    properties: {
+      pcmBase64: { type: "string", minLength: 4, maxLength: 32_768, pattern: "^[A-Za-z0-9+/]+={0,2}$" }
+    },
+    required: ["pcmBase64"],
+    additionalProperties: false
+  },
+  "bit:prepare-dropped-file": {
+    type: "object",
+    properties: {
+      filePath: { type: "string", minLength: 3, maxLength: 1024 },
+      name: { type: "string", maxLength: 255 },
+      mimeType: { type: "string", maxLength: 160 }
+    },
+    required: ["filePath", "name", "mimeType"],
+    additionalProperties: false
+  },
+  "bit:process-dropped-file": {
+    type: "object",
+    properties: {
+      filePath: { type: "string", minLength: 3, maxLength: 1024 },
+      action: { type: "string", pattern: "^(summarize|edit|vision|vault|attach)$" }
+    },
+    required: ["filePath", "action"],
+    additionalProperties: false
+  },
   "bit:overlay-set-expanded": {
     type: "object",
     properties: {
       expanded: { type: "boolean" }
     },
     required: ["expanded"],
+    additionalProperties: false
+  },
+  "bit:overlay-pointer-mode": {
+    type: "object",
+    properties: { interactive: { type: "boolean" } },
+    required: ["interactive"],
+    additionalProperties: false
+  },
+  "bit:overlay-draw-frame": {
+    type: "object",
+    properties: {
+      box_2d: {
+        type: "array",
+        minItems: 4,
+        maxItems: 4,
+        items: { type: "integer", minimum: -100000, maximum: 100000 }
+      },
+      label: { type: "string", maxLength: 160 }
+    },
+    required: ["box_2d"],
+    additionalProperties: false
+  },
+  "bit:highlight-region": {
+    type: "object",
+    properties: {
+      x: { type: "number", minimum: -100000, maximum: 100000 },
+      y: { type: "number", minimum: -100000, maximum: 100000 },
+      width: { type: "number", minimum: 1, maximum: 100000 },
+      height: { type: "number", minimum: 1, maximum: 100000 },
+      label: { type: "string", maxLength: 160 },
+      normalized: { type: "boolean" },
+      durationMs: { type: "integer", minimum: 500, maximum: 15000 }
+    },
+    required: ["x", "y", "width", "height"],
     additionalProperties: false
   },
   "bit:open-main": {
@@ -61,6 +123,12 @@ const SCHEMAS = Object.freeze({
     type: "object",
     properties: {},
     required: [],
+    additionalProperties: false
+  },
+  "bit:window-control": {
+    type: "object",
+    properties: { action: { type: "string", pattern: "^(minimize|maximize|close)$" } },
+    required: ["action"],
     additionalProperties: false
   },
   "bit:model-config": {
@@ -184,6 +252,12 @@ const SCHEMAS = Object.freeze({
     required: ["url", "destPath", "expectedHash", "assetName"],
     additionalProperties: false
   },
+  "bit:download-model": {
+    type: "object",
+    properties: { id: { type: "string", pattern: "^(?:conversation|programming)$" } },
+    required: ["id"],
+    additionalProperties: false
+  },
   "bit:ensure-piper-model": {
     type: "object",
     properties: {
@@ -198,9 +272,15 @@ const SCHEMAS = Object.freeze({
     properties: {
       prompt: { type: "string", minLength: 1, maxLength: 8000 },
       visionModel: { type: "string", maxLength: 128 },
-      maxSide: { type: "integer", minimum: 640, maximum: 1920, default: 1280 }
+      maxSide: { type: "integer", minimum: 640, maximum: 1920, default: 1024 }
     },
     required: ["prompt"],
+    additionalProperties: false
+  },
+  "bit:system-get-weather": {
+    type: "object",
+    properties: { city: { type: "string", minLength: 2, maxLength: 120 } },
+    required: ["city"],
     additionalProperties: false
   },
   "bit:system-open-app": {
@@ -210,6 +290,111 @@ const SCHEMAS = Object.freeze({
       args: { type: "string", maxLength: 1000, default: "" }
     },
     required: ["target"],
+    additionalProperties: false
+  },
+  "bit:system-search-apps": {
+    type: "object",
+    properties: { query: { type: "string", minLength: 1, maxLength: 160 } },
+    required: ["query"],
+    additionalProperties: false
+  },
+  "bit:system-open-installed-app": {
+    type: "object",
+    properties: { name: { type: "string", minLength: 1, maxLength: 160 } },
+    required: ["name"],
+    additionalProperties: false
+  },
+  "bit:system-list-devices": {
+    type: "object", properties: {}, required: [], additionalProperties: false
+  },
+  "bit:system-search-device-files": {
+    type: "object",
+    properties: {
+      deviceId: { type: "string", pattern: "^drive-[D-Z]$" },
+      query: { type: "string", minLength: 1, maxLength: 160 },
+      extension: { type: "string", minLength: 1, maxLength: 17, pattern: "^\\.?[A-Za-z0-9]+$" }
+    },
+    required: ["deviceId", "query"],
+    additionalProperties: false
+  },
+  "bit:system-open-device-file": {
+    type: "object",
+    properties: {
+      deviceId: { type: "string", pattern: "^drive-[D-Z]$" },
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["deviceId", "path"],
+    additionalProperties: false
+  },
+  "bit:system-search-files": {
+    type: "object",
+    properties: {
+      query: { type: "string", minLength: 1, maxLength: 160 },
+      extension: { type: "string", minLength: 1, maxLength: 17, pattern: "^\\.?[A-Za-z0-9]+$" },
+      subDir: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["query"],
+    additionalProperties: false
+  },
+  "bit:system-create-file": {
+    type: "object",
+    properties: {
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      content: { type: "string", maxLength: 1000000 }
+    },
+    required: ["path", "content"],
+    additionalProperties: false
+  },
+  "bit:system-modify-file": {
+    type: "object",
+    properties: {
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      content: { type: "string", maxLength: 1000000 }
+    },
+    required: ["path", "content"],
+    additionalProperties: false
+  },
+  "bit:system-modify-codebase": {
+    type: "object",
+    properties: {
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      content: { type: "string", minLength: 1, maxLength: 1000000 },
+      restart: { type: "boolean", default: false }
+    },
+    required: ["path", "content"],
+    additionalProperties: false
+  },
+  "bit:system-request-code-improvement": {
+    type: "object",
+    properties: {
+      userRequest: { type: "string", minLength: 1, maxLength: 8000 },
+      targetArea: { type: "string", enum: ["ui", "tools", "voice", "backend"] },
+      targetFiles: { type: "array", minItems: 1, maxItems: 2, items: { type: "string", minLength: 1, maxLength: 500 } }
+    },
+    required: ["userRequest"],
+    anyOf: [{ required: ["targetArea"] }, { required: ["targetFiles"] }],
+    additionalProperties: false
+  },
+  "bit:codex-review": {
+    type: "object",
+    properties: { stage: { type: "string", pattern: "^(prompt|diff)$" } },
+    required: ["stage"],
+    additionalProperties: false
+  },
+  "bit:system-read-file": {
+    type: "object",
+    properties: {
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["path"],
+    additionalProperties: false
+  },
+  "bit:system-open-file": {
+    type: "object",
+    properties: {
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["path"],
     additionalProperties: false
   },
   "bit:system-capture-webcam": {
@@ -262,6 +447,27 @@ const SCHEMAS = Object.freeze({
     },
     required: ["query"],
     additionalProperties: false
+  },
+  "bit:get-connected-displays": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:set-display-role": {
+    type: "object",
+    properties: {
+      displayId: { type: "integer", minimum: 1 },
+      role: { type: "string", enum: ["main", "project", "info", "none"] }
+    },
+    required: ["displayId", "role"],
+    additionalProperties: false
+  },
+  "bit:update-display-layout": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
   }
 });
 
@@ -280,6 +486,16 @@ function validateFormat(value, format) {
 }
 
 function validateValue(value, schema, path = "") {
+  if (schema.anyOf) {
+    const base = { ...schema };
+    delete base.anyOf;
+    const validVariant = schema.anyOf.some((variant) => validateValue(value, {
+      ...base,
+      ...variant,
+      required: [...new Set([...(base.required || []), ...(variant.required || [])])],
+    }, path) === null);
+    if (!validVariant) return `${path}: debe incluir una de las alternativas requeridas`;
+  }
   if (schema.type === "string") {
     if (typeof value !== "string") return `${path}: se esperaba string`;
     if (schema.minLength !== undefined && value.length < schema.minLength) return `${path}: mínimo ${schema.minLength} caracteres`;
@@ -298,6 +514,7 @@ function validateValue(value, schema, path = "") {
     if (typeof value !== "boolean") return `${path}: se esperaba booleano`;
   } else if (schema.type === "array") {
     if (!Array.isArray(value)) return `${path}: se esperaba array`;
+    if (schema.minItems !== undefined && value.length < schema.minItems) return `${path}: mínimo ${schema.minItems} items`;
     if (schema.maxItems !== undefined && value.length > schema.maxItems) return `${path}: máximo ${schema.maxItems} items`;
     if (schema.items) {
       for (let i = 0; i < value.length; i++) {
@@ -322,6 +539,7 @@ function validateValue(value, schema, path = "") {
       }
     }
   }
+  if (schema.enum && !schema.enum.includes(value)) return `${path}: valor no permitido`;
   return null;
 }
 

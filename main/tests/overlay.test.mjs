@@ -2,15 +2,29 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-test("overlay: dibuja el mismo núcleo luminoso con partículas animadas", async () => {
-  const overlayUrl = new URL("../electron/overlay.html", import.meta.url);
-  const overlay = await readFile(overlayUrl, "utf8");
+test("overlay: comparte el nÃºcleo hologrÃ¡fico y reacciona al RMS", async () => {
+  const [overlay, tokens] = await Promise.all([
+    readFile(new URL("../electron/overlay.html", import.meta.url), "utf8"),
+    readFile(new URL("../electron/hud-tokens.css", import.meta.url), "utf8"),
+  ]);
   const script = overlay.match(/<script>([\s\S]*?)<\/script>/u)?.[1];
-
-  assert.ok(script, "el overlay debe conservar su script local");
-  assert.match(overlay, /<canvas class="core-particles" id="coreParticles"/u);
-  assert.match(overlay, /radial-gradient\(circle at 35% 30%, #f2ffff 0, #77e3f2 13%, #17789a 48%, #061b2b 76%\)/u);
+  assert.ok(script);
+  assert.match(overlay, /href="\.\/hud-tokens\.css"/u);
+  assert.equal((overlay.match(/class="orbital-ring/g) || []).length, 3);
+  assert.match(tokens, /--voice-level/u);
+  assert.match(script, /onVoiceLevel/u);
   assert.match(script, /function drawCoreParticles/u);
-  assert.match(script, /createRadialGradient\(centerX - 5, centerY - 7, 1, centerX, centerY, 28\)/u);
   assert.doesNotThrow(() => new Function(script));
+});
+
+test("overlay: el clic abre la ventana principal transparente y enfoca el chat", async () => {
+  const [main, overlay] = await Promise.all([
+    readFile(new URL("../electron/main.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../electron/overlay.html", import.meta.url), "utf8"),
+  ]);
+  assert.match(overlay, /function onHudClick\(\) \{\s+void window\.bitRuntime\.openMain\(\)/u);
+  assert.match(main, /frame: false/u);
+  assert.match(main, /transparent: true/u);
+  assert.match(main, /backgroundColor: "#00000000"/u);
+  assert.match(main, /bit:focus-chat-input/u);
 });

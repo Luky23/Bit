@@ -15,6 +15,13 @@ import threading
 import time
 from pathlib import Path
 
+# Electron envía JSONL en UTF-8. En Windows la codificación regional puede
+# diferir aun cuando stdin/stdout sean tuberías, corrompiendo tildes y eñes.
+if hasattr(sys.stdin, "reconfigure"):
+    sys.stdin.reconfigure(encoding="utf-8")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 # Importaciones perezosas para que el sidecar inicie rápido aunque falten deps opcionales
 _PIPER_AVAILABLE = False
 _VAD_AVAILABLE = False
@@ -41,10 +48,14 @@ except ImportError:
     pass
 
 
-def create_assistant_synthesis_config():
+def create_assistant_synthesis_config(length_scale: float = 1.0):
     if not _PIPER_AVAILABLE:
         raise RuntimeError("piper-tts no instalado. Ejecutá scripts/setup-voice.ps1")
-    return SynthesisConfig(length_scale=1.12, noise_scale=0.55, noise_w_scale=0.65)
+    # Perfil histórico de Bit; conserva una referencia explícita para releases
+    # que no pasan --voice-speed todavía.
+    if length_scale == 1.12:
+        return SynthesisConfig(length_scale=1.12, noise_scale=0.55, noise_w_scale=0.65)
+    return SynthesisConfig(length_scale=length_scale, noise_scale=0.55, noise_w_scale=0.65)
 
 
 def send(message: dict[str, object]) -> None:
@@ -59,11 +70,11 @@ def send_error(error: str) -> None:
 class PiperTTS:
     """Wrapper de Piper TTS para síntesis por oraciones."""
 
-    def __init__(self, model_path: Path, config_path: Path | None = None):
+    def __init__(self, model_path: Path, config_path: Path | None = None, voice_speed: float = 1.12):
         if not _PIPER_AVAILABLE:
             raise RuntimeError("piper-tts no instalado. Ejecutá scripts/setup-voice.ps1")
         self.voice = PiperVoice.load(str(model_path), config_path=str(config_path) if config_path else None)
-        self.synthesis_config = create_assistant_synthesis_config()
+        self.synthesis_config = create_assistant_synthesis_config(voice_speed)
 
     def synthesize(self, text: str):
         """Genera chunks de audio PCM (int16) para un texto."""
@@ -180,8 +191,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--model", required=False, help="Ruta al modelo Piper .onnx")
     parser.add_argument("--config", required=False, help="Ruta al config .json de Piper")
+    parser.add_argument("--voice-speed", type=float, default=1.0, help="length_scale de Piper (0.5 a 2.0)")
     parser.add_argument("--whisper-model", required=False, help="Directorio de un modelo faster-whisper local")
     args = parser.parse_args()
+    if not 0.5 <= args.voice_speed <= 2.0:
+        print("--voice-speed debe estar entre 0.5 y 2.0", file=sys.stderr)
+        return 2
 
     model = Path(args.model).resolve() if args.model else None
     if model is not None and (model.suffix.lower() != ".onnx" or not model.is_file()):
@@ -196,7 +211,7 @@ def main() -> int:
     tts: PiperTTS | None = None
     if model is not None:
         try:
-            tts = PiperTTS(model, config)
+            tts = PiperTTS(model, config, args.voice_speed)
         except Exception as e:
             print(f"Error cargando Piper: {e}", file=sys.stderr)
             return 3
@@ -255,6 +270,24 @@ def main() -> int:
                         send_error(f"VAD no disponible: {e}")
                         continue
                 send({"type": "ready"})
+                continue
+
+            if msg_type == "vad-process":
+                encoded = request.get("pcmBase64")
+                if not isinstance(encoded, str):
+                    send_error("audio VAD inválido")
+                    continue
+                try:
+                    pcm = base64.b64decode(encoded, validate=True)
+                except Exception:
+                    send_error("audio VAD no es base64 válido")
+                    continue
+                if len(pcm) < 320 or len(pcm) % 2:
+                    send_error("audio VAD debe ser PCM16 mono")
+                    continue
+                samples = memoryview(pcm).cast("h")
+                rms = (sum(sample * sample for sample in samples) / len(samples)) ** 0.5 / 32768.0
+                send({"type": "level", "rms": rms})
                 continue
 
             if msg_type == "stt-start":

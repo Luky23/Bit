@@ -177,6 +177,7 @@ export const PIPER_MODELS = {
     },
   },
 };
+const DISABLED_ASSET_HASH = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
 /**
  * Verifica si un modelo Piper existe localmente y es válido
@@ -194,11 +195,12 @@ export async function checkPiperModelExists(modelName, voicesDir) {
   const checkFile = async (path, expectedHash) => {
     try {
       await access(path, constants.F_OK);
-      if (expectedHash && expectedHash !== "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") {
+      if (expectedHash === DISABLED_ASSET_HASH) return false;
+      if (expectedHash) {
         const hash = await calculateSha256(path);
         return hash === expectedHash.toLowerCase();
       }
-      return true; // Si no hay hash real, solo verificar existencia
+      return false;
     } catch {
       return false;
     }
@@ -220,6 +222,9 @@ export async function checkPiperModelExists(modelName, voicesDir) {
 export async function ensurePiperModel(modelName, voicesDir, showConfirmation, fetchExternal) {
   const model = PIPER_MODELS[modelName];
   if (!model) return { ok: false, error: `Modelo desconocido: ${modelName}` };
+  if (Object.values(model).some((asset) => asset.hash === DISABLED_ASSET_HASH)) {
+    return { ok: false, error: "La descarga de esta voz está deshabilitada hasta fijar sus hashes oficiales" };
+  }
 
   const exists = await checkPiperModelExists(modelName, voicesDir);
   if (exists.onnx && exists.json) {

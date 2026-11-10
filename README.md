@@ -1,30 +1,87 @@
 # Bit
 
-Bit es un asistente personal local y privado para Windows.
+Bit es un asistente de escritorio local y privado para Windows. Usa modelos GGUF directamente con `node-llama-cpp`, voz local y herramientas declaradas con validación, sandbox y auditoría.
 
-## Canales
+La rama `main` es estable. Todo el desarrollo y las pruebas previas a una publicación se hacen en `preview`.
 
-La rama Git `main` es el canal estable. La rama Git `preview` contiene el desarrollo en prueba. La carpeta `main/` contiene el código estable que compartirá el canal preview; `preview/` contiene funciones experimentales aisladas. Todo el trabajo de esta fase está en la rama `preview`.
+## Instalación rápida
 
-Esta fase no descarga modelos. Los nombres y parámetros se editan desde la configuración y los modelos se administran por Ollama en `localhost`.
+Reemplace `<tag>` por una versión publicada, por ejemplo `v0.1.0`:
 
-## Comandos
-
-```text
-npm run typecheck
-npm test
-npm run verify
-npm run eval:models
+```powershell
+irm https://raw.githubusercontent.com/Luky23/Bit/<tag>/install.ps1 | iex
 ```
 
-## Memoria en Obsidian
+El instalador no requiere administrador. Descarga únicamente desde el Release de GitHub, verifica el SHA256 antes de mover el ejecutable y conserva los datos en `%LOCALAPPDATA%\Bit\data`.
 
-La bóveda se elige desde Ajustes. Para crear las notas iniciales enlazadas del grafo, use **Generar grafo** y confirme el diálogo nativo. Consulte [docs/OBSIDIAN.md](./docs/OBSIDIAN.md) para conocer la estructura y las pruebas manuales.
+## Revisar el instalador antes de ejecutarlo
 
-## Proyectos locales
+```powershell
+Invoke-WebRequest https://raw.githubusercontent.com/Luky23/Bit/<tag>/install.ps1 -OutFile .\install-bit.ps1
+notepad .\install-bit.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-bit.ps1 -Version <tag>
+```
 
-En Ajustes, elija una carpeta local para los proyectos de Bit. Bit puede crear proyectos y archivos de texto, leerlos, modificarlos y restaurar versiones. Cada escritura o restauración requiere confirmación nativa; antes de modificar o restaurar un archivo, Bit conserva una copia local en `.bit-backups/`. No ejecuta archivos generados. Evite seleccionar una carpeta sincronizada o un repositorio Git. Consulte [docs/PRIVACY.md](./docs/PRIVACY.md) para conocer los límites de privacidad y almacenamiento.
+## Verificar una descarga manual
 
-## Estado funcional
+```powershell
+Get-FileHash .\Bit-Portable.exe -Algorithm SHA256
+Get-Content .\Bit-Portable.exe.sha256
+gh attestation verify .\Bit-Portable.exe --repo Luky23/Bit
+```
 
-La diferencia entre funciones implementadas, parciales y pendientes se mantiene en [docs/AUDITORIA-FUNCIONAL.md](./docs/AUDITORIA-FUNCIONAL.md). Bit no debe anunciar como disponible una función que figure allí como pendiente.
+El hash calculado debe coincidir exactamente con `Bit-Portable.exe.sha256`.
+
+## Primer inicio y modelos
+
+Bit detecta `.gguf` automáticamente en `data\models`, `userData\models` y las ubicaciones habituales de LM Studio, Hugging Face, GPT4All y Jan. No necesita que el usuario elija una carpeta; la selección manual queda como opción para ubicaciones poco comunes. La elección se guarda por rol: conversación, programación y visión. Si falta el modelo elegido, Bit avisa y utiliza uno disponible.
+
+Las descargas opcionales de Qwen se inician únicamente desde Configuración, requieren confirmación, pasan por `net-gateway` y se aceptan solo si coinciden con el SHA256 fijado en el código.
+
+## Aplicaciones y móviles
+
+Bit descubre aplicaciones mediante los accesos locales del menú Inicio y puede abrir una coincidencia segura sin pedir una carpeta. También detecta almacenamientos externos con letra de unidad. Windows no expone los teléfonos conectados exclusivamente por MTP como rutas para Node/Electron; en ese caso Bit informa la limitación y no intenta eludirla con comandos del sistema.
+
+## Modo pendrive
+
+```powershell
+npm run dist:dir
+powershell -NoProfile -File .\scripts\make-usb.ps1 -Drive E:
+```
+
+El script copia la aplicación desempaquetada, crea `portable.flag` y `data\models`. Use exFAT o NTFS para modelos mayores de 4 GB. Consulte [docs/PENDRIVE.md](./docs/PENDRIVE.md).
+
+## Desarrollo y verificación
+
+Las dependencias nativas se instalan manualmente después de revisar `package.json`:
+
+```powershell
+npm install
+npm run typecheck
+npm run verify
+npm start
+```
+
+## Publicar una versión
+
+```powershell
+git switch preview
+npm run verify
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+El workflow del tag ejecuta `npm ci`, verifica el proyecto, genera `Bit-Portable.exe`, publica su SHA256 y crea una atestación de procedencia.
+
+## Seguridad
+
+El instalador:
+
+- usa TLS 1.2 y descarga binarios solo desde `https://github.com/Luky23/Bit/releases/`;
+- verifica SHA256 antes de instalar;
+- no solicita administrador, no cambia el Registro, Defender ni las políticas de ejecución;
+- no instala Node, Git, Ollama ni modelos.
+
+Bit mantiene `contextIsolation`, `sandbox` y una CSP estricta. Las búsquedas y aperturas locales se auditan sin confirmaciones repetitivas. Toda escritura, instalación, descarga o acción peligrosa requiere una decisión explícita. El contenido de pantalla, web, notas y archivos se trata como dato no confiable y no puede autorizar herramientas.
+
+Más detalles: [privacidad](./docs/PRIVACY.md), [modelos](./docs/MODELS.md), [voz](./docs/VOICE.md) y [pantalla](./docs/SCREEN.md).

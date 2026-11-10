@@ -221,15 +221,370 @@
     .setting output{float:right;color:#cfc188}
     #startup-song-remove{margin-top:8px}
   </style>
+  <style>
+    /* Fondo holográfico liviano: profundidad visual sin sumar nodos ni dependencias. */
+    body {
+      background:
+        radial-gradient(circle at 68% 42%, rgba(0, 243, 255, .10), transparent 17%),
+        radial-gradient(circle at 68% 42%, rgba(48, 126, 255, .07), transparent 36%),
+        radial-gradient(circle at 16% 78%, rgba(0, 140, 255, .06), transparent 25%),
+        #05090d;
+    }
+    body:before {
+      opacity: .22;
+      background-image:
+        linear-gradient(rgba(0, 243, 255, .07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 243, 255, .07) 1px, transparent 1px),
+        repeating-linear-gradient(0deg, transparent 0 4px, rgba(210, 255, 255, .018) 5px);
+      background-size: 56px 56px, 56px 56px, 100% 5px;
+      mask-image: radial-gradient(ellipse at 68% 44%, black 0 26%, transparent 76%);
+    }
+    body:after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: .55;
+      background:
+        radial-gradient(ellipse at 68% 44%, transparent 0 23%, rgba(0, 243, 255, .10) 23.1% 23.25%, transparent 23.4% 34%, rgba(0, 243, 255, .055) 34.1% 34.25%, transparent 34.4%),
+        linear-gradient(115deg, transparent 49.8%, rgba(0, 243, 255, .07) 50%, transparent 50.2%),
+        linear-gradient(25deg, transparent 49.8%, rgba(0, 243, 255, .045) 50%, transparent 50.2%);
+    }
+    .workspace { z-index: 1; }
+    .composer {
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      backdrop-filter: none;
+      padding: 2px 0;
+    }
+    .composer textarea {
+      min-height: 42px;
+      padding: 12px 4px;
+      border-bottom: 1px solid rgba(92, 236, 255, .28);
+      transition: border-color .2s ease, box-shadow .2s ease;
+    }
+    .composer:focus-within textarea {
+      border-bottom-color: var(--accent);
+      box-shadow: 0 7px 18px -14px rgba(0, 243, 255, .9);
+    }
+    .composer button {
+      min-width: 44px;
+      min-height: 38px;
+      border: 1px solid rgba(92, 236, 255, .32);
+      border-radius: 9px;
+      background: rgba(0, 243, 255, .07);
+      color: #b9edf2;
+      font-size: 11px;
+      transition: border-color .2s ease, background .2s ease, color .2s ease, transform .2s ease;
+    }
+    .composer button:hover {
+      border-color: rgba(0, 243, 255, .8);
+      background: rgba(0, 243, 255, .16);
+      color: #efffff;
+      transform: translateY(-1px);
+    }
+    .composer .icon-button[aria-label="Mantener para hablar"] {
+      min-width: 58px;
+      color: #8ff6d0;
+      border-color: rgba(111, 255, 208, .42);
+      background: rgba(111, 255, 208, .08);
+      font: 600 10px Consolas, monospace;
+      letter-spacing: .08em;
+    }
+    .composer .icon-button[aria-label="Voz"] { color: #a9c8ff; }
+    .composer .send {
+      min-width: 78px;
+      color: #dfffff;
+      border-color: rgba(0, 243, 255, .6);
+      background: rgba(0, 180, 210, .18);
+      font-weight: 600;
+    }
+    .composer .icon-button.active {
+      color: #baffea;
+      border-color: #78f4d0;
+      box-shadow: 0 0 14px rgba(120, 244, 208, .2);
+    }
+  </style>
+  <style>
+    /* Fondo holográfico limpio: sin rejilla, líneas ni efecto de escaneo. */
+    body {
+      background:
+        radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .13), transparent 20%),
+        radial-gradient(ellipse at 68% 44%, rgba(55, 124, 255, .08), transparent 42%),
+        radial-gradient(ellipse at 18% 82%, rgba(0, 117, 255, .06), transparent 30%),
+        #05080c;
+    }
+    body:before { opacity: .08; background: radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .14), transparent 38%); background-size: auto; mask-image: none; }
+    body:after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      pointer-events: none;
+      opacity: .7;
+      background:
+        radial-gradient(ellipse at 68% 44%, transparent 0 24%, rgba(0, 243, 255, .10) 24.1% 24.25%, transparent 24.5% 35%, rgba(0, 243, 255, .055) 35.1% 35.25%, transparent 35.5%),
+        radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .07), transparent 48%);
+    }
+  </style>
+  <style>
+    /* Fondo tipo interfaz holográfica: solo halos y profundidad, sin líneas rectas. */
+    body { background: radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .15), transparent 18%), radial-gradient(ellipse at 68% 44%, rgba(42, 111, 255, .10), transparent 46%), radial-gradient(ellipse at 18% 84%, rgba(0, 145, 255, .07), transparent 34%), #04070b; }
+    body:before { opacity: .12; background: radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .18), transparent 35%); background-size: auto; mask-image: none; }
+    body:before { opacity: .04; }
+    body:after { opacity: 0; background: none; }
+    .orb { filter: drop-shadow(0 0 9px #55eaff55); }
+    .orb-core { box-shadow: 0 0 16px #4fe9ff99, 0 0 42px #2bc9f322; }
+    .orb-canvas { opacity: .78; }
+    .orb.speaking .orb-core { animation: none; box-shadow: 0 0 18px #4fe9ffbb, 0 0 48px #2bc9f333; }
+    .orb.speaking .orb-canvas { opacity: .84; filter: drop-shadow(0 0 10px #00d9ff66); }
+    .orb.speaking .orb-canvas { animation: core-speaking-shimmer 1.15s ease-in-out infinite; }
+    @keyframes core-speaking-shimmer { 0%, 100% { transform: scale(.99); filter: drop-shadow(0 0 10px #00d9ff66) brightness(1); } 50% { transform: scale(1.025); filter: drop-shadow(0 0 16px #00d9ff88) brightness(1.1); } }
+
+    /* ========================================================================
+       DRAG & DROP — overlay de pantalla completa y tarjeta modal de cristal.
+       ======================================================================== */
+    #drop-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483646;
+      display: none;
+      place-items: center;
+      pointer-events: none;
+      border: 2px dashed #00f3ff;
+      border-radius: 16px;
+      background: rgba(0, 110, 100, 0.42);
+      backdrop-filter: blur(16px);
+      color: #dfffff;
+      font: 600 15px Consolas, monospace;
+      letter-spacing: 0.14em;
+      text-align: center;
+      transition: opacity 0.1s ease;
+    }
+    #drop-overlay .drop-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+    #drop-overlay .drop-inner b {
+      color: #00f3ff;
+      font-size: 48px;
+      text-shadow: 0 0 22px #00f3ff;
+    }
+    #drop-overlay[data-active="true"] {
+      display: grid;
+    }
+    .glass-card {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(3, 8, 12, 0.70);
+      backdrop-filter: blur(18px);
+      color: #dcfbff;
+      overflow-y: auto;
+    }
+    #drop-modal {
+      width: min(560px, 92vw);
+      max-height: 90vh;
+      padding: 26px 22px;
+      border: 1px solid rgba(0, 243, 255, 0.45);
+      border-radius: 18px;
+      background: linear-gradient(145deg, rgba(8, 29, 40, 0.96), rgba(2, 10, 17, 0.96));
+      box-shadow: 0 22px 90px #000c, 0 0 45px rgba(0, 243, 255, 0.16);
+    }
+    #drop-modal .kicker {
+      color: #72f8ff;
+      font: 10px Consolas, monospace;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    #drop-modal h2 {
+      margin: 6px 0 10px;
+      font-size: 20px;
+      font-weight: 400;
+      overflow-wrap: anywhere;
+    }
+    #drop-modal h2 em {
+      color: #00f3ff;
+      font-style: normal;
+    }
+    #drop-modal p.drop-hint {
+      margin: 0 0 22px;
+      color: #8fb8bf;
+      font-size: 12.5px;
+      overflow-wrap: break-word;
+    }
+    .drop-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-bottom: 4px;
+    }
+    .drop-actions button {
+      min-height: 52px;
+      padding: 10px 14px;
+      border: 1px solid rgba(92, 236, 255, 0.25);
+      border-radius: 10px;
+      background: rgba(0, 243, 255, 0.06);
+      color: #dcfbff;
+      text-align: left;
+      cursor: pointer;
+      font: inherit;
+    }
+    .drop-actions button:hover {
+      border-color: #00f3ff;
+      background: rgba(0, 243, 255, 0.14);
+    }
+    .drop-actions button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .drop-cancel {
+      width: 100%;
+      margin-top: 14px;
+      text-align: center;
+      color: #79a2aa;
+    }
+    @media (max-width: 620px) {
+      .drop-actions { grid-template-columns: 1fr; }
+    }
+  <style>
+    /* ========================================================================
+       DISPOSICIÓN MULTIMONITOR — sección en el cajón de ajustes
+       ======================================================================== */
+    .display-layout-section {
+      margin: 0 0 24px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #0b171e;
+    }
+    .display-layout-section .section-title {
+      display: block;
+      color: var(--accent);
+      font: 10px Consolas, monospace;
+      letter-spacing: 0.18em;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+    }
+    .displays-grid {
+      display: grid;
+      gap: 12px;
+    }
+    .display-card {
+      border: 1px solid #315560;
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: #0b1b22;
+      position: relative;
+      overflow: hidden;
+    }
+    .display-card.primary {
+      border-color: #67e1f1;
+      background: linear-gradient(145deg, #0e222b, #0b171e);
+    }
+    .display-card.primary::before {
+      content: "PRIMARIA";
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      font: 700 7px Consolas, monospace;
+      color: #67e1f1;
+      letter-spacing: 0.15em;
+    }
+    .display-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+    .display-id {
+      color: var(--soft);
+      font: 10px Consolas, monospace;
+      letter-spacing: 0.14em;
+    }
+    .display-bounds {
+      color: var(--dim);
+      font: 9px Consolas, monospace;
+      letter-spacing: 0.1em;
+      margin-bottom: 12px;
+    }
+    .display-card select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #315560;
+      border-radius: 8px;
+      background: #081319;
+      color: var(--text);
+      font: 10px Consolas, monospace;
+      cursor: pointer;
+    }
+    .display-card select:hover {
+      border-color: #6ce5f4;
+    }
+    .display-card select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+  </style>
+  <style>
+    /* Núcleo 3D central: anillos orbitales con aceleración por hardware (translateZ(0)).
+       Siempre visible, centrado en la pantalla, sin depender de reglas anteriores. */
+    #hud-core,.hud-core{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%) translateZ(0);width:340px;height:340px;display:block!important;visibility:visible!important;pointer-events:none;z-index:10;transform-style:preserve-3d}
+    #hud-core .core-ring,.hud-core .core-ring{position:absolute!important;inset:0!important;border:1px solid rgba(103,225,241,.45);border-radius:50%;display:block!important;visibility:visible!important;transform:translateZ(0);transform-style:preserve-3d;box-sizing:border-box}
+    #hud-core .core-ring:nth-child(1){transform:rotateX(70deg) rotateY(18deg) translateZ(0);animation:core-orbit-1 14s linear infinite}
+    #hud-core .core-ring:nth-child(2){transform:rotateX(18deg) rotateY(72deg) translateZ(0);animation:core-orbit-2 18s linear infinite reverse}
+    #hud-core .core-ring:nth-child(3){transform:rotateX(45deg) rotateY(45deg) translateZ(0);animation:core-orbit-3 22s linear infinite}
+    @keyframes core-orbit-1{to{transform:rotateX(70deg) rotateY(378deg) translateZ(0)}}
+    @keyframes core-orbit-2{to{transform:rotateX(18deg) rotateY(432deg) translateZ(0)}}
+    @keyframes core-orbit-3{to{transform:rotateX(45deg) rotateY(405deg) translateZ(0)}}
+  </style>
 </head>
 <body>
   <header class="topbar"><div class="brand"><img class="brand-mark" src="assets/bit-orb.png" alt="Bit"><div><div class="brand-name">BIT</div><span class="brand-sub">ASISTENTE LOCAL PRIVADO</span></div></div><div class="status"><i id="status-dot" class="status-dot"></i><span id="connection">COMPROBANDO</span><span>·</span><span>LOCAL + WEB POR PEDIDO</span></div><div class="top-right"><div class="clock"><span id="clock"></span><small>BUENOS AIRES / LOCAL</small></div><button id="settings" class="settings" type="button">AJUSTES</button></div></header>
   <main class="workspace">
     <aside class="telemetry"><div class="telemetry-title">TELEMETRÍA DEL SISTEMA</div><div class="telemetry-ring"><span id="telemetry-percent">98%</span><small>NÚCLEO</small></div><div class="metric"><span>CARGA CPU</span><b>--</b></div><div class="metric"><span>MEMORIA</span><b>LOCAL</b></div><div class="metric"><span>RED</span><b>LOOPBACK</b></div><div class="metric"><span>SEGURIDAD</span><b class="good">MÁXIMA</b></div><div class="telemetry-title lower">SISTEMAS ACTIVOS</div><div class="system-row"><i></i><span>OLLAMA</span><b>LISTO</b></div><div class="system-row"><i></i><span>PIPER TTS</span><b>LOCAL</b></div><div class="system-row"><i></i><span>PUENTE IPC</span><b>ONLINE</b></div></aside>
-    <section class="conversation"><div class="conversation-head"><span>J.A.R.V.I.S. / BIT CORE</span><strong id="activity">STANDBY</strong></div><div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Hola. Soy Bit. Sistemas locales listos.</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="qwen2.5:3b">QWEN 3B</option><option value="qwen2.5-coder:7b">CODER 7B</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Mantener para hablar" aria-pressed="false" title="Mantener para dictar">MIC</button><button id="send" class="send" type="submit">ENVIAR</button></form></section>
+    <section class="conversation"><div class="conversation-head"><span>J.A.R.V.I.S. / BIT CORE</span><strong id="activity">STANDBY</strong></div>
+    <div id="hud-core" class="hud-core" aria-label="Núcleo 3D de Bit" role="region" aria-roledescription="núcleo">
+      <div class="core-ring"></div>
+      <div class="core-ring"></div>
+      <div class="core-ring"></div>
+    </div>
+    <div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Hola. Soy Bit. Sistemas locales listos.</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="qwen2.5:3b">QWEN 3B</option><option value="qwen2.5-coder:7b">CODER 7B</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Mantener para hablar" aria-pressed="false" title="Mantener para dictar">MIC</button><button id="send" class="send" type="submit">ENVIAR</button></form></section>
     <aside id="context-panel" class="context"><div class="context-head"><span>BIT / CONTEXTO</span><span id="card-count">0</span></div><div id="cards" aria-live="polite"></div><p id="daily-summary" class="context-empty">Sistema local listo<br><small>Privacidad máxima · Loopback</small></p></aside>
   </main>
-  <div id="drawer-backdrop" class="drawer-backdrop"></div><aside class="drawer" aria-label="Ajustes"><div class="drawer-title"><span>AJUSTES DE BIT</span><button id="drawer-close" class="drawer-close" type="button">✕</button></div><div class="setting"><label for="user-name">NOMBRE PREFERIDO</label><div class="vault-row"><input id="user-name" class="vault-path" type="text" maxlength="40" autocomplete="name" placeholder="¿Cómo prefiere que le llame?"><button id="user-name-save" class="vault-button" type="button">GUARDAR</button></div><p id="user-name-status" class="vault-status" aria-live="polite"></p></div><div class="setting"><label for="drawer-model">MODELO OLLAMA</label><select id="drawer-model"><option value="qwen2.5:3b">Qwen 2.5 · 3B</option><option value="qwen2.5-coder:7b">Qwen 2.5 Coder · 7B</option></select></div><div class="setting"><label for="drawer-voice">VOZ PIPER TTS</label><select id="drawer-voice"><option>Voz local configurada</option></select></div><div class="setting"><label for="stt-model-pick">MODELO LOCAL PARA DICTADO</label><button id="stt-model-pick" class="vault-button" type="button">ELEGIR CARPETA DEL MODELO</button><p id="stt-model-status" class="vault-status" aria-live="polite">Sin modelo local configurado</p></div><div class="setting"><label for="drawer-camera">CÁMARA WEB</label><select id="drawer-camera"><option>Desactivada</option><option>Disponible bajo permiso</option></select></div><div class="setting"><label for="drawer-screen">ANÁLISIS DE PANTALLA</label><select id="drawer-screen"><option value="false">Preguntar cada vez</option><option value="true">Permitir siempre</option></select></div><p class="drawer-note">Configuración local. Bit no envía datos fuera de este dispositivo sin autorización.</p></aside>
+  <div id="drawer-backdrop" class="drawer-backdrop"></div><aside class="drawer" aria-label="Ajustes"><div class="drawer-title"><span>AJUSTES DE BIT</span><button id="drawer-close" class="drawer-close" type="button">✕</button></div><div class="setting"><label for="user-name">NOMBRE PREFERIDO</label><div class="vault-row"><input id="user-name" class="vault-path" type="text" maxlength="40" autocomplete="name" placeholder="¿Cómo prefiere que le llame?"><button id="user-name-save" class="vault-button" type="button">GUARDAR</button></div><p id="user-name-status" class="vault-status" aria-live="polite"></p></div><div class="setting"><label for="drawer-model">MODELO OLLAMA</label><select id="drawer-model"><option value="qwen2.5:3b">Qwen 2.5 · 3B</option><option value="qwen2.5-coder:7b">Qwen 2.5 Coder · 7B</option></select></div><div class="setting"><label for="drawer-voice">VOZ PIPER TTS</label><select id="drawer-voice"><option>Voz local configurada</option></select></div><div class="setting"><label for="stt-model-pick">MODELO LOCAL PARA DICTADO</label><button id="stt-model-pick" class="vault-button" type="button">ELEGIR CARPETA DEL MODELO</button><p id="stt-model-status" class="vault-status" aria-live="polite">Sin modelo local configurado</p></div><div class="setting"><label for="drawer-camera">CÁMARA WEB</label><select id="drawer-camera"><option>Desactivada</option><option>Disponible bajo permiso</option></select></div><div class="setting"><label for="drawer-screen">ANÁLISIS DE PANTALLA</label><select id="drawer-screen"><option value="false">Preguntar cada vez</option><option value="true">Permitir siempre</option></select></div><div class="display-layout-section">
+  <span class="section-title">Disposición Multimonitor</span>
+  <div class="displays-grid" id="displays-container">
+    <!-- Tarjetas de pantalla inyectadas por JavaScript -->
+  </div>
+</div>
+<p class="drawer-note">Configuración local. Bit no envía datos fuera de este dispositivo sin autorización.</p></aside>
+
+  <div id="drop-overlay"><div class="drop-inner"><b>⬡</b>Suelta el archivo para procesar en Bit</div></div>
+
+  <div id="drop-modal" class="glass-card" role="dialog" aria-modal="true" aria-label="Archivo soltado">
+    <div class="drop-dialog">
+      <div class="kicker">BIT / ARCHIVO DETECTADO</div>
+      <h2>¿Qué deseas hacer con <em id="drop-file-name"></em>?</h2>
+      <p class="drop-hint" id="drop-file-hint"></p>
+      <div class="drop-actions">
+        <button type="button" data-action="summarize">📄 Resumir contenido / Extraer texto</button>
+        <button type="button" data-action="edit">✏️ Modificar / Editar archivo</button>
+        <button type="button" data-action="vision">👁️ Analizar con Visión de IA</button>
+        <button type="button" data-action="vault">🧠 Guardar en Bóveda / Obsidian</button>
+      </div>
+      <button type="button" class="drop-cancel" id="drop-cancel">CANCELAR</button>
+    </div>
+  </div>
+
   <script>
     document.querySelector('.drawer')?.insertAdjacentHTML('beforeend','<div class="setting vault-setting"><label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p></div>');
   </script>
@@ -253,14 +608,15 @@
     function showCard(data={}){const id=`card-${Date.now()}`;const card=document.createElement('article');card.className='card';card.id=id;const icon=document.createElement('div');icon.className='card-icon';icon.textContent=data.icon||'◌';const body=document.createElement('div');const label=document.createElement('div');label.className='card-label';label.textContent=data.label||'BIT CONTEXT';const value=document.createElement('div');value.className='card-value';value.textContent=data.value||'';const subtitle=document.createElement('div');subtitle.className='card-subtitle';subtitle.textContent=data.subtitle||'';body.append(label,value,subtitle);const close=document.createElement('button');close.className='card-close';close.type='button';close.textContent='✕';close.onclick=()=>hideCard(id);card.append(icon,body,close);$('cards').prepend(card);$('context-panel').style.display='block';$('card-count').textContent=$('cards').children.length;return card}
     function detectCard(text){const lower=text.toLowerCase();const temp=text.match(/(-?\d{1,2})\s*\u00b0/);const hour=text.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);if(temp||/clima|temperatura|soleado|nublado|lluvia|despejado/.test(lower))showCard({icon:/lluvia|nublado/.test(lower)?'☁️':'☀️',label:'CLIMA',value:temp?`${temp[1]}°`:'Ahora',subtitle:text.slice(0,90)});else if(hour||/agenda|reunión|evento|turno|calendario/.test(lower))showCard({icon:'⏰',label:'AGENDA',value:hour?hour[0].replace('.',':'):'Evento',subtitle:text.slice(0,90)})}
     window.BitUI={addMessage,setState,showCard,hideCard,clearCards:()=>{$('cards').replaceChildren();$('card-count').textContent='0';$('context-panel').style.display='none'},openDrawer:()=>document.body.classList.add('drawer-open'),closeDrawer:()=>document.body.classList.remove('drawer-open')};
-    function startOrbParticles(){const canvas=$('orb-canvas');if(!canvas)return;const context=canvas.getContext('2d');let frameId=0;const particles=Array.from({length:260},()=>({angle:Math.random()*Math.PI*2,radius:10+Math.pow(Math.random(),.55)*124,speed:(Math.random()-.5)*.0028,size:.35+Math.random()*1.45,alpha:.2+Math.random()*.8,seed:Math.random()*Math.PI*2}));function resize(){const box=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,box.width*ratio);canvas.height=Math.max(1,box.height*ratio);context.setTransform(ratio,0,0,ratio,0,0);draw(performance.now())}function draw(time){const thinking=currentState===State.PROCESSING;const box=canvas.getBoundingClientRect();const cx=box.width/2,cy=box.height/2;context.clearRect(0,0,box.width,box.height);const pulse=thinking?1:1+Math.sin(time*.0014)*.035;for(const particle of particles){if(!thinking)particle.angle+=particle.speed;const wave=thinking?0:Math.sin(time*.001+particle.seed)*5;const radius=(particle.radius+wave)*pulse;const x=cx+Math.cos(particle.angle)*radius;const y=cy+Math.sin(particle.angle)*radius*.82;const glow=particle.size>1.2?'#7cecff':'#20cde8';context.globalAlpha=particle.alpha*(.35+Math.max(0,1-particle.radius/145));context.fillStyle=glow;context.beginPath();context.arc(x,y,particle.size,0,Math.PI*2);context.fill()}context.globalAlpha=1;const core=context.createRadialGradient(cx-5,cy-7,1,cx,cy,31);core.addColorStop(0,'#e8ffff');core.addColorStop(.15,'#71eaff');core.addColorStop(.5,'#08b9de88');core.addColorStop(1,'#08b9de00');context.fillStyle=core;context.beginPath();context.arc(cx,cy,34,0,Math.PI*2);context.fill();if(!thinking)frameId=requestAnimationFrame(draw);else frameId=0}renderOrb=()=>{if(frameId)cancelAnimationFrame(frameId);draw(performance.now());if(currentState!==State.PROCESSING)frameId=requestAnimationFrame(draw)};window.addEventListener('resize',resize);resize();frameId=requestAnimationFrame(draw)}
+    function startOrbParticles(){const canvas=$('orb-canvas');if(!canvas)return;const context=canvas.getContext('2d');let frameId=0;const particles=Array.from({length:260},()=>({angle:Math.random()*Math.PI*2,radius:10+Math.pow(Math.random(),.55)*124,speed:(Math.random()-.5)*.0028,size:.35+Math.random()*1.45,alpha:.2+Math.random()*.8,seed:Math.random()*Math.PI*2}));function resize(){const box=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,box.width*ratio);canvas.height=Math.max(1,box.height*ratio);context.setTransform(ratio,0,0,ratio,0,0);draw(performance.now())}function draw(time){const thinking=currentState===State.PROCESSING;const box=canvas.getBoundingClientRect();const cx=box.width/2,cy=box.height/2;context.clearRect(0,0,box.width,box.height);const pulse=thinking?1:1+Math.sin(time*.0014)*.035;for(const particle of particles){if(!thinking)particle.angle+=particle.speed;const wave=thinking?0:Math.sin(time*.001+particle.seed)*5;const radius=(particle.radius+wave)*pulse;const x=cx+Math.cos(particle.angle)*radius;const y=cy+Math.sin(particle.angle)*radius*.82;const glow=particle.size>1.2?'#62c4d0':'#16879a';context.globalAlpha=particle.alpha*(.2+Math.max(0,1-particle.radius/145))*.72;context.fillStyle=glow;context.beginPath();context.arc(x,y,particle.size,0,Math.PI*2);context.fill()}context.globalAlpha=1;const core=context.createRadialGradient(cx-4,cy-5,1,cx,cy,19);core.addColorStop(0,'#c9f7fa');core.addColorStop(.2,'#4bb8c7');core.addColorStop(.52,'#08778c55');core.addColorStop(1,'#08778c00');context.fillStyle=core;context.beginPath();context.arc(cx,cy,21,0,Math.PI*2);context.fill();if(!thinking)frameId=requestAnimationFrame(draw);else frameId=0}renderOrb=()=>{if(frameId)cancelAnimationFrame(frameId);draw(performance.now());if(currentState!==State.PROCESSING)frameId=requestAnimationFrame(draw)};window.addEventListener('resize',resize);resize();frameId=requestAnimationFrame(draw)}
     const tick=()=>{$('clock').textContent=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})};setInterval(tick,1000);tick();startOrbParticles();
     $('settings').onclick=()=>window.BitUI.openDrawer();$('drawer-close').onclick=()=>window.BitUI.closeDrawer();$('drawer-backdrop').onclick=()=>window.BitUI.closeDrawer();document.addEventListener('keydown',event=>{if(event.key==='Escape')window.BitUI.closeDrawer()});$('drawer-model').onchange=event=>{$('model').value=event.target.value;localStorage.setItem('bit.model',event.target.value)};$('model').onchange=event=>{$('drawer-model').value=event.target.value;localStorage.setItem('bit.model',event.target.value)};$('drawer-screen').onchange=async(event)=>{const result=await window.bitRuntime.setConfig('screenAnalysisEnabled',event.target.value==='true');if(!result?.ok)addMessage(`No pude guardar el ajuste de pantalla: ${result.error}`,'error')};
     updateVoiceButton();$('history-up').onclick=()=>{if(history.length){historyIndex=Math.max(0,historyIndex-1);$('prompt').value=history[historyIndex];$('prompt').focus()}};$('history-down').onclick=()=>{if(history.length){historyIndex=Math.min(history.length,historyIndex+1);$('prompt').value=history[historyIndex]||'';$('prompt').focus()}};$('voice').onclick=async()=>{const previous=voiceEnabled;voiceEnabled=!voiceEnabled;updateVoiceButton();try{const result=await window.bitRuntime.setConfig('speechEnabled',voiceEnabled);if(!result.ok)throw new Error(result.error);$('prompt').focus()}catch(error){voiceEnabled=previous;updateVoiceButton();addMessage(`No pude guardar el ajuste de voz: ${error.message}`,'error')}};
     async function boot(){try{const [runtime,speechSetting,nameSetting]=await Promise.all([window.bitRuntime.getRuntime(),window.bitRuntime.getConfig('speechEnabled'),window.bitRuntime.getConfig('userName')]);voiceEnabled=speechSetting?.ok?speechSetting.value!==false:true;if(!speechSetting?.ok)addMessage(`No pude leer el ajuste de voz: ${speechSetting?.error||'respuesta inválida'}`,'error');updateVoiceButton();const name=nameSetting?.ok&&typeof nameSetting.value==='string'?nameSetting.value:'';$('user-name').value=name;$('welcome').textContent=`${new Date().getHours()<12?'Buenos días':new Date().getHours()<20?'Buenas tardes':'Buenas noches'}, ${name||'amigo'}. Soy Bit. Sistemas locales listos.`;$('connection').textContent='LOCAL READY';$('status-dot').classList.add('online');$('drawer-model').value=localStorage.getItem('bit.model')||runtime.model||'qwen2.5:3b';$('model').value=$('drawer-model').value;const screenSetting=await window.bitRuntime.getConfig('screenAnalysisEnabled');$('drawer-screen').value=screenSetting?.ok===true?String(screenSetting.value==='true'):'false'}catch(error){$('connection').textContent='LOCAL ERROR';setState(State.ERROR);addMessage(error.message,'error')}}
     const cleanupNetworkActivity=window.bitRuntime.onNetworkActivity(({active})=>{$('connection').textContent=active?'BUSCANDO EN INTERNET':'LOCAL READY';$('status-dot').classList.toggle('web',active);if(!active)$('status-dot').classList.add('online')});window.addEventListener('beforeunload',cleanupNetworkActivity);
     $('prompt').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('chat-form').requestSubmit()}});
-    $('chat-form').onsubmit=async event=>{event.preventDefault();const prompt=$('prompt').value.trim();if(!prompt)return;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');$('send').disabled=true;setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer+(result.sources?.length?`\n\nFuentes consultadas:\n${result.sources.map(source=>`• ${source.title} — ${source.url}`).join('\n')}`:'');pending.className='message assistant';scrollChatToLatest();detectCard(answer);speakResponse(answer)}catch(error){pending.textContent=`No pude conectarme con Ollama local: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{$('send').disabled=false;if(currentState!==State.ERROR)setState(State.IDLE);$('prompt').focus()}};
+    $('chat-form').onsubmit=async event=>{event.preventDefault();const prompt=$('prompt').value.trim();if(!prompt||currentState===State.PROCESSING)return;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer+(result.sources?.length?`\n\nFuentes consultadas:\n${result.sources.map(source=>`• ${source.title} — ${source.url}`).join('\n')}`:'');pending.className='message assistant';scrollChatToLatest();detectCard(answer);speakResponse(answer)}catch(error){pending.textContent=`No pude conectarme con Ollama local: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{if(currentState!==State.ERROR)setState(State.IDLE);$('prompt').focus()}};
+    document.addEventListener('click',(event)=>{const t=event.target;if(!t.matches('button,input,textarea,select,a,[role="button"]')){$('prompt')?.focus();}});
     window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration;setState(State.SPEAKING);clearTimeout(speechResetTimer);speechResetTimer=setTimeout(()=>{if(currentState===State.SPEAKING)setState(State.IDLE)},Math.max(0,(nextAudioTime-audioContext.currentTime)*1000))}catch(error){addMessage(`No pude reproducir la voz local: ${error.message}`,'error')}});boot().then(()=>import('./boot.js')).then(({runBootSequence})=>runBootSequence({model:$('model').value,voiceEnabled})).catch(error=>{console.error('[boot]',error);$('daily-summary').textContent=`No se pudo preparar el resumen del día: ${error.message}`});
     function ensureVaultSetting(){if(!$('vault-path')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p>';firstSetting.before(wrapper)}$('vault-connect').onclick=pickVault;$('vault-prepare').onclick=prepareVault}
     function ensureProjectsSetting(){if(!$('projects-root')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="projects-root">PROYECTOS LOCALES DE BIT</label><div class="vault-row"><input id="projects-root" class="vault-path" type="text" readonly placeholder="Ninguna carpeta elegida"><button id="projects-root-pick" class="vault-button" type="button">ELEGIR</button></div><p id="projects-root-status" class="vault-status" aria-live="polite">Elija una carpeta fuera de servicios de sincronización para conservar la privacidad.</p>';firstSetting.before(wrapper)}$('projects-root-pick').onclick=pickProjectsRoot}
@@ -276,6 +632,124 @@
     document.getElementById('settings').addEventListener('click',loadVaultSetting);document.getElementById('settings').addEventListener('click',loadProjectsSetting);document.getElementById('vault-connect')?.addEventListener('click',pickVault);
     document.getElementById('settings').addEventListener('click',loadWhisperModelSetting);
   </script>
+
+  <script>
+    (function installDragAndDrop() {
+      const overlay = document.getElementById('drop-overlay');
+      const modal = document.getElementById('drop-modal');
+      const fileNameNode = document.getElementById('drop-file-name');
+      const fileHintNode = document.getElementById('drop-file-hint');
+      const cancelNode = document.getElementById('drop-cancel');
+      const actionsNode = modal ? modal.querySelector('.drop-actions') : null;
+      const visionNode = actionsNode ? actionsNode.querySelector('[data-action="vision"]') : null;
+      const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp']);
+
+      let droppedFile = null;
+      let dragCount = 0;
+
+      function showOverlay(visible) {
+        if (!overlay) return;
+        if (visible) {
+          overlay.setAttribute('data-active', 'true');
+        } else {
+          overlay.removeAttribute('data-active');
+        }
+      }
+      function hideModal() {
+        if (!modal) return;
+        modal.style.display = 'none';
+        droppedFile = null;
+      }
+      function appendChatResult(text) {
+        if (!text) return;
+        const node = document.createElement('div');
+        node.className = 'message assistant';
+        node.textContent = String(text);
+        const chat = document.getElementById('chat');
+        chat.append(node);
+        chat.scrollTop = chat.scrollHeight;
+        return node;
+      }
+      function acceptDrag(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      }
+
+      /* Listeners globales en window. El contador evita parpadeos al moverse
+         dentro de la ventana; el overlay se oculta solo al salir realmente. */
+      window.addEventListener('dragenter', (event) => {
+        acceptDrag(event);
+        dragCount += 1;
+        if (dragCount === 1) showOverlay(true);
+      }, true);
+      window.addEventListener('dragover', acceptDrag, true);
+      window.addEventListener('dragleave', (event) => {
+        acceptDrag(event);
+        dragCount = Math.max(0, dragCount - 1);
+        if (dragCount === 0) showOverlay(false);
+      }, true);
+      window.addEventListener('drop', async (event) => {
+        acceptDrag(event);
+        dragCount = 0;
+        showOverlay(false);
+        const file = event.dataTransfer?.files?.[0];
+        if (!file) return;
+
+        let filePath;
+        try {
+          filePath = await window.bitRuntime.getPathForFile(file);
+        } catch (error) {
+          addMessage(`No se pudo leer la ruta del archivo soltado: ${error.message}`, 'error');
+          return;
+        }
+        if (!filePath) {
+          addMessage('No se recibió una ruta local para el archivo soltado.', 'error');
+          return;
+        }
+
+        const name = file.name || 'archivo';
+        const extension = name.includes('.') ? `.${name.split('.').pop().toLowerCase()}` : '';
+        const sizeKb = (file.size / 1024).toFixed(1);
+        droppedFile = { filePath, name, extension };
+        fileNameNode.textContent = name;
+        fileHintNode.textContent = `Ruta: ${filePath} · ${extension || '(sin extensión)'} · ${sizeKb} KB`;
+        if (visionNode) visionNode.style.display = IMAGE_EXTENSIONS.has(extension) ? '' : 'none';
+        modal.style.display = 'grid';
+      }, true);
+
+      async function runDroppedAction(action) {
+        const file = droppedFile;
+        hideModal();
+        if (!file) return;
+        try {
+          const result = await window.bitRuntime.processDroppedFile({ filePath: file.filePath, action });
+          appendChatResult(result?.text || 'Archivo procesado.');
+          if (result?.status) {
+            const statusNode = document.createElement('div');
+            statusNode.className = 'message system';
+            statusNode.textContent = `Estado: ${result.status}`;
+            const chat = document.getElementById('chat');
+            chat.append(statusNode);
+            chat.scrollTop = chat.scrollHeight;
+          }
+        } catch (error) {
+          addMessage(`No pude procesar el archivo: ${error.message}`, 'error');
+        }
+      }
+
+      cancelNode?.addEventListener('click', () => hideModal());
+      actionsNode?.addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+        void runDroppedAction(button.dataset.action);
+      });
+      modal?.addEventListener('click', (event) => {
+        if (event.target === modal) hideModal();
+      });
+    })();
+  </script>
+
   <script>
     window.bitRuntime.onVoiceClear(() => {
       clearTimeout(speechResetTimer);
@@ -472,5 +946,263 @@
       chat.scrollTop = chat.scrollHeight;
     });
   </script>
+<script>
+  window.addEventListener('load', async () => {
+    try {
+      const result = await window.bitRuntime.listOllamaModels();
+      const models = Array.isArray(result?.models) ? result.models : [];
+      const selected = result?.selected || models[0] || '';
+      const picker = document.getElementById('drawer-model');
+      const model = document.getElementById('model');
+      if (!picker || !model || !selected) return;
+      const options = () => models.map(name => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; });
+      picker.replaceChildren(...options());
+      model.replaceChildren(...options());
+      picker.value = selected;
+      model.value = selected;
+      localStorage.setItem('bit.model', selected);
+      await window.bitRuntime.setConfig('model', selected);
+      picker.onchange = async event => {
+        const next = event.target.value;
+        model.value = next;
+        localStorage.setItem('bit.model', next);
+        await window.bitRuntime.setConfig('model', next);
+      };
+      model.onchange = async event => {
+        const next = event.target.value;
+        picker.value = next;
+        localStorage.setItem('bit.model', next);
+        await window.bitRuntime.setConfig('model', next);
+      };
+    } catch (error) {
+      console.warn('[ollama] No se pudieron detectar modelos locales:', error.message);
+    }
+  });
+</script>
+<style>
+  .glass-card{position:relative;padding:16px 18px;border:1px solid #355965;border-radius:16px;background:linear-gradient(145deg,#17303aee,#0b171ddd);backdrop-filter:blur(16px);box-shadow:0 18px 46px #0007,inset 0 1px #e2ffff14;color:#d8fbff;display:none;animation:appear .28s ease both}
+  .glass-card.visible{display:block}
+  .glass-card .kicker{color:#72f8ff;font:9px Consolas,monospace;letter-spacing:.18em;margin-bottom:8px}
+  .glass-card .label{color:#9cb6bd;font:9px Consolas,monospace;letter-spacing:.12em}
+  .glass-card .value{font-size:30px;font-weight:300;letter-spacing:-.02em;margin:6px 0 2px}
+  .glass-card .detail{color:#69858d;font-size:12px;line-height:1.4}
+  .voice-meter{position:fixed;right:24px;bottom:24px;width:150px;height:44px;border:1px solid #355965;border-radius:12px;background:#0b171dcc;backdrop-filter:blur(10px);display:none;align-items:center;gap:10px;padding:0 12px;color:#9cb6bd;font:11px Consolas,monospace;z-index:50;box-shadow:0 10px 30px #0007}
+  .voice-meter.visible{display:flex}
+  .voice-meter .bar{flex:1;height:10px;background:#10242d;border-radius:5px;overflow:hidden;border:1px solid #223943}
+  .voice-meter .fill{height:100%;background:#67e1f1;width:0%;transition:width .05s ease}
+  .voice-meter .label{font-size:10px;color:#69858d}
+</style>
+<script>
+/* ========================================================================
+   DISPOSICIÓN MULTIMONITOR — lógica del cajón de ajustes
+   ======================================================================== */
+(function installDisplayLayout() {
+  const $ = id => document.getElementById(id);
+  const container = $("displays-container");
+  if (!container) return;
+
+  async function renderDisplayLayout() {
+    let displays;
+    try {
+      displays = await window.bitRuntime.getConnectedDisplays();
+    } catch (error) {
+      console.error("[display-layout] No se pudieron obtener las pantallas:", error);
+      return;
+    }
+    container.innerHTML = "";
+    for (const display of displays) {
+      const card = document.createElement("div");
+      card.className = `display-card${display.isPrimary ? " primary" : ""}`;
+      card.innerHTML = `
+        <div class="display-header">
+          <span class="display-id">Pantalla ${display.id}${display.isPrimary ? " · PRIMARIA" : ""}</span>
+        </div>
+        <div class="display-bounds">${display.bounds.width}×${display.bounds.height} @ (${display.bounds.x}, ${display.bounds.y})</div>
+        <select data-display-id="${display.id}">
+          <option value="main" ${display.role === "main" ? "selected" : ""}>Ventana Principal (Núcleo + Chat + Tarjetas)</option>
+          <option value="project" ${display.role === "project" ? "selected" : ""}>Workspace del Proyecto (Archivos + Diffs)</option>
+          <option value="info" ${display.role === "info" ? "selected" : ""}>Telemetría & Grafo de Obsidian</option>
+          <option value="none" ${display.role === "none" ? "selected" : ""}>Desactivar pantalla / Ocultar</option>
+        </select>
+      `;
+      const select = card.querySelector("select");
+      select.onchange = async (event) => {
+        const nextRole = event.target.value;
+        try {
+          await window.bitRuntime.setDisplayRole(Number(display.id), nextRole);
+          await window.bitRuntime.updateDisplayLayout();
+        } catch (error) {
+          console.error("[display-layout] No se pudo asignar el rol:", error);
+        }
+      };
+      container.appendChild(card);
+    }
+  }
+
+  // Escuchar cambios de pantalla en tiempo real
+  const cleanupDisplayChange = window.bitRuntime.onDisplayChange(() => {
+    void renderDisplayLayout();
+  });
+
+  // Render inicial cuando se abre el cajón de ajustes
+  const settingsBtn = $("settings");
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", () => {
+      void renderDisplayLayout();
+    });
+  }
+
+  window.addEventListener("beforeunload", cleanupDisplayChange);
+})();
+</script>
+
+<script>
+(()=>{
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const orb = $('orb-canvas') ? $('orb-canvas').parentElement : null;
+  const chat = $('chat');
+  let context = $('context');
+  let cards = $('cards');
+  if (!context && chat) {
+    context = document.createElement('div'); context.id='context'; context.className='context';
+    context.innerHTML='<div class="context-head"><span>CONTEXTO</span><strong id="context-title">BIT CORE</strong></div><div id="cards"></div><div class="context-empty">Sin datos contextuales.</div>';
+    document.body.appendChild(context); cards=$('cards');
+  } else if (!cards) {
+    cards=document.createElement('div'); cards.id='cards'; context.appendChild(cards);
+  }
+  let card=document.createElement('div'); card.className='glass-card';
+  card.innerHTML='<div class="kicker">DATO ESTRUCTURADO</div><div class="label">UBICACIÓN</div><div class="value" id="glass-location">—</div><div class="label">VALOR DESTACADO</div><div class="value" id="glass-value">—</div><div class="label">DETALLE</div><div class="detail" id="glass-detail">Esperando datos…</div>';
+  cards.appendChild(card);
+  const glassLocation=$('glass-location'), glassValue=$('glass-value'), glassDetail=$('glass-detail');
+  function showGlass(location,value,detail){ if(!card)return; card.classList.add('visible'); if(glassLocation)glassLocation.textContent=location||'—'; if(glassValue)glassValue.textContent=value||'—'; if(glassDetail)glassDetail.textContent=detail||'—'; }
+  function hideGlass(){ if(card) card.classList.remove('visible'); }
+
+  const CLIMA_RE = /(?:clima|temperatura|°c|humedad|lluvia|precipitaci[oó]n)/iu;
+  function extraerClima(texto){
+    if(!texto || !CLIMA_RE.test(texto)) return null;
+    const mTemp = texto.match(/(-?\d{1,3}\s*°\s*[Cc])/u);
+    const mHum = texto.match(/humedad\s*(\d{1,3}\s*%)/iu);
+    const mLluvia = texto.match(/probabilidad de precipitaci[oó]n\s*(\d{1,3}\s*%)/iu);
+    const mLugar = texto.match(/en\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]{2,40}?)(?:[,:.]|$)/iu);
+    const valor = mTemp ? mTemp[1] : (mHum ? mHum[1] : (mLluvia ? mLluvia[1] : '—'));
+    return { lugar: mLugar ? mLugar[1].trim() : '—', valor, detalle: String(texto).slice(0,160) };
+  }
+
+  if (chat && cards) {
+    const obs = new MutationObserver((muts)=>{
+      for (const mut of muts){
+        for (const node of mut.addedNodes){
+          if (node.nodeType!==1) continue;
+          let el = node;
+          if (el.nodeName!=='DIV' || !el.classList || !el.classList.contains('message') || !el.classList.contains('assistant')) {
+            el = el.querySelector ? el.querySelector('.message.assistant') : null;
+          }
+          if (!el) continue;
+          const texto = (el.textContent||'').replace(/^BIT\s*/u,'').trim();
+          const clima = extraerClima(texto);
+          if (clima) showGlass(clima.lugar, clima.valor, clima.detalle);
+        }
+      }
+    });
+    obs.observe(chat,{childList:true,subtree:true});
+  }
+
+  // ===== CAPTURA CONTINUA DE VOZ (micrófono) =====
+  const meter = document.createElement('div'); meter.id='voice-meter'; meter.className='voice-meter';
+  meter.innerHTML='<span class="label">MIC</span><div class="bar"><div class="fill"></div></div><span id="voice-meter-level" class="label">0%</span>';
+  document.body.appendChild(meter);
+  const fill = meter.querySelector('.fill'); const levelText = $('voice-meter-level');
+
+  function setOrbListening(on){
+    if(!orb) return;
+    if(on){ orb.classList.add('processing','speaking'); } else { orb.classList.remove('processing','speaking'); }
+  }
+
+  let mediaRecorder=null; let analyser=null; let dataArray=null; let animationId=null;
+  let speechStarted=false; let silenceTimer=null; const SILENCE_MS=800; const RMS_THRESHOLD=0.06;
+
+  async function startContinuousVoice(){
+    if (mediaRecorder) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
+      const AC = window.AudioContext||window.webkitAudioContext;
+      if (!AC) throw new Error('AudioContext no disponible');
+      const ac = new AC();
+      const source = ac.createMediaStreamSource(stream);
+      analyser = ac.createAnalyser(); analyser.fftSize=2048;
+      source.connect(analyser);
+      dataArray = new Uint8Array(analyser.frequencyBinCount);
+      mediaRecorder = new MediaRecorder(stream);
+      meter.classList.add('visible');
+      setOrbListening(true);
+      function loop(){
+        if(!analyser) return;
+        analyser.getByteFrequencyData(dataArray);
+        let sum=0; for(let i=0;i<dataArray.length;i++) sum+=dataArray[i];
+        const rms = Math.sqrt(sum/dataArray.length)/255;
+        const pct = Math.min(100, Math.round(rms*400));
+        if(fill) fill.style.width = pct + '%';
+        if(levelText) levelText.textContent = pct + '%';
+        const speaking = rms > RMS_THRESHOLD;
+        if (speaking) {
+          speechStarted = true;
+          if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer=null; }
+        } else if (speechStarted && !silenceTimer) {
+          silenceTimer = setTimeout(()=>{
+            silenceTimer=null; speechStarted=false;
+            stopContinuousVoice();
+            transcribirYEnviar();
+          }, SILENCE_MS);
+        }
+        animationId = requestAnimationFrame(loop);
+      }
+      loop();
+    } catch (error){
+      console.warn('[voice-continuo] No se pudo acceder al micrófono:', error instanceof Error ? error.message : String(error));
+      const prompt=$('prompt'); if(prompt && !prompt.value) prompt.value='(No se pudo activar el micrófono continuo: conceda permiso de audio.)';
+    }
+  }
+
+  function stopContinuousVoice(){
+    try { if(animationId) cancelAnimationFrame(animationId); } catch{}
+    animationId=null; analyser=null; dataArray=null;
+    try { if(mediaRecorder) mediaRecorder.stop(); } catch{}
+    mediaRecorder=null;
+    meter.classList.remove('visible');
+    setOrbListening(false);
+    if(fill) fill.style.width='0%'; if(levelText) levelText.textContent='0%';
+  }
+
+  async function transcribirYEnviar(){
+    const prompt = $('prompt');
+    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRec) {
+      if (prompt) prompt.value='(Voz detectada; transcripción continua no disponible en este entorno. Use el teclado o el botón de dictado.)';
+      return;
+    }
+    const rec = new SpeechRec();
+    rec.lang='es-ES'; rec.interimResults=false; rec.maxAlternatives=1;
+    rec.onresult = (event)=>{
+      const texto = event.results[0][0].transcript.trim();
+      if (prompt) { prompt.value = texto; prompt.focus(); }
+      const form = $('chat-form');
+      if (form) form.dispatchEvent(new Event('submit'));
+    };
+    rec.onerror = ()=>{};
+    rec.onend = ()=>{};
+    try { rec.start(); } catch (error){ console.warn('[voice-continuo] Error al transcribir:', error instanceof Error ? error.message : String(error)); }
+  }
+
+  window.addEventListener('load', ()=>{
+    setTimeout(()=>{ try { startContinuousVoice(); } catch(e){ console.warn('[voice-continuo] inicio diferido falló:', e.message); } }, 1500);
+    const btn = document.createElement('button');
+    btn.type='button'; btn.id='voice-continuous-toggle'; btn.textContent='MIC CONTÍNUO';
+    btn.style.cssText='position:fixed;right:24px;bottom:80px;padding:8px 12px;border:1px solid #355965;border-radius:10px;background:#0b171dcc;color:#d8fbff;font:11px Consolas,monospace;cursor:pointer;z-index:51';
+    btn.onclick=()=>{ if(mediaRecorder){ stopContinuousVoice(); } else { startContinuousVoice(); } btn.classList.toggle('active',!!mediaRecorder); };
+    document.body.appendChild(btn);
+  });
+})();
+</script>
 </body>
 </html>

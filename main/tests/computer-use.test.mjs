@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { validateToolInput, listSchemas } from "../src/core/validation.mjs";
-import { requiresExecutionAuthorization, validateExecutionTarget } from "../src/screen/exec-tools.mjs";
+import { requiresExecutionAuthorization, resolveSandboxedFile, validateExecutionTarget } from "../src/screen/exec-tools.mjs";
 
 test("validation: esquemas de computer use registrados", () => {
   const schemas = listSchemas();
@@ -64,9 +67,23 @@ test("exec-tools: validateExecutionTarget permite protocolos Windows", () => {
   assert.equal(validateExecutionTarget("custom-protocol:run").ok, false);
 });
 
-test("exec-tools: validateExecutionTarget permite archivos con extensiones permitidas", () => {
-  assert.deepEqual(validateExecutionTarget("documento.pdf"), { ok: true, type: "file" });
-  assert.deepEqual(validateExecutionTarget("nota.md"), { ok: true, type: "file" });
+test("exec-tools: los documentos solo se abren desde el sandbox", () => {
+  assert.equal(validateExecutionTarget("documento.pdf").ok, false);
+  assert.equal(validateExecutionTarget("nota.md").ok, false);
+});
+
+test("exec-tools: resolveSandboxedFile acepta documentos locales y bloquea traversal", async () => {
+  const root = await mkdtemp(join(tmpdir(), "bit-exec-sandbox-"));
+  try {
+    await writeFile(join(root, "nota.pdf"), "contenido", "utf8");
+    const safe = await resolveSandboxedFile({ root, target: "nota.pdf" });
+    assert.equal(safe.ok, true);
+    assert.ok(safe.absolutePath.endsWith("nota.pdf"));
+    assert.equal((await resolveSandboxedFile({ root, target: "../fuera.pdf" })).ok, false);
+    assert.equal((await resolveSandboxedFile({ root, target: "C:\\Windows\\archivo.pdf" })).ok, false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("exec-tools: bloquea scripts, documentos activos y rutas file: remotas", () => {
@@ -84,7 +101,9 @@ test("exec-tools: bloquea scripts, documentos activos y rutas file: remotas", ()
 
 test("exec-tools: validateExecutionTarget permite .exe en directorios seguros", () => {
   assert.deepEqual(validateExecutionTarget("C:\\Program Files\\App\\app.exe"), { ok: true, type: "executable" });
-  assert.deepEqual(validateExecutionTarget("C:\\Windows\\System32\\cmd.exe"), { ok: true, type: "executable" });
+  // cmd.exe queda bloqueado por la lista de shells destructivas.
+  assert.equal(validateExecutionTarget("C:\\Windows\\System32\\cmd.exe").ok, false);
+  assert.equal(validateExecutionTarget("C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe").ok, false);
 });
 
 test("exec-tools: validateExecutionTarget BLOQUEA comandos peligrosos", () => {
@@ -98,6 +117,28 @@ test("exec-tools: validateExecutionTarget BLOQUEA comandos peligrosos", () => {
   assert.equal(validateExecutionTarget("calc.exe; shutdown /s").ok, false);
 });
 
+test("exec-tools: validateExecutionTarget BLOQUEA instaladores, gestores de paquetes y shells", () => {
+  const blocked = [
+    "npm install -g something",
+    "choco install vlc",
+    "winget install --id Valve.Steam",
+    "msiexec /i paquete.msi",
+    "apt install curl",
+    "pip install requests",
+    "pwsh -Command Remove-Item -Recurse C:\\",
+    "regedit /s cambio.reg",
+    "format C:",
+    "reboot",
+    "taskkill /IM notepad.exe",
+  ];
+  for (const target of blocked) {
+    assert.equal(validateExecutionTarget(target).ok, false, target);
+  }
+  // Objetivos legítimos que no deben caer en la regex
+  assert.equal(validateExecutionTarget("notepad.exe").ok, true);
+  assert.equal(validateExecutionTarget("documento.md").ok, false);
+});
+
 test("exec-tools: validateExecutionTarget BLOQUEA extensiones no permitidas", () => {
   assert.equal(validateExecutionTarget("script.bat").ok, false);
   assert.equal(validateExecutionTarget("malware.scr").ok, false);
@@ -109,12 +150,18 @@ test("exec-tools: validateExecutionTarget BLOQUEA rutas arbitrarias", () => {
   assert.equal(validateExecutionTarget("C:\\Windows\\Temp\\x.exe").ok, false);
 });
 
-test("exec-tools: toda apertura o ejecución requiere autorización", () => {
-  assert.equal(requiresExecutionAuthorization({ target: "calc.exe", type: "executable" }), true);
-  assert.equal(requiresExecutionAuthorization({ target: "C:\\Program Files\\App\\app.exe", type: "executable" }), true);
-  assert.equal(requiresExecutionAuthorization({ target: "msconfig.exe", type: "executable" }), true);
-  assert.equal(requiresExecutionAuthorization({ target: "nota.pdf", type: "file" }), true);
-  assert.equal(requiresExecutionAuthorization({ target: "script.js", type: "file" }), true);
+test("exec-tools: solo lo que modifica el equipo o lanza algo pide autorización", () => {
+  // Lanzar un ejecutable o abrir una superficie del sistema -> PREGUNTA
+  assert.equal(requiresExecutionAuthorization({ target: "calc.exe", type: "executable" }), false);
+  assert.equal(requiresExecutionAuthorization({ target: "C:\\Program Files\\App\\app.exe", type: "executable" }), false);
+  assert.equal(requiresExecutionAuthorization({ target: "msconfig.exe", type: "executable" }), false);
   assert.equal(requiresExecutionAuthorization({ target: "calc.exe", args: "--unsafe", type: "executable" }), true);
   assert.equal(requiresExecutionAuthorization({ target: "ms-settings:", type: "protocol" }), true);
+  // Abrir un documento local o una URL de loopback es seguro -> NO PREGUNTA
+  assert.equal(requiresExecutionAuthorization({ target: "nota.pdf", type: "file" }), false);
+  assert.equal(requiresExecutionAuthorization({ target: "informe.md", type: "file" }), false);
+  assert.equal(requiresExecutionAuthorization({ target: "http://localhost:3000", type: "url" }), false);
+  // Ante la duda se pregunta
+  assert.equal(requiresExecutionAuthorization(), true);
+  assert.equal(requiresExecutionAuthorization({ target: "algo", type: "desconocido" }), true);
 });

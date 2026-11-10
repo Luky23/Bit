@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { resolveDirectGreeting, resolveDirectOpenRequest, runAgentTurn } from "../src/core/agent.mjs";
+import { isScreenQuestion, resolveDirectGreeting, resolveDirectOpenRequest, runAgentTurn } from "../src/core/agent.mjs";
+
+test("agent: reconoce referencias directas al contenido visible", () => {
+  assert.equal(isScreenQuestion("¿Qué ves?"), true);
+  assert.equal(isScreenQuestion("¿Qué dice este documento?"), true);
+  assert.equal(isScreenQuestion("¿Qué muestra esta imagen?"), true);
+  assert.equal(isScreenQuestion("¿Qué opinás de mi idea?"), false);
+});
 
 function makeDeps({ generateResponse = null, toolResults = {}, showCapabilities = { tools: true, vision: true } } = {}) {
   const toolCalls = [];
@@ -26,7 +33,7 @@ function makeDeps({ generateResponse = null, toolResults = {}, showCapabilities 
     },
   };
 
-  const ollamaClient = {
+  const modelClient = {
     async show(model) {
       return { ...showCapabilities, model };
     },
@@ -40,14 +47,14 @@ function makeDeps({ generateResponse = null, toolResults = {}, showCapabilities 
     return toolResults[name] ?? { ok: true, result: `resultado de ${name}` };
   };
 
-  return { chatClient, ollamaClient, executeTool, toolCalls };
+  return { chatClient, modelClient, executeTool, toolCalls };
 }
 
 test("agent: sin tools, responde directo", async () => {
   const deps = makeDeps();
   let capabilitiesChecked = false;
-  const originalShow = deps.ollamaClient.show;
-  deps.ollamaClient.show = async (...args) => {
+  const originalShow = deps.modelClient.show;
+  deps.modelClient.show = async (...args) => {
     capabilitiesChecked = true;
     return originalShow(...args);
   };
@@ -158,8 +165,8 @@ test("agent: respuestas simples usan un prompt liviano y limitan su generación"
   assert.match(capturedRequest.messages[0].content, /español claro y natural/);
   assert.match(capturedRequest.messages[0].content, /saludos repetidos/);
   assert.doesNotMatch(capturedRequest.messages[0].content, /MEMORIA PERSISTENTE/);
-  assert.equal(capturedRequest.options.num_predict, 128);
-  assert.equal(capturedRequest.keep_alive, "10m");
+  assert.equal(capturedRequest.options.num_predict, 96);
+  assert.equal(capturedRequest.keep_alive, "15m");
   assert.equal("tools" in capturedRequest, false);
 });
 
@@ -310,7 +317,7 @@ test("agent: las consultas del clima buscan directamente y no exponen otras herr
     },
   });
   let capabilitiesChecked = false;
-  deps.ollamaClient.show = async () => {
+  deps.modelClient.show = async () => {
     capabilitiesChecked = true;
     return { tools: true, vision: true };
   };
@@ -431,8 +438,8 @@ test("agent: rechaza enlaces HTTPS de dominios que no son fuentes oficiales", as
 test("agent: las consultas que pueden usar herramientas verifican capacidades", async () => {
   const deps = makeDeps();
   let capabilitiesChecked = false;
-  const originalShow = deps.ollamaClient.show;
-  deps.ollamaClient.show = async (...args) => {
+  const originalShow = deps.modelClient.show;
+  deps.modelClient.show = async (...args) => {
     capabilitiesChecked = true;
     return originalShow(...args);
   };
@@ -481,8 +488,28 @@ test("agent: una tool exitosa se ejecuta y devuelve resultado", async () => {
 
   assert.equal(deps.toolCalls.length, 1);
   assert.equal(deps.toolCalls[0].name, "system.captureScreen");
+  assert.equal(deps.toolCalls[0].args.maxSide, 1280);
   assert.equal(result.toolCalls, 1);
   assert.equal(result.text, "Hay una ventana de bloc de notas abierta");
+});
+
+test("agent: el motor nativo recibe AGENT_TOOLS y valida su ejecución", async () => {
+  const deps = makeDeps();
+  deps.chatClient.supportsNativeTools = true;
+  deps.chatClient.generate = async (_model, request) => {
+    assert.ok(request.functions["obsidian.search"]);
+    await request.functions["obsidian.search"].handler({ query: "proyecto", limit: 3 });
+    return { message: { content: "Encontré una nota local." } };
+  };
+  const result = await runAgentTurn({
+    message: "Buscá proyecto en mis notas de Obsidian",
+    config: { fastModel: "modelo.gguf", model: "modelo.gguf", vaultPath: "C:\\Vault" },
+    deps: { ...deps, vaultConfig: { vaultPath: "C:\\Vault" } },
+  });
+
+  assert.deepEqual(deps.toolCalls, [{ name: "obsidian.search", args: { query: "proyecto", limit: 3, vaultPath: "C:\\Vault" } }]);
+  assert.equal(result.text, "Encontré una nota local.");
+  assert.equal(result.toolCalls, 1);
 });
 
 test("agent: tool que falla devuelve error sin tirar el turno", async () => {

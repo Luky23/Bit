@@ -10,13 +10,13 @@ Rama: `preview`
 - La apertura de cualquier aplicación, archivo, protocolo o pestaña requiere confirmación nativa.
 - El manifiesto principal ya no contiene una clave `devDependencies` duplicada.
 
-Las pruebas automáticas no sustituyen las comprobaciones manuales de micrófono, altavoces, cámara, pantalla, Ollama ni apertura de documentos en aplicaciones reales de Windows.
+Las pruebas automáticas no sustituyen las comprobaciones manuales de micrófono, altavoces, cámara, pantalla, modelos GGUF ni apertura de documentos en aplicaciones reales de Windows.
 
 ## Estado por función
 
 | Función solicitada | Estado | Evidencia y límite actual |
 |---|---|---|
-| Conversación escrita | Implementada | Enrutamiento local entre Qwen 2.5 3B y Qwen 2.5 Coder 7B, contexto acotado y respuestas en español. Falta medir latencia y RAM con Ollama real en el equipo objetivo. |
+| Conversación escrita | Implementada, pendiente de prueba manual | Enrutamiento GGUF local entre los roles de conversación y programación, contexto acotado y respuestas en español. Falta instalar manualmente el módulo nativo y medir latencia y RAM en el equipo objetivo. |
 | Voz de entrada | Implementada, pendiente de prueba manual | Dictado local mediante `faster-whisper`, pulsar-para-hablar y transcripción editable. La instalación nueva permanece bloqueada hasta fijar hashes de Python. |
 | Voz de salida | Implementada, pendiente de prueba manual | Piper local, respuesta por oraciones e interrupción. Requiere modelo local elegido por el usuario. |
 | Activación por nombre | No implementada | Existe una opción de configuración, pero no un detector conectado y medido. Debe compararse STT por ráfagas, detector local y atajo con CPU, RAM, aciertos y falsos positivos. |
@@ -43,7 +43,7 @@ Las pruebas automáticas no sustituyen las comprobaciones manuales de micrófono
 ## Bloqueos que no deben ocultarse
 
 1. `main/voice-sidecar/requirements.txt` fija versiones pero todavía no contiene hashes. Por la política del proyecto, no se debe ejecutar una instalación nueva hasta generar y revisar un archivo compatible con `pip --require-hashes`.
-2. Los hashes del catálogo Piper en `main/src/core/downloader.mjs` son marcadores de posición. No se deben descargar modelos con esos valores.
+2. La descarga automática del catálogo Piper permanece deshabilitada hasta fijar hashes oficiales; las voces locales elegidas manualmente siguen disponibles.
 3. No hay mediciones reales de CPU, RAM y latencia de Qwen 2.5 3B, Qwen 2.5 Coder 7B, LLaVA 7B, STT ni detectores de activación en la Galaxy Book3.
 4. Las funciones documentales todavía no existen como herramientas de entrega; no se debe afirmar al usuario que un Word, Excel, PowerPoint o PDF fue creado.
 

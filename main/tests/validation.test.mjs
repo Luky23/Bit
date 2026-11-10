@@ -16,9 +16,15 @@ test("bit:chat rechaza mensaje vacío", () => {
   assert.match(result.error, /mínimo 1/);
 });
 
-test("bit:chat acepta mensaje válido y modelo opcional", () => {
-  const result = validateToolInput("bit:chat", { message: "hola", model: "qwen2.5:3b" });
+test("bit:chat acepta mensaje válido y un GGUF local opcional", () => {
+  const result = validateToolInput("bit:chat", { message: "hola", model: "Qwen2.5-3B-Q4_K_M.gguf" });
   assert.equal(result.ok, true);
+});
+
+test("bit:chat acepta los tags locales de Ollama usados por el chat", () => {
+  for (const model of ["qwen2.5:3b", "qwen2.5-coder:7b", "qwen2.5vl:3b", "moondream:1.8b"]) {
+    assert.equal(validateToolInput("bit:chat", { message: "hola", model }).ok, true, model);
+  }
 });
 
 test("bit:obsidian-graph valida sus parámetros y limita el tamaño de respuesta", () => {
