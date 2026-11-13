@@ -4,7 +4,6 @@ import { defaultModelConfig, migrateModelConfig } from "../src/models/config.mjs
 import { routeRequest } from "../src/models/router.mjs";
 import { normalizeModelResponse, stripThinkTags } from "../src/models/reasoning.mjs";
 import { toolsForTurn } from "../src/models/prompt.mjs";
-import { OllamaClient } from "../src/models/ollama-client.mjs";
 import { ModelManager } from "../src/models/model-manager.mjs";
 import { ModelUpdater } from "../src/models/model-updater.mjs";
 
@@ -40,20 +39,6 @@ test("no se envían herramientas si el modelo no declara soporte", () => {
   const tools = [{ name: "read", readOnly: true }, { name: "code", category: "coding" }];
   assert.deepEqual(toolsForTurn(tools, { role: "heavy" }, { tools: false }), []);
   assert.deepEqual(toolsForTurn(tools, { role: "heavy" }, { tools: true }).map((x) => x.name), ["read", "code"]);
-});
-
-test("Ollama queda restringido a loopback y status compara el tag completo", async () => {
-  assert.throws(() => new OllamaClient({ baseUrl: "https://example.com" }), /loopback/);
-  const calls = [];
-  const client = new OllamaClient({
-    fetchImpl: async (url) => {
-      calls.push(String(url));
-      return { ok: true, json: async () => ({ models: [{ name: "qwen3:14b" }] }) };
-    }
-  });
-  assert.deepEqual(await client.status("qwen3:14b"), { requested: "qwen3:14b", installed: "qwen3:14b", exact: true });
-  assert.equal((await client.status("qwen3:14b-q4")).exact, false);
-  assert.equal(calls.length, 2);
 });
 
 test("pedidos concurrentes del manager se serializan", async () => {

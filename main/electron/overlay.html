@@ -2,36 +2,185 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none';">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bit</title>
+  <link rel="stylesheet" href="./hud-tokens.css">
   <style>
-    :root{color-scheme:dark;font-family:"Segoe UI",sans-serif;color:#e8fbff}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;background:transparent;overflow:hidden}#app{width:100%;height:100%;position:relative}.orb-button{position:absolute;top:4px;right:4px;width:82px;height:82px;padding:0;border:1px solid #74edff;border-radius:50%;background:#07131be8;box-shadow:0 0 22px #58e7ff99,0 0 60px #58e7ff33;cursor:pointer}.orb-button:hover{box-shadow:0 0 30px #58e7ffff,0 0 78px #58e7ff66}.orb-button img{width:55px;height:55px;border-radius:50%;animation:float 3s ease-in-out infinite}.orb-button:after{content:"";position:absolute;inset:8px;border:1px dashed #a5f6ff99;border-radius:50%;animation:spin 8s linear infinite}.panel{position:absolute;inset:0;padding:14px;border:1px solid #49c9dc;border-radius:13px;background:linear-gradient(145deg,#071820f7,#0b1727f5);box-shadow:0 20px 60px #000c,0 0 30px #50dff844;opacity:0;pointer-events:none;transform:translateY(-8px) scale(.98);transition:opacity .16s ease,transform .16s ease}.expanded .orb-button{display:none}.expanded .panel{opacity:1;pointer-events:auto;transform:none}.panel-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#9ceffa;font-size:11px;letter-spacing:.14em}.panel-header button{border:0;background:transparent;color:#8bb7c0;font-size:20px;cursor:pointer}.hint{margin:0 0 10px;color:#769ca5;font-size:11px;line-height:1.4}.messages{height:345px;overflow:auto;padding-right:3px}.message{padding:9px 10px;margin:0 0 8px;border-left:2px solid #4ad1e5;background:#0c2732;font-size:12px;line-height:1.4;white-space:pre-wrap}.message.user{border-left:0;border-right:2px solid #aa82ff;background:#241b3d}.message.error{color:#ffabb6;border-color:#ff6d83}.chat-form{display:flex;flex-direction:column;gap:7px;margin-top:9px}textarea,input{width:100%;resize:none;border:1px solid #285d6a;border-radius:5px;background:#061017;color:#e5fbff;padding:9px;font:inherit;font-size:12px}textarea{height:52px}.actions{display:flex;gap:6px}.actions button,.open-main{border:1px solid #55cfe5;border-radius:5px;background:#103b4a;color:#e5fbff;padding:8px 9px;cursor:pointer;font-size:10px;letter-spacing:.05em}.actions button:hover,.open-main:hover{background:#176477}.actions button:disabled{opacity:.5;cursor:wait}.vision-row{display:flex;gap:6px}.vision-row input{flex:1;padding:7px;font-size:10px}.vision-row button{white-space:nowrap}.capture-state{min-height:15px;margin:5px 0;color:#79d6df;font-size:10px}.open-main{width:100%;margin-top:8px;background:#0b1e28;border-color:#326b77}.status{margin:7px 0 0;color:#738f99;font-size:10px}@keyframes spin{to{transform:rotate(360deg)}}@keyframes float{50%{transform:translateY(-3px) scale(1.03)}}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{--core-size:140px;width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px var(--hud-cyan))}.orb-button:hover .reactor-core{filter:drop-shadow(0 0 28px rgba(0,243,255,.7));transform:scale(calc(1.03 + var(--voice-level) * .16))}.reactor-core{margin:auto}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}.ring-1{animation-duration:4.5s}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px #55eaff)}.orb-button:hover .orb{filter:drop-shadow(0 0 28px #55eaffaa);transform:scale(calc(1.03 + var(--voice-level) * .16))}.orb{position:relative;width:140px;height:140px;margin:auto;border-radius:50%;display:grid;place-items:center;filter:drop-shadow(0 0 20px #55eaff77)}.orb:before{content:"";position:absolute;inset:0;border:1px solid #71ecfb88;border-radius:50%;box-shadow:inset 0 0 18px #50e7ff55,0 0 20px #50e7ff55}.orb:after{content:"";position:absolute;inset:-18px;border:1px dashed #9b83ff77;border-radius:50%;animation:orb-spin 14s linear infinite}.orb-core{position:relative;width:72px;height:72px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#f2ffff,#77e3f2 13%,#17789a 45%,#061b2b 72%);box-shadow:0 0 28px #4fe9ff,0 0 70px #2bc9f355;z-index:1}.orb-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 14px #00d9ff88);pointer-events:none}.orbital-ring{display:none}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}@keyframes orb-spin{to{transform:rotate(360deg)}}
+    *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}body{display:grid;place-items:center;-webkit-app-region:no-drag}.orb-button{width:150px;height:150px;padding:0;border:0;border-radius:50%;outline:0;background:transparent;cursor:pointer}.orb-button:focus-visible{filter:drop-shadow(0 0 10px #55eaff)}.orb-button:hover .orb{transform:scale(calc(1.03 + var(--voice-level) * .16))}.orb{position:relative;width:140px;height:140px;margin:auto;border-radius:50%;display:grid;place-items:center;filter:drop-shadow(0 0 14px #00d9ff88)}.orb:before,.orb:after{display:none}.orb-core{position:absolute;inset:0;width:100%;height:100%;background:transparent;box-shadow:none}.orb-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 14px #00d9ff88);pointer-events:none}.core-halo{display:none}.orbital-ring{display:none}.state-dot{position:absolute;right:19px;bottom:19px;width:7px;height:7px;border-radius:50%;background:#6fffd0;box-shadow:0 0 10px #6fffd0;opacity:.75}.telemetry{position:fixed;left:-10000px;width:1px;height:1px;overflow:hidden}
+    .orb { filter: drop-shadow(0 0 9px #00d9ff66); }
+    .orb-button:hover .orb { filter: drop-shadow(0 0 14px #00d9ff77); }
+    .orb-core { box-shadow: none; }
+    .orb.speaking .orb-canvas { filter: drop-shadow(0 0 10px #00d9ff66); }
+
+    /* ========================================================================
+       MARCO NEÓN PARA RASTREO DE PANTALLA (bajo consumo, pointer-events none)
+       ======================================================================== */
+    #neon-frame {
+      position: fixed;
+      inset: 0;
+      z-index: 2147483647;
+      pointer-events: none;       /* no bloquea clics del mouse */
+      display: none;
+      background: transparent;
+    }
+    #neon-frame.visible { display: block; }
+
+    #neon-frame svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    #neon-frame rect {
+      fill: none;
+      stroke: #00f3ff;
+      stroke-width: 3px;
+      filter: drop-shadow(0 0 8px rgba(0,243,255,0.8));
+    }
+
+    @keyframes neon-blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    #neon-frame.blinking rect {
+      animation: neon-blink 1.2s ease-in-out infinite;
+    }
+
+    /* Telemetría de rendimiento en el HUD del overlay */
+    #hud-perf {
+      position: fixed;
+      bottom: 12px;
+      right: 12px;
+      z-index: 2147483647;
+      font: 11px "Consolas", "Monaco", monospace;
+      color: #00f3ff;
+      background: rgba(1, 4, 9, 0.85);
+      border: 1px solid rgba(0, 243, 255, 0.35);
+      border-radius: 8px;
+      padding: 6px 10px;
+      pointer-events: none;
+      text-shadow: 0 0 6px rgba(0, 243, 255, 0.6);
+      display: none;
+    }
+    #hud-perf.visible { display: block; }
+  </style>
+  <style>
+    .orb { filter: drop-shadow(0 0 9px #00d9ff66); }
+    .orb-button:hover .orb { filter: drop-shadow(0 0 14px #00d9ff77); }
+    .orb-core { box-shadow: none; }
+    .orb.speaking .orb-canvas { filter: drop-shadow(0 0 10px #00d9ff66); }
   </style>
 </head>
 <body>
-  <div id="app">
-    <button id="orb" class="orb-button" aria-label="Abrir Bit"><img src="assets/bit-orb.png" alt="Bit"></button>
-    <section class="panel" aria-label="Bit flotante">
-      <header class="panel-header"><strong>BIT / QUICK CONSOLE</strong><button id="close" aria-label="Cerrar">×</button></header>
-      <p class="hint">Bit está disponible sobre tus otras ventanas. Escribí una pregunta o adjuntá una captura explícita de tu pantalla.</p>
-      <div id="messages" class="messages"><div class="message">Listo. ¿En qué te ayudo?</div></div>
-      <form id="chat-form" class="chat-form">
-        <textarea id="prompt" placeholder="Preguntale algo a Bit…" aria-label="Pregunta para Bit"></textarea>
-        <div class="vision-row"><input id="vision-model" placeholder="Modelo de visión local (opcional)" aria-label="Modelo de visión local"><button id="capture" type="button">Ver pantalla</button></div>
-        <p id="capture-state" class="capture-state"></p>
-        <div class="actions"><button id="send" type="submit">Enviar</button><button id="stop" type="button">Interrumpir</button></div>
-      </form>
-      <button id="open-main" class="open-main" type="button">Abrir consola completa</button>
-      <p id="status" class="status">Solo local · captura bajo demanda</p>
-    </section>
+  <button id="overlayOrb" class="orb-button" type="button" aria-label="Abrir Bit y enfocar el campo de texto" title="Abrir Bit">
+    <span id="hudCore" class="orb idle" aria-hidden="true"><canvas class="orb-canvas" id="coreParticles"></canvas><span class="core-halo"></span><span class="orbital-ring ring-1"></span><span class="orbital-ring ring-2"></span><span class="orbital-ring ring-3"></span><span class="orb-core"></span><span class="state-dot"></span></span>
+  </button>
+
+  <!-- Capa transparente para marco neón de trazado de coordenadas -->
+  <div id="neon-frame">
+    <svg id="neon-svg" preserveAspectRatio="none">
+      <rect id="neon-rect" x="0" y="0" width="0" height="0"/>
+    </svg>
   </div>
+
+  <!-- Telemetría de rendimiento local -->
+  <div id="hud-perf" class="telemetry">
+    <div id="perf-text">[Perf] Iniciando...</div>
+  </div>
+
+  <div id="telemetry" class="telemetry" aria-live="polite"></div>
   <script>
-    const $=id=>document.getElementById(id);let capturedImage="";let audioContext;let nextAudioTime=0;const addMessage=(text,kind="")=>{const node=document.createElement("div");node.className=`message ${kind}`;node.textContent=text;$('messages').append(node);$('messages').scrollTop=$('messages').scrollHeight;return node};const resize=expanded=>window.bitRuntime.setOverlayExpanded(expanded).catch(error=>{$('status').textContent=error.message});
-    function openPanel(){ $('app').classList.add('expanded'); void resize(true); $('prompt').focus() }function closePanel(){ $('app').classList.remove('expanded'); void resize(false) }$('orb').addEventListener('click',openPanel);$('close').addEventListener('click',closePanel);document.addEventListener('keydown',event=>{if(event.key==='Escape')closePanel()});
-    $('vision-model').value=localStorage.getItem('bit.visionModel')||'';$('capture').addEventListener('click',async()=>{const button=$('capture');button.disabled=true;$('capture-state').textContent='Ocultando Bit y capturando…';try{const result=await window.bitRuntime.captureScreen();capturedImage=result.imageDataUrl;$('capture-state').textContent=`Pantalla adjunta · ${result.width}×${result.height}`;localStorage.setItem('bit.visionModel',$('vision-model').value.trim())}catch(error){capturedImage='';$('capture-state').textContent=`No se capturó: ${error.message}`;$('capture-state').className='capture-state message error'}finally{button.disabled=false}});
-    $('chat-form').addEventListener('submit',async event=>{event.preventDefault();const prompt=$('prompt').value.trim();if(!prompt)return;const model=$('vision-model').value.trim()||'qwen2.5:3b';$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…');$('send').disabled=true;try{const result=await window.bitRuntime.chat({model,message:prompt,imageDataUrl:capturedImage||undefined});pending.textContent=result.text||'El modelo no devolvió texto.';capturedImage='';$('capture-state').textContent=''}catch(error){pending.textContent=error.message;pending.classList.add('error')}finally{$('send').disabled=false;$('prompt').focus()}});$('stop').addEventListener('click',()=>{void window.bitRuntime.stopSpeaking();$('status').textContent='Interrumpido'});$('open-main').addEventListener('click',()=>{void window.bitRuntime.openMain()});
-    window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration}catch(error){$('status').textContent=`Audio no disponible: ${error.message}`}});
+    const core = document.getElementById('hudCore');
+    let voiceTarget = 0, voiceRendered = 0, speakingTimer;
+    function setVoiceLevel(value) { voiceTarget = Math.max(0, Math.min(1, Number(value) || 0)); }
+    function animateVoice() { voiceRendered += (voiceTarget - voiceRendered) * .24; if (voiceTarget < .01) voiceTarget *= .88; document.documentElement.style.setProperty('--voice-level', voiceRendered.toFixed(3)); requestAnimationFrame(animateVoice); }
+    function setState(state) { core.className = `orb ${state}`; }
+    function trace(text) { document.getElementById('telemetry').textContent = text; }
+    function onHudClick() {
+      void window.bitRuntime.openMain().catch(error => trace(error.stack || error.message));
+    }
+    document.getElementById('overlayOrb').addEventListener('click', onHudClick);
+
+    /* ========================================================================
+       MARCO NEÓN: dibuja un rectángulo brillante en la posición indicada,
+       parpadea suavemente y se auto-elimina tras 4 segundos.
+       Recibe {x, y, w, h} en coordenadas de pantalla (ajustadas al overlay).
+       ======================================================================== */
+    const neonFrame = document.getElementById('neon-frame');
+    const neonRect = document.getElementById('neon-rect');
+    const neonSvg = document.getElementById('neon-svg');
+    let neonTimer = null;
+
+    function drawNeonFrame(x, y, w, h) {
+      if (neonTimer) { clearTimeout(neonTimer); neonTimer = null; }
+      // Ajustar coordenadas al viewport del overlay (cubriendo toda la pantalla)
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      neonSvg.setAttribute('viewBox', `0 0 ${vw} ${vh}`);
+      neonRect.setAttribute('x', Math.max(0, x));
+      neonRect.setAttribute('y', Math.max(0, y));
+      neonRect.setAttribute('width', Math.max(10, w));
+      neonRect.setAttribute('height', Math.max(10, h));
+      neonFrame.classList.add('visible', 'blinking');
+      // Auto-eliminar tras 4 segundos sin bloquear la GPU
+      neonTimer = setTimeout(() => {
+        neonFrame.classList.remove('visible', 'blinking');
+        neonRect.setAttribute('width', '0');
+        neonRect.setAttribute('height', '0');
+        neonTimer = null;
+      }, 4000);
+    }
+
+    function hideNeonFrame() {
+      if (neonTimer) { clearTimeout(neonTimer); neonTimer = null; }
+      neonFrame.classList.remove('visible', 'blinking');
+      neonRect.setAttribute('width', '0');
+      neonRect.setAttribute('height', '0');
+    }
+
+    /* ========================================================================
+       TELEMETRÍA DE RENDIMIENTO LOCAL (HUD)
+       ======================================================================== */
+    const perfEl = document.getElementById('hud-perf');
+    const perfText = document.getElementById('perf-text');
+    function setPerf(text) {
+      perfText.textContent = text;
+      perfEl.classList.add('visible');
+    }
+
+    function drawCoreParticles() {
+      const canvas = document.getElementById('coreParticles'), context = canvas.getContext('2d');
+      const particles = Array.from({ length: 62 }, () => ({ angle: Math.random() * Math.PI * 2, radius: 10 + Math.random() * 48, speed: (Math.random() - .5) * .006, size: .35 + Math.random() }));
+      const ratio = Math.min(devicePixelRatio || 1, 2), box = canvas.getBoundingClientRect(); canvas.width = box.width * ratio; canvas.height = box.height * ratio; context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      function frame() { const centerX = box.width / 2, centerY = box.height / 2; context.clearRect(0, 0, box.width, box.height); for (const p of particles) { p.angle += p.speed * (1 + voiceRendered * 5); context.globalAlpha = .2 + (1 - p.radius / 58) * .42; context.fillStyle = '#4d9da8'; context.beginPath(); context.arc(centerX + Math.cos(p.angle) * p.radius, centerY + Math.sin(p.angle) * p.radius * .72, p.size, 0, Math.PI * 2); context.fill(); } const core = context.createRadialGradient(centerX - 3, centerY - 4, 1, centerX, centerY, 20); core.addColorStop(0, '#c9f7fa'); core.addColorStop(.18, '#4bb8c7'); core.addColorStop(.52, '#08778c66'); core.addColorStop(1, '#08778c00'); context.globalAlpha = 1; context.fillStyle = core; context.beginPath(); context.arc(centerX, centerY, 24, 0, Math.PI * 2); context.fill(); requestAnimationFrame(frame); }
+      frame();
+    }
+    function decodeChunk(chunk) { const bytes = Uint8Array.from(atob(chunk.pcmBase64), char => char.charCodeAt(0)), samples = new Int16Array(bytes.buffer); let sum = 0; for (const sample of samples) sum += (sample / 32768) ** 2; return { samples, rms: Math.sqrt(sum / Math.max(1, samples.length)) }; }
+    const cleanupVoiceLevel = window.bitRuntime.onVoiceLevel(message => { if (message?.type === 'level') setVoiceLevel(Math.min(1, (Number(message.rms) || 0) * 12)); });
+    const cleanupAudio = window.bitRuntime.onVoiceAudio(chunk => { try { const { rms } = decodeChunk(chunk); setVoiceLevel(Math.min(1, rms * 9)); setState('speaking'); clearTimeout(speakingTimer); speakingTimer = setTimeout(() => setState('idle'), 180); } catch (error) { trace(error.stack || error.message); setState('error'); } });
+
+    /* ========================================================================
+       IPC: recibir comando de trazado de marco neón desde el proceso principal
+       ======================================================================== */
+    window.bitRuntime.onOverlayDrawFrame((data) => {
+      if (!data || !data.box_2d) return;
+      const [y1, x1, y2, x2] = data.box_2d;
+      const w = x2 - x1;
+      const h = y2 - y1;
+      drawNeonFrame(x1, y1, w, h);
+      trace(`Marco neón: [${x1}, ${y1}, ${w}x${h}] - ${data.label || ""}`);
+    });
+
+    addEventListener('beforeunload', () => {
+      cleanupVoiceLevel();
+      cleanupAudio();
+      if (neonTimer) clearTimeout(neonTimer);
+    });
+    drawCoreParticles(); animateVoice();
   </script>
 </body>
 </html>

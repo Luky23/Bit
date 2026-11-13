@@ -1,6 +1,6 @@
 appId: com.bit.assistant.preview
-productName: Bit Preview
-artifactName: Bit-Preview-${version}-Portable.${ext}
+productName: Bit
+artifactName: Bit.${ext}
 directories:
   output: dist/preview
   buildResources: build
@@ -11,5 +11,6 @@ files:
   - package.json
 asar: true
 win:
+  icon: main/electron/assets/bit-orb.png
   target:
     - portable

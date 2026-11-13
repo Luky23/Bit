@@ -1,0 +1,45 @@
+[
+  {
+    "phase": "starting"
+  },
+  {},
+  {},
+  {},
+  {
+    "label": "initial",
+    "title": "Bit · Asistente local",
+    "preloadHost": true,
+    "bridge": true,
+    "viewport": [
+      967,
+      658
+    ],
+    "screenshot": "C:\\Users\\lucai\\AppData\\Local\\Temp\\bit-drag-smoke-t51p0q\\initial.png"
+  },
+  {
+    "label": "drag-over",
+    "title": "Bit · Asistente local",
+    "preloadHost": true,
+    "bridge": true,
+    "viewport": [
+      967,
+      658
+    ],
+    "screenshot": "C:\\Users\\lucai\\AppData\\Local\\Temp\\bit-drag-smoke-t51p0q\\drag-over.png"
+  },
+  {
+    "label": "drop",
+    "title": "Bit · Asistente local",
+    "preloadHost": true,
+    "bridge": true,
+    "viewport": [
+      967,
+      658
+    ],
+    "screenshot": "C:\\Users\\lucai\\AppData\\Local\\Temp\\bit-drag-smoke-t51p0q\\drop.png"
+  },
+  {
+    "result": "finished",
+    "temp": "C:\\Users\\lucai\\AppData\\Local\\Temp\\bit-drag-smoke-t51p0q"
+  }
+]

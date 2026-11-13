@@ -1,21 +1,68 @@
 {
   "name": "bit-preview",
+  "productName": "Bit",
   "version": "0.1.0-preview.1",
   "main": "main/electron/main.mjs",
   "private": true,
   "type": "module",
   "description": "Bit, asistente local y privado - canal preview",
   "scripts": {
-    "start": "electron main/electron/main.mjs",
+    "start": "set \"ELECTRON_RUN_AS_NODE=\"&& electron main/electron/main.mjs",
     "build:preview": "electron-builder --config electron-builder.yml",
+    "dist:installer": "electron-builder --win nsis",
+    "dist:dir": "electron-builder --win dir",
+    "dist:portable": "electron-builder --win portable",
     "typecheck": "node scripts/typecheck.mjs",
     "test": "node --test main/tests/*.test.mjs",
     "verify": "npm run typecheck && npm test",
     "eval:models": "node main/src/models/eval-models.mjs"
   },
-  "devDependencies": {
-    "electron": "45.0.0",
-    "electron-builder": "26.18.0"
+  "dependencies": {
+    "node-llama-cpp": "3.20.0"
+  },
+  "overrides": {
+    "@simple-git/argv-parser": "2.0.1",
+    "simple-git": "4.0.1"
+  },
+  "allowScripts": {
+    "node-llama-cpp": true
+  },
+  "build": {
+    "appId": "com.bit.assistant.preview",
+    "productName": "Bit",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/electron/**/*",
+      "main/src/**/*",
+      "src/**/*",
+      "main/package.json",
+      "package.json"
+    ],
+    "extraResources": [
+      { "from": "voices", "to": "voices", "filter": ["**/*.onnx", "**/*.onnx.json", "**/*.exe", "**/*.dll"] },
+      { "from": "main/voice-sidecar", "to": "voice-sidecar", "filter": ["sidecar.py", "*.exe", "*.dll"] }
+    ],
+    "asar": true,
+    "electronDist": "node_modules/electron/dist",
+    "asarUnpack": [
+      "node_modules/node-llama-cpp/**",
+      "node_modules/@node-llama-cpp/**"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "executableName": "Bit",
+      "icon": "main/electron/assets/bit-orb.png",
+      "artifactName": "Bit-Portable.${ext}",
+      "target": ["nsis", "portable"]
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
+      "shortcutName": "Bit"
+    }
   },
   "devDependencies": {
     "electron": "45.0.0",

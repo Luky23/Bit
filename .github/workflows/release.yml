@@ -1,0 +1,50 @@
+name: Release portable
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Obtener código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Instalar dependencias fijadas
+        run: npm ci
+      - name: Verificar
+        run: npm run verify
+      - name: Construir portable
+        run: npm run dist:portable
+      - name: Generar SHA256
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash -LiteralPath dist/Bit-Portable.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  Bit-Portable.exe" | Set-Content -LiteralPath dist/Bit-Portable.exe.sha256 -Encoding ascii
+      - name: Atestar procedencia
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/Bit-Portable.exe
+      - name: Publicar release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view $env:GITHUB_REF_NAME *> $null
+          if ($LASTEXITCODE -ne 0) { gh release create $env:GITHUB_REF_NAME --title "Bit $env:GITHUB_REF_NAME" --generate-notes }
+          gh release upload $env:GITHUB_REF_NAME dist/Bit-Portable.exe dist/Bit-Portable.exe.sha256 --clobber
+      - name: Conservar artefactos
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Bit-Portable
+          path: |
+            dist/Bit-Portable.exe
+            dist/Bit-Portable.exe.sha256
+          if-no-files-found: error
