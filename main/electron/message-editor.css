@@ -1,0 +1,5 @@
+.message-edit,.message-edit-cancel{font:12px/1.4 'Segoe UI',sans-serif;color:#91cbd7;background:#122a34;border:1px solid #427581;border-radius:7px;padding:4px 8px;cursor:pointer}
+.message-edit{display:block;margin:7px 0 0 auto}
+.message-edit:hover,.message-edit-cancel:hover{background:#1b3d49;color:#e7fbff}
+.message-edit:focus-visible,.message-edit-cancel:focus-visible{outline:2px solid #72d7e5;outline-offset:2px}
+.message-edit-cancel[hidden]{display:none}

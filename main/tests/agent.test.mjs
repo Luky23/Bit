@@ -459,12 +459,12 @@ test("agent: las consultas que pueden usar herramientas verifican capacidades", 
   assert.equal(capabilitiesChecked, true);
 });
 
-test("agent: una tool exitosa se ejecuta y devuelve resultado", async () => {
+test("agent: captura la pantalla una vez y elabora la respuesta con el modelo de texto", async () => {
   const deps = makeDeps({
     generateResponse: (req) => {
       const messages = req.messages;
       const lastMsg = messages[messages.length - 1];
-      const hasToolResult = messages.some((m) => m.role === "tool");
+      const hasToolResult = messages.some((m) => m.content?.includes("Texto leído de la pantalla:"));
       if (hasToolResult) {
         return { model: "qwen2.5:3b", message: { content: "He visto la pantalla. Hay una ventana abierta." } };
       }
@@ -495,7 +495,7 @@ test("agent: una tool exitosa se ejecuta y devuelve resultado", async () => {
   assert.equal(deps.toolCalls[0].name, "system.captureScreen");
   assert.equal(deps.toolCalls[0].args.maxSide, 1280);
   assert.equal(result.toolCalls, 1);
-  assert.equal(result.text, "Hay una ventana de bloc de notas abierta");
+  assert.equal(result.text, "He visto la pantalla. Hay una ventana abierta.");
 });
 
 test("agent: el motor nativo recibe AGENT_TOOLS y valida su ejecución", async () => {

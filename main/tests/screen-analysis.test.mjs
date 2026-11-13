@@ -7,8 +7,9 @@ import { shouldAnalyzeScreenVisually, chooseVisionModel } from "../src/screen/sc
 import { availableOcrLanguages, cleanOcrText } from "../src/screen/tesseract-ocr.mjs";
 import { analyzeImageWithVision } from "../src/screen/vision-tools.mjs";
 
-test("la pregunta general sobre la pantalla incluye imágenes aunque haya texto", () => {
-  assert.equal(shouldAnalyzeScreenVisually("¿Qué hay en la pantalla?", true), true);
+test("la pregunta general usa OCR y las imágenes explícitas conservan visión", () => {
+  assert.equal(shouldAnalyzeScreenVisually("¿Qué hay en la pantalla?", true), false);
+  assert.equal(shouldAnalyzeScreenVisually("Describe el gráfico en pantalla", true), true);
   assert.equal(shouldAnalyzeScreenVisually("¿Qué dice el documento en pantalla?", true), false);
   assert.equal(shouldAnalyzeScreenVisually("¿Qué dice el documento en pantalla?", false), true);
 });

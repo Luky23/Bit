@@ -9,9 +9,10 @@ test('tarjetas: la respuesta parcial y final se muestran sin depender del evento
  const cards=[];const context={showCard:data=>cards.push(data)};vm.createContext(context);
  vm.runInContext(html.slice(start,end),context);
  context.showResponseCard({text:'Respuesta parcial'});
- context.showResponseCard({text:'Respuesta completa',sources:[{title:'Fuente'}]});
+ context.showResponseCard({text:'Respuesta completa',sources:[{title:'Fuente'}],durationMs:2500});
  assert.equal(cards.length,2);assert.equal(cards[0].id,cards[1].id);
  assert.equal(cards[1].value,'Respuesta completa');assert.equal(cards[1].label,'RESULTADO WEB');
+ assert.match(cards[1].metaText,/Tiempo total: 2,5 s/u);
  context.showResponseCard({busy:true,text:'Espere'});
  assert.equal(cards.length,2);
 });

@@ -1,6 +1,6 @@
 import pkg from "electron";
 const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session, Tray, nativeImage, globalShortcut, Menu, shell } = pkg;
-import { initDisplayManager, getConnectedDisplays, setDisplayRole, updateDisplayLayout, createProjectWindow, createInfoWindow } from "./display-manager.mjs";
+import { initDisplayManager, getConnectedDisplays, setDisplayRole, updateDisplayLayout, createProjectWindow, createInfoWindow, setSecondaryWindowsVisible } from "./display-manager.mjs";
 import { isDisplayPanel, notifyProjectPanels } from './display-manager.mjs';
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -13,7 +13,7 @@ import { createVisionMessage, imageDataUrlToBase64 } from "../src/screen/vision-
 import { captureScreenBase64, analyzeImageWithVision, analyzeScreenWithVision, captureAndAnalyze, isGroundingRequest, findOcrTextBox } from "../src/screen/vision-tools.mjs";
 import { analyzeImageWithTesseract } from "../src/screen/tesseract-ocr.mjs";
 import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/exec-tools.mjs";
-import { searchFiles, searchSystemFiles, isSafeToOpenExternally, readDroppedFile } from "../src/core/file-tools.mjs";
+import { searchFiles, searchSystemFiles, readFileContent, isSafeToOpenExternally, readDroppedFile } from "../src/core/file-tools.mjs";
 import { enforceSandbox } from "../src/core/sandbox.mjs";
 import { toolSchemaName, validateToolInput } from "../src/core/validation.mjs";
 import { runAgentTurn, AGENT_TOOLS, isScreenQuestion, runDroppedFileTurn, resolveDirectOpenRequest } from "../src/core/agent.mjs";
@@ -43,6 +43,15 @@ const llamaClient = new LocalLlamaClient({
 const modelService = new ModelService({ ollama: new OllamaClient(), llama: llamaClient, listGguf: listLocalModels });
 const previewData = join(app.getPath("appData"), "Bit Preview");
 app.setPath("userData", previewData);
+function initializeSingleInstance() {
+  if (!app.requestSingleInstanceLock()) {
+    app.exit(0);
+    return false;
+  }
+  app.on("second-instance", () => app.whenReady().then(() => showMainWindow()));
+  return true;
+}
+const primaryInstance = initializeSingleInstance();
 app.setName("Bit");
 app.setAppUserModelId("com.bit.assistant.preview");
 app.commandLine.appendSwitch("disable-spell-checking");
@@ -149,6 +158,16 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  syncOverlayVisibility();
+}
+
+function syncOverlayVisibility() {
+  const mainVisible = mainWindow && !mainWindow.isDestroyed()
+    && mainWindow.isVisible() && !mainWindow.isMinimized();
+  setSecondaryWindowsVisible(mainVisible);
+  if (!overlayWindow || overlayWindow.isDestroyed()) return;
+  if (mainVisible || screenCaptureInProgress || openingMainFromOverlay) overlayWindow.hide();
+  else overlayWindow.showInactive();
 }
 
 /**
@@ -232,7 +251,9 @@ let previousWeatherQuestion = "";
 let shutdownPromise;
 let shutdownComplete = false;
 
-async function captureScreenForUserQuestion({ prompt, visionModel = "llava", maxSide = 1024 }) {
+async function captureScreenForUserQuestion({ prompt, visionModel = "llava", maxSide = 1024, signal }) {
+  signal?.throwIfAborted();
+  const started = performance.now();
   const auditPath = join(previewData, "audit.log");
   await writeWorkspaceAudit(auditPath, { action: "screen.capture", status: "started", maxSide });
 
@@ -254,19 +275,28 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
       if (mainWasVisible && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.show();
         mainWindow.focus();
-      } else if (overlayWasVisible && overlayWindow && !overlayWindow.isDestroyed()) {
-        overlayWindow.showInactive();
       }
       if (screenQueryWasVisible && screenQueryWindow && !screenQueryWindow.isDestroyed()) {
         screenQueryWindow.show();
         screenQueryWindow.focus();
       }
+      // Recalcular después de restaurar todas las ventanas, incluso si el núcleo
+      // ya estaba oculto al comenzar. La visibilidad anterior no es la deseada.
+      if (overlayWindow && !overlayWindow.isDestroyed()) syncOverlayVisibility();
     }
 
+    const captureMs = performance.now() - started;
+    const ocrStarted = performance.now();
+    const ocrText = await analyzeImageWithTesseract({ imageBase64: snapshot.imageBase64 }).catch(() => "");
+    const ocrMs = performance.now() - ocrStarted;
+    signal?.throwIfAborted();
+    const analysisStarted = performance.now();
     const analysis = await analyzeImageWithVision({
       prompt,
       visionModel,
       imageBase64: snapshot.imageBase64,
+      ocrText,
+      signal,
       maxSide,
       keepAlive: 0, // Descarga inmediata de VRAM tras el análisis visual
     });
@@ -276,9 +306,9 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
       width: snapshot.width,
       height: snapshot.height,
       visionModel,
+      timings: { captureMs, ocrMs, analysisMs: performance.now() - analysisStarted, totalMs: performance.now() - started },
     });
     try {
-      const ocrText = await analyzeImageWithTesseract({ imageBase64: snapshot.imageBase64 }).catch(() => "");
       mainWindow?.webContents.send("bit:screen-analysis", {
         analysis,
         ocrText,
@@ -315,7 +345,7 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
     return {
       ok: true,
       analysis,
-      meta: { visionModel, maxSide, timestamp: new Date().toISOString() },
+      meta: { visionModel, maxSide, responseReady: !/^Texto visible en la imagen:/u.test(analysis), timestamp: new Date().toISOString() },
     };
   } catch (error) {
     try {
@@ -493,7 +523,8 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
   const fallbackModels = [config.fastModel, config.heavyModel, config.model, finalModel].filter((value) => typeof value === "string" && value.trim());
   const chatClient = {
     async resolveModel(modelName) {
-      return modelService.resolveModel(model || modelName, fallbackModels);
+      const requested = isScreenQuestion(message) ? modelName || model : model || modelName;
+      return modelService.resolveModel(requested, fallbackModels);
     },
     async generate(modelName, req, options = {}) {
       const resolvedModel = await chatClient.resolveModel(modelName);
@@ -616,6 +647,7 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         // La pregunta explícita habilita esta lectura local, sin modificar datos.
         return captureScreenForUserQuestion({
           prompt: toolArgs.prompt,
+          signal,
           visionModel: toolArgs.visionModel || config.visionModel || "llava",
           maxSide: toolArgs.maxSide || 1024,
         });
@@ -678,7 +710,7 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         const validation = validateToolInput("bit:system-search-files", toolArgs);
         if (!validation.ok) throw new Error(validation.error);
         const scope = String(toolArgs.targetDir ?? toolArgs.subDir ?? "").trim();
-        const isSystemScope = /^(?:desktop|documentos|descargas|workspace|all)$/iu.test(scope);
+        const isSystemScope = /^(?:desktop|documentos|descargas|workspace|vault|all)$/iu.test(scope);
         if (isSystemScope) {
           const roots = [];
           const add = (dir) => { if (dir) roots.push(dir); };
@@ -686,6 +718,7 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
           if (/^(?:all|documentos)$/iu.test(scope)) add(app.getPath("documents"));
           if (/^(?:all|descargas)$/iu.test(scope)) add(app.getPath("downloads"));
           if (/^(?:all|workspace)$/iu.test(scope) && config.projectsRoot) add(config.projectsRoot);
+          if (/^(?:all|vault)$/iu.test(scope) && config.vaultPath) add(config.vaultPath);
           const result = await searchSystemFiles({ query: toolArgs.query, extension: toolArgs.extension, roots });
           result.scope = scope;
           result.results = result.results.map((file) => ({ ...file, absolutePath: join(file.root, file.path) }));
@@ -718,6 +751,17 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
           results: result.results.length,
           status: "completed",
         }).catch((error) => console.warn("[audit] No se pudo registrar la búsqueda:", error.message));
+        return result;
+      }
+      case "system.readFile": {
+        const validation = validateToolInput("bit:system-read-file", toolArgs);
+        if (!validation.ok) throw new Error(validation.error);
+        const allowedRoots = [app.getPath("desktop"), app.getPath("documents"), app.getPath("downloads"), config.projectsRoot, config.vaultPath].filter(Boolean);
+        const result = await readFileContent({ filePath: toolArgs.filePath, searchTerm: toolArgs.searchTerm, allowedRoots });
+        await writeWorkspaceAudit(join(previewData, "audit.log"), {
+          action: "system.readFile", path: result.filePath, extension: result.extension,
+          searchTerm: toolArgs.searchTerm || "", status: "completed",
+        });
         return result;
       }
       case "system.captureWebcam": {
@@ -1158,7 +1202,7 @@ ipcMain.handle("bit:screen-capture", async () => {
     if (!source?.thumbnail || source.thumbnail.isEmpty()) throw new Error("Windows no devolvió una captura de pantalla");
     return { imageDataUrl: source.thumbnail.toDataURL(), width: dimensions.width, height: dimensions.height, source: "primary-screen" };
   } finally {
-    if (wasVisible) overlayWindow.showInactive();
+    if (wasVisible) syncOverlayVisibility();
     if (queryWasVisible) screenQueryWindow.show();
   }
 });
@@ -1649,7 +1693,9 @@ function createMainWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      spellcheck: false
+      spellcheck: false,
+      // El HUD debe seguir animándose cuando la ventana principal está minimizada.
+      backgroundThrottling: false,
     }
   });
   mainWindow.once("ready-to-show", () => mainWindow.show());
@@ -1669,13 +1715,11 @@ function createMainWindow() {
     }
   });
 
-  // El nucleo flotante no se superpone a la ventana principal activa.
-  mainWindow.on("focus", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
-  mainWindow.on("show", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
-  mainWindow.on("blur", () => { if (!screenCaptureInProgress && !openingMainFromOverlay && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
-  mainWindow.on("hide", () => { if (!screenCaptureInProgress && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
-  mainWindow.on("minimize", () => { if (!screenCaptureInProgress && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
-  mainWindow.on("closed", () => { mainWindow = undefined; });
+  // La visibilidad de Bit, incluso sin foco, mantiene oculto el núcleo flotante.
+  for (const event of ["focus", "show", "blur", "hide", "minimize", "restore"]) {
+    mainWindow.on(event, syncOverlayVisibility);
+  }
+  mainWindow.on("closed", () => { mainWindow = undefined; syncOverlayVisibility(); });
 }
 
 function createOverlayWindow() {
@@ -1702,7 +1746,7 @@ function createOverlayWindow() {
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   overlayWindow.loadFile(join(here, "overlay.html"));
-  overlayWindow.once("ready-to-show", () => { if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isFocused()) overlayWindow.showInactive(); });
+  overlayWindow.once("ready-to-show", syncOverlayVisibility);
   overlayWindow.on("closed", () => { overlayWindow = undefined; });
 }
 
@@ -1759,6 +1803,7 @@ async function runStartupSelfTest() {
 }
 
 app.whenReady().then(async () => {
+  if (!primaryInstance) return;
   session.defaultSession.webRequest.onBeforeRequest({ urls: ["*://*/*"] }, (details, callback) => callback({ cancel: !isAllowedUrl(details.url) }));
 
   // Permisos de audio/micrófono y cámara: conceder automáticamente en entorno local (file:// / localhost)

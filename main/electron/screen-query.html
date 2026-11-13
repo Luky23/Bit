@@ -2,7 +2,9 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'none';">
+  <link rel="stylesheet" href="message-editor.css">
+  <link rel="stylesheet" href="response-timing.css">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Consulta de pantalla — Bit</title>
   <style>
@@ -47,6 +49,7 @@
     @keyframes core-breathe { 50% { transform: scale(1.12); filter: brightness(1.25); } }
     @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
   </style>
+  <link rel="stylesheet" href="bit-theme.css">
 </head>
 <body>
   <main class="window">
@@ -59,17 +62,32 @@
       <div class="row"><div id="status" role="status" aria-live="polite"></div></div>
     </form>
   </main>
+  <script src="message-editor.js"></script>
+  <script src="response-timing.js"></script>
   <script>
     const prompt = document.getElementById('prompt');
     const form = document.getElementById('form');
     const submit = document.getElementById('submit');
     const status = document.getElementById('status');
     const thread = document.getElementById('thread');
+    let activeScreenResponse = null;
+    const cleanupScreenChunks = window.bitRuntime.onChatChunk?.(({ text }) => {
+      if (!activeScreenResponse || typeof text !== 'string' || !text) return;
+      activeScreenResponse.text += text;
+      activeScreenResponse.node.textContent = activeScreenResponse.text;
+      scrollToLatest();
+    });
+    window.addEventListener?.('beforeunload', () => cleanupScreenChunks?.());
+    let screenChatDone = Promise.resolve(), finishScreenChat;
+    const messageEditor = window.BitMessageEditor.create({ input: prompt, isBusy: () => submit.disabled,
+      stop: async () => { const result = await window.bitRuntime.stopChat(); if(result?.ok === false)throw new Error(result.error || 'No pude detener la respuesta.'); await screenChatDone; },
+      onError: error => { status.textContent = 'No pude preparar la edición: ' + error.message; },
+    });
     let followLatest = true;
     const nearBottom = () => thread.scrollHeight - thread.clientHeight - thread.scrollTop <= 48;
     thread.addEventListener('scroll', () => { followLatest = nearBottom(); }, { passive: true });
     function scrollToLatest() { requestAnimationFrame(() => { if (followLatest) thread.scrollTop = thread.scrollHeight; }); }
-    function addBubble(text, type, extra = '') { const bubble = document.createElement('div'); bubble.className = `bubble ${type} ${extra}`; bubble.textContent = text; thread.appendChild(bubble); scrollToLatest(); return bubble; }
+    function addBubble(text, type, extra = '') { const bubble = document.createElement('div'); bubble.className = `bubble ${type} ${extra}`; bubble.textContent = text; thread.appendChild(bubble); if(type === 'user')messageEditor.attach(bubble, text); scrollToLatest(); return bubble; }
     let openingAnimation;
     async function openAnimation() {
       closing = false;
@@ -128,24 +146,37 @@
       event.preventDefault();
       const question = prompt.value.trim();
       if (!question || submit.disabled) return;
+      messageEditor.commit();
+      prompt.value = '';
+      screenChatDone = new Promise(resolve => { finishScreenChat = resolve; });
       submit.disabled = true;
-      prompt.disabled = true;
-      status.textContent = 'Capturando la pantalla y consultando a Bit…';
+      prompt.disabled = false;
+      const startedAt = performance.now();
+      const elapsed = () => ((performance.now() - startedAt) / 1000).toFixed(1).replace('.', ',') + ' s';
+      const updateElapsed = () => { status.textContent = 'Observando y preparando la respuesta… ' + elapsed(); };
+      updateElapsed();
+      const elapsedTimer = setInterval(updateElapsed, 250);
       followLatest = true;
       addBubble(question, 'user');
       const pending = addBubble('Estoy observando la pantalla…', 'bit', 'pending');
+      const responseTiming = window.BitResponseTiming.start(pending);
+      activeScreenResponse = { node: pending, text: '' };
       try {
         const result = await window.bitRuntime.chat({ message: `En la pantalla actual, ${question}`, history: [] });
         pending.textContent = result?.text || 'No recibí una respuesta.';
         pending.classList.remove('pending');
-        status.textContent = 'Consulta completada.';
+        status.textContent = 'Consulta completada en ' + elapsed() + '.';
       } catch (error) {
         pending.textContent = `No pude analizar la pantalla: ${error?.message || error}`;
         pending.classList.remove('pending');
-        status.textContent = 'La consulta no se pudo completar.';
+        status.textContent = 'La consulta no se pudo completar. Tiempo: ' + elapsed() + '.';
       } finally {
+        activeScreenResponse = null;
+        responseTiming.finish();
+        clearInterval(elapsedTimer);
         submit.disabled = false;
         prompt.disabled = false;
+        finishScreenChat?.();
         scrollToLatest();
         prompt.focus({ preventScroll: true });
       }

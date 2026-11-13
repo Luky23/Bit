@@ -42,6 +42,7 @@ test("la llamada visual envía la imagen al modelo instalado y nunca intenta des
   assert.equal(calls[2].body.model, "visual:3b");
   assert.deepEqual(calls[2].body.messages[0].images, ["aGVsbG8="]);
   assert.equal(calls[2].body.keep_alive, 0);
+  assert.equal(calls[2].body.options.num_predict, 160, 'limita la generación visual en CPU');
 });
 
 test("sin modelos visuales no envía imágenes a Ollama", async (t) => {
@@ -50,4 +51,17 @@ test("sin modelos visuales no envía imágenes a Ollama", async (t) => {
     return Response.json({ models: [] });
   });
   await assert.rejects(callOllamaVision({ visionModel: "llava", prompt: "¿Qué ves?", imageBase64: "aGVsbG8=" }), /No hay un modelo visual instalado/u);
+});
+
+test('detener cancela la petición visual en curso sin esperar al timeout',async t=>{
+ const controller=new AbortController();let entered;const started=new Promise(resolve=>{entered=resolve});
+ t.mock.method(globalThis,'fetch',async(url,options={})=>{
+  const path=new URL(url).pathname;
+  if(path==='/api/tags')return Response.json({models:[{name:'visual:3b'}]});
+  if(path==='/api/show')return Response.json({capabilities:['vision']});
+  entered();return new Promise((_resolve,reject)=>options.signal.addEventListener('abort',()=>reject(new DOMException('Consulta cancelada','AbortError')),{once:true}));
+ });
+ const pending=callOllamaVision({visionModel:'visual:3b',prompt:'Describe la imagen',imageBase64:'aGVsbG8=',signal:controller.signal,timeoutMs:100});
+ await started;controller.abort(new DOMException('Consulta cancelada','AbortError'));
+ await assert.rejects(pending,/cancelada/u);
 });

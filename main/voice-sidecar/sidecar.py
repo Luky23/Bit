@@ -145,7 +145,21 @@ class WhisperSTT:
 
     def transcribe(self, audio_path: Path) -> str:
         """Transcribe un archivo de audio WAV."""
-        segments, _ = self.model.transcribe(str(audio_path), language="es", beam_size=1)
+        # faster-whisper 1.1.1 usa ``av.open(..., metadata_errors=...)`` al
+        # recibir una ruta. PyAV 19 quitó ese argumento, así que pasar la ruta
+        # rompe el dictado antes de que el modelo procese el audio. Leer el WAV
+        # aquí mantiene el contrato local y entrega directamente las muestras
+        # que WhisperModel.transcribe también acepta.
+        import wave
+        import numpy as np
+
+        with wave.open(str(audio_path), "rb") as wav_file:
+            if wav_file.getnchannels() != 1 or wav_file.getsampwidth() != 2:
+                raise RuntimeError("El audio temporal debe ser PCM16 mono")
+            pcm = wav_file.readframes(wav_file.getnframes())
+
+        audio = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        segments, _ = self.model.transcribe(audio, language="es", beam_size=1)
         return " ".join(seg.text for seg in segments).strip()
 
 

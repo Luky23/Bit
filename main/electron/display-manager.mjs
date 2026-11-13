@@ -429,3 +429,12 @@ export function notifyProjectPanels() {
     if(win&&!win.isDestroyed()) win.webContents.send('bit:project-activity');
   }
 }
+
+/** Mantiene las ventanas secundarias alineadas con la visibilidad de Bit. */
+export function setSecondaryWindowsVisible(visible) {
+  for (const win of [projectWindow, infoWindow]) {
+    if (!win || win.isDestroyed()) continue;
+    if (visible) win.show();
+    else win.hide();
+  }
+}

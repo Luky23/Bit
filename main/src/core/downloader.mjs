@@ -7,13 +7,17 @@
  * 3. Verificación SHA256 post-descarga (stream para no saturar RAM)
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { createWriteStream } from "node:fs";
-import { unlink, access, constants } from "node:fs/promises";
+import { unlink, access, constants, lstat, link } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
+import { Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { isDownloadUrlAllowed } from "../net-gateway.mjs";
+
+const DEFAULT_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 300_000;
 
 /**
  * Verifica si una URL es segura para descargar
@@ -57,9 +61,22 @@ async function calculateSha256(filePath) {
  * @param {Function} showConfirmation - Función async que muestra dialog nativo y retorna true/false
  * @returns {Promise<{ok: boolean, path?: string, error?: string, cancelled?: boolean}>}
  */
-export async function downloadSecureAsset(url, destPath, expectedHash, assetName, showConfirmation, fetchExternal) {
+export async function downloadSecureAsset(url, destPath, expectedHash, assetName, showConfirmation, fetchExternal, maxBytes = DEFAULT_MAX_BYTES) {
+  if (typeof url !== "string") {
+    return { ok: false, error: "El argumento url debe ser un string" };
+  }
+  if (typeof destPath !== "string") {
+    return { ok: false, error: "El argumento destPath debe ser un string" };
+  }
+  if (typeof expectedHash !== "string") {
+    return { ok: false, error: "El argumento expectedHash debe ser un string" };
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    return { ok: false, error: "El límite maxBytes debe ser un entero positivo" };
+  }
+
   // Remover sintaxis de enlace markdown [texto](url) si está presente
-  if (url.startsWith('[') && url.includes('](')) {
+  if (url.startsWith("[") && url.includes("](")) {
     const closeBracket = url.indexOf('](');
     if (closeBracket > 0) {
       url = url.substring(closeBracket + 2);
@@ -77,7 +94,7 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
   }
 
   // Validación 2: Hash formato correcto
-  if (!expectedHash || typeof expectedHash !== "string" || expectedHash.length !== 64 || !/^[a-f0-9]{64}$/.test(expectedHash)) {
+  if (!expectedHash || expectedHash.length !== 64 || !/^[a-f0-9]{64}$/.test(expectedHash)) {
     return { ok: false, error: "Hash SHA256 inválido (debe ser 64 chars hex lowercase)" };
   }
 
@@ -107,35 +124,71 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
     return { ok: false, error: "Ruta de destino no permitida (debe estar en %LOCALAPPDATA%/Bit/ o directorio temporal)" };
   }
 
+  try {
+    await lstat(destPath);
+    return { ok: false, error: "El archivo destino ya existe y no se sobrescribirá" };
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
   // Validación 4: Consentimiento del usuario
   const consent = await showConfirmation(assetName, new URL(url).hostname);
   if (!consent) {
     return { ok: false, cancelled: true };
   }
 
+  let tmpPath;
+  let timeout;
   try {
     if (typeof fetchExternal !== "function") throw new Error("La descarga necesita el gateway de red");
+    const abortController = new AbortController();
+    timeout = setTimeout(() => abortController.abort(), DOWNLOAD_TIMEOUT_MS);
     const response = await fetchExternal(url, {
       method: "GET",
       headers: { "User-Agent": "Bit-Assistant/1.0 (secure-downloader)" },
-      // Timeout de 5 minutos
-      signal: AbortSignal.timeout(300_000),
+      signal: abortController.signal,
     });
 
     if (!response.ok) {
+      clearTimeout(timeout);
       return { ok: false, error: `HTTP ${response.status}: ${response.statusText}` };
     }
 
     if (!response.body) {
+      clearTimeout(timeout);
       return { ok: false, error: "Respuesta sin body" };
     }
 
-    // Escribir a archivo temporal primero
-    const tmpPath = destPath + ".tmp";
-    const writer = createWriteStream(tmpPath, { highWaterMark: 64 * 1024 });
+    const contentLengthHeader = response.headers?.get?.("content-length") ?? response.headers?.["content-length"];
+    const contentLength = contentLengthHeader === undefined ? null : Number(contentLengthHeader);
+    if (contentLength !== null && Number.isFinite(contentLength) && contentLength > maxBytes) {
+      clearTimeout(timeout);
+      abortController.abort();
+      return { ok: false, error: `La descarga supera el límite permitido de ${maxBytes} bytes` };
+    }
+
+    // Nombre impredecible y creación exclusiva para impedir colisiones y symlinks.
+    tmpPath = `${destPath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+    let receivedBytes = 0;
+    const limitTransform = new Transform({
+      transform(chunk, encoding, callback) {
+        receivedBytes += chunk.length;
+        if (receivedBytes > maxBytes) {
+          abortController.abort();
+          callback(new Error(`La descarga supera el límite permitido de ${maxBytes} bytes`));
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
+    const writer = createWriteStream(tmpPath, { flags: "wx", highWaterMark: 64 * 1024 });
 
     // Pipeline con backpressure automático
-    await pipeline(response.body, writer);
+    try {
+      await pipeline(response.body, limitTransform, writer);
+    } finally {
+      clearTimeout(timeout);
+    }
 
     // Verificar hash
     const actualHash = await calculateSha256(tmpPath);
@@ -144,14 +197,15 @@ export async function downloadSecureAsset(url, destPath, expectedHash, assetName
       return { ok: false, error: `Hash mismatch: esperado ${expectedHash}, obtenido ${actualHash}` };
     }
 
-    // Mover archivo temporal a destino final (atómico en mismo filesystem)
-    await unlink(destPath).catch(() => {}); // Eliminar si existe
-    await import("node:fs/promises").then(fs => fs.rename(tmpPath, destPath));
+    // link falla si el destino apareció durante la descarga; luego retiramos nuestro temporal.
+    await link(tmpPath, destPath);
+    await unlink(tmpPath);
 
     return { ok: true, path: destPath };
   } catch (error) {
     // Limpiar archivo temporal en caso de error
-    await unlink(destPath + ".tmp").catch(() => {});
+    if (timeout) clearTimeout(timeout);
+    if (typeof tmpPath === "string") await unlink(tmpPath).catch(() => {});
     if (error.name === "AbortError") {
       return { ok: false, error: "Timeout de descarga (5 min)" };
     }
@@ -234,7 +288,7 @@ export async function ensurePiperModel(modelName, voicesDir, showConfirmation, f
   const results = {};
   for (const [key, asset] of Object.entries(model)) {
     const destPath = join(voicesDir, `${modelName}.onnx${key === "json" ? ".json" : ""}`);
-    const result = await downloadSecureAsset(asset.url, destPath, asset.hash, `${modelName}.${key === "onnx" ? "onnx" : "json"}`, showConfirmation, fetchExternal);
+    const result = await downloadSecureAsset(asset.url, destPath, asset.hash, `${modelName}.${key === "onnx" ? "onnx" : "json"}`, showConfirmation, fetchExternal, asset.size);
     if (!result.ok) {
       // Si falla uno, limpiar el otro si se descargó
       if (results.onnx?.ok) await unlink(results.onnx.path).catch(() => {});

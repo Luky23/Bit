@@ -13,6 +13,23 @@ function isCodeLine(line) {
     && !/[.!?]\s/u.test(candidate);
 }
 
+function spokenNumber(value) {
+  return value.replace(/^[-−]/u, 'menos ').replace(/^\+/u, 'más ').replace(/[.,]/u, ' coma ');
+}
+
+function expandSpokenUnits(text) {
+  return text
+    .replace(/([+−-]?\d+(?:[.,]\d+)?)\s*(?:[°º]\s*([CF])|([℃℉]))(?!\p{L})/giu, (_match, value, scale, symbol) => {
+      const singular = Math.abs(Number(value.replace('−', '-').replace(',', '.'))) === 1;
+      const unit = (scale?.toUpperCase() === 'F' || symbol === '℉') ? 'Fahrenheit' : 'Celsius';
+      return `${spokenNumber(value)} ${singular ? 'grado' : 'grados'} ${unit}`;
+    })
+    .replace(/([+−-]?\d+(?:[.,]\d+)?)\s*°/gu, (_match, value) => `${spokenNumber(value)} ${Math.abs(Number(value.replace('−', '-').replace(',', '.'))) === 1 ? 'grado' : 'grados'}`)
+    .replace(/([+−-]?\d+(?:[.,]\d+)?)\s*km\s*\/\s*h\b/giu, (_match, value) => `${spokenNumber(value)} ${Number(value.replace(',', '.')) === 1 ? 'kilómetro' : 'kilómetros'} por hora`)
+    .replace(/\bkm\s*\/\s*h\b/giu, 'kilómetros por hora')
+    .replace(/([+−-]?\d+(?:[.,]\d+)?)\s*%/gu, (_match, value) => `${spokenNumber(value)} por ciento`);
+}
+
 /**
  * Prepara una versión hablable sin cambiar el texto que se muestra en el chat.
  */
@@ -30,7 +47,7 @@ export function prepareSpeechText(text, preferredName = "") {
     removedCode = true;
     return false;
   }).join("\n");
-  const readable = withoutCodeLines
+  const readable = expandSpokenUnits(withoutCodeLines
     .replace(/`[^`\n]+`/gu, () => {
       removedCode = true;
       return " ";
@@ -40,7 +57,7 @@ export function prepareSpeechText(text, preferredName = "") {
     .replace(/<[^>]+>/gu, " ")
     .replace(/^\s{0,3}#{1,6}\s*/gmu, "")
     .replace(/^\s*>\s?/gmu, "")
-    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gmu, "")
+    .replace(/^\s*(?:[-*+]|\d+[.)])\s+/gmu, ""))
     .replace(/[^\p{L}\p{M}\p{N}\s,.;:!?'-]/gu, " ")
     .replace(/\p{Lm}/gu, " ")
     .replace(/\s+([,.;:!?])/gu, "$1")

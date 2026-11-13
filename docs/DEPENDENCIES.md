@@ -1,5 +1,11 @@
 # Dependencias
 
+## Extracción local de documentos (pendiente de instalación y auditoría)
+
+La lectura local de PDF, DOCX, XLSX y PPTX usa `pdf-parse` 1.1.1, `mammoth` 1.8.0, `exceljs` 4.4.0 y `officeparser` 4.2.0. Se eligió `exceljs` porque las reglas permanentes de Bit prohíben el paquete `xlsx` (SheetJS). Las versiones están fijadas en `package.json`; la instalación debe hacerla el usuario después de revisar el lockfile y ejecutar `npm audit --omit=dev`. Este cambio no instala dependencias ni puede certificar todavía sus scripts, CPU, RAM o latencia en la Galaxy Book3.
+
+El instalador NSIS empaqueta las dependencias de producción dentro de la aplicación. `npm run dist:installer` ejecuta primero `preflight:installer`, que rechaza el build si faltan paquetes o si `package-lock.json` no está sincronizado. La bóveda, los modelos personales y los datos de usuario no se incluyen en el instalador: se seleccionan o configuran en cada equipo.
+
 ## node-llama-cpp
 
 Bit incorpora `node-llama-cpp` **3.20.0** para cargar los modelos GGUF locales mediante llama.cpp, sin Ollama ni un servicio HTTP. La versión está fijada exactamente y fue publicada hace más de 14 días al momento de esta modificación. Usa los binarios precompilados de Windows x64 y se configura con `gpu: false`, `build: "never"` y cuatro hilos como máximo para evitar compilaciones o descargas en el equipo final.

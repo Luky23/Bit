@@ -1,0 +1,65 @@
+:root {
+  color-scheme: dark;
+  --bit-bg: #07090a;
+  --bit-panel: #091114;
+  --bit-panel-soft: #0c171b;
+  --bit-text: #d8f7fa;
+  --bit-muted: #8297a3;
+  --bit-dim: #526064;
+  --bit-line: #29474d;
+  --bit-accent: #58dffc;
+  --bit-accent-soft: #99e3df;
+  font-family: "Segoe UI", sans-serif;
+}
+
+html, body { color: var(--bit-text); }
+body {
+  background:
+    radial-gradient(circle at 50% 12%, #12303a55, transparent 38%),
+    linear-gradient(135deg, #07090a, #0a1114 55%, #07090a);
+}
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .22;
+  background: linear-gradient(90deg, transparent 49.95%, #8ad8e70a 50%, transparent 50.05%),
+    linear-gradient(transparent 49.95%, #8ad8e70a 50%, transparent 50.05%);
+  background-size: 160px 160px;
+}
+button, select, textarea, input { font: inherit; }
+button, select {
+  border: 1px solid var(--bit-line);
+  border-radius: 9px;
+  color: var(--bit-text);
+  background: var(--bit-panel-soft);
+}
+button:hover, select:hover { border-color: var(--bit-accent); background: #102126; }
+button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--bit-accent); outline-offset: 2px; }
+
+/* Consulta de pantalla */
+.window {
+  border-color: var(--bit-line) !important;
+  border-radius: 14px !important;
+  background: linear-gradient(145deg, #101c20f2, #091114f5 72%) !important;
+  box-shadow: 0 20px 60px #000b, inset 0 1px #d8fbff10 !important;
+  backdrop-filter: blur(18px) !important;
+}
+.window::before { display: none; }
+.core-mark { background: radial-gradient(circle at 35% 28%, #f4ffff, #58dffc 25%, #087187 62%, #06151c 76%) !important; box-shadow: 0 0 16px #58dffc88 !important; }
+h1 { color: var(--bit-text); }
+.hint, #status { color: var(--bit-muted) !important; }
+.bubble.bit { border-color: #58dffc44 !important; background: #0c222b88 !important; }
+.bubble.user { background: #123a46aa !important; }
+.composer { border-color: var(--bit-line) !important; background: #091114dd !important; }
+button[type="submit"] { color: #061014 !important; background: var(--bit-accent) !important; }
+
+/* Panel de proyectos */
+body:has(#files) { padding: 28px !important; }
+body:has(#files) header { border-bottom-color: var(--bit-line) !important; }
+body:has(#files) section { border-color: var(--bit-line) !important; border-radius: 14px !important; background: linear-gradient(145deg, #101c20f2, #091114f5) !important; box-shadow: inset 0 1px #d8fbff10, 0 16px 38px #0007; }
+body:has(#files) h1, body:has(#files) h2 { color: var(--bit-accent) !important; }
+body:has(#files) #notice { color: var(--bit-muted) !important; }
+body:has(#files) #files button { text-align: left; background: #0c171b; }
+body:has(#files) pre, body:has(#files) #activity { color: var(--bit-text); }

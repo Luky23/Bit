@@ -331,7 +331,8 @@ const SCHEMAS = Object.freeze({
     properties: {
       query: { type: "string", minLength: 1, maxLength: 160 },
       extension: { type: "string", minLength: 1, maxLength: 17, pattern: "^\\.?[A-Za-z0-9]+$" },
-      subDir: { type: "string", minLength: 1, maxLength: 500 }
+      subDir: { type: "string", minLength: 1, maxLength: 500 },
+      targetDir: { type: "string", minLength: 1, maxLength: 500 }
     },
     required: ["query"],
     additionalProperties: false
@@ -384,9 +385,10 @@ const SCHEMAS = Object.freeze({
   "bit:system-read-file": {
     type: "object",
     properties: {
-      path: { type: "string", minLength: 1, maxLength: 500 }
+      filePath: { type: "string", minLength: 1, maxLength: 2000 },
+      searchTerm: { type: "string", maxLength: 200 }
     },
-    required: ["path"],
+    required: ["filePath"],
     additionalProperties: false
   },
   "bit:system-open-file": {

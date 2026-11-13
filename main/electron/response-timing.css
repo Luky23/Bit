@@ -1,0 +1,1 @@
+.message[data-response-time]::after,.bubble[data-response-time]::after{content:attr(data-response-time);display:block!important;position:static!important;margin-top:8px;font:12px/1.5 'Segoe UI',sans-serif;letter-spacing:0;color:#a8d3dd;white-space:normal;text-align:left}

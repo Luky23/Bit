@@ -10,7 +10,31 @@ files:
   - main/package.json
   - package.json
 asar: true
+asarUnpack:
+  - node_modules/node-llama-cpp/**
+  - node_modules/@node-llama-cpp/**
+extraResources:
+  - from: voices
+    to: voices
+    filter:
+      - '**/*.onnx'
+      - '**/*.onnx.json'
+      - '**/*.exe'
+      - '**/*.dll'
+  - from: main/voice-sidecar
+    to: voice-sidecar
+    filter:
+      - sidecar.py
+      - '*.exe'
+      - '*.dll'
+npmRebuild: false
 win:
   icon: main/electron/assets/bit-orb.png
   target:
+    - nsis
     - portable
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  shortcutName: Bit

@@ -151,19 +151,19 @@ export function createStartupGreeting(userName, now = new Date(), random = Math.
   const franja = hour < 12 ? "Buenos días" : hour < 20 ? "Buenas tardes" : "Buenas noches";
   const name = userName || "amigo";
   const variants = [
-    `${franja}, ${name}. Bit ya está en línea; ¿en qué puedo asistirle?`,
+    `${franja}, ${name}. Ya estoy en línea; ¿en qué puedo asistirle?`,
     `${franja}, ${name}. Qué gusto tenerle de vuelta. Estoy a su disposición.`,
-    `${franja}, ${name}. Espero que esté teniendo un buen día. Sistemas locales listos.`,
+    `${franja}, ${name}. Espero que esté teniendo un buen día. Estoy listo para acompañarle.`,
     `${franja}, ${name}. Me alegra acompañarle. ¿Qué necesita resolver hoy?`,
-    `${franja}, ${name}. Todos los sistemas locales operativos. ¿En qué le ayudo?`,
+    `${franja}, ${name}. Estoy preparado. ¿En qué le ayudo?`,
     `${franja}, ${name}. Aquí estoy, listo para ayudarle en lo que necesite.`,
-    `${franja}, ${name}. Bit operativo y a su servicio. ¿Por dónde empezamos?`,
+    `${franja}, ${name}. Estoy a su servicio. ¿Por dónde empezamos?`,
     `${franja}, ${name}. ¿Cómo le va el día? Estoy a su disposición.`,
   ];
 
   const recent = Array.isArray(recentGreetings) ? recentGreetings : recentGreetings ? [recentGreetings] : [];
   const available = variants.filter((variant) => !recent.includes(variant));
-  const pool = available.length > 0 ? available : variants;
+  const pool = available.length > 0 ? available : variants.filter(variant => variant !== recent[0]);
   const index = Math.min(pool.length - 1, Math.max(0, Math.floor(random() * pool.length)));
   return pool[index];
 }

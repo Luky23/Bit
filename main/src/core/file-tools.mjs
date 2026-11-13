@@ -10,7 +10,7 @@
  */
 
 import { constants } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
 import { canonicalSandboxRoot, enforceSandbox } from "./sandbox.mjs";
 
@@ -73,8 +73,9 @@ const SEARCH_SKIP_DIRECTORIES = new Set([
   "node_modules", ".git", ".venv", "venv", "dist", "build", "coverage",
   "tmp", "temp", ".tmp", ".temp", ".cache", "cache", BACKUP_DIR,
 ]);
-const MAX_SEARCH_RESULTS = 15;
+const MAX_SEARCH_RESULTS = 20;
 const MAX_SEARCH_DIRECTORIES = 10_000;
+const MAX_EXTRACTED_CHARACTERS = 15_000;
 export const WORKSPACE_DIR = process.env.WORKSPACE_DIR || process.cwd();
 
 function extensionList() {
@@ -297,7 +298,8 @@ export async function searchSystemFiles({ query = "", extension, roots = [] } = 
         if (!entry.isFile() || entry.isSymbolicLink()) continue;
 
         const fileExtension = extname(entry.name).toLowerCase();
-        if ((normalizedQuery && !entry.name.toLocaleLowerCase().includes(normalizedQuery))
+        const relativeName = relative(root, candidate).split(sep).join("/").toLocaleLowerCase();
+        if ((normalizedQuery && !entry.name.toLocaleLowerCase().includes(normalizedQuery) && !relativeName.includes(normalizedQuery))
           || (normalizedExtension && fileExtension !== normalizedExtension)) continue;
 
         let info;
@@ -316,6 +318,8 @@ export async function searchSystemFiles({ query = "", extension, roots = [] } = 
         results.push({
           path: rel.split(sep).join("/"),
           name: entry.name,
+          folder: dirname(rel).split(sep).join("/"),
+          extension: fileExtension,
           size: info.size,
           modifiedAt: info.mtime.toISOString(),
           root,
@@ -386,7 +390,8 @@ export async function searchFiles({ query = "", extension, targetDir = WORKSPACE
       if (!entry.isFile() || entry.isSymbolicLink()) continue;
 
       const fileExtension = extname(entry.name).toLowerCase();
-      if ((normalizedQuery && !entry.name.toLocaleLowerCase().includes(normalizedQuery))
+      const relativeName = relative(root, safePath).split(sep).join("/").toLocaleLowerCase();
+      if ((normalizedQuery && !entry.name.toLocaleLowerCase().includes(normalizedQuery) && !relativeName.includes(normalizedQuery))
         || (normalizedExtension && fileExtension !== normalizedExtension)) continue;
 
       let info;
@@ -400,6 +405,8 @@ export async function searchFiles({ query = "", extension, targetDir = WORKSPACE
       results.push({
         path: relativeSearchPath(root, safePath),
         name: entry.name,
+        folder: dirname(relativeSearchPath(root, safePath)),
+        extension: fileExtension,
         size: info.size,
         modifiedAt: info.mtime.toISOString(),
       });
@@ -412,3 +419,90 @@ export async function searchFiles({ query = "", extension, targetDir = WORKSPACE
 
   return { ok: true, query: query.trim(), extension: normalizedExtension, results, truncated };
 }
+
+const CONTENT_EXTENSIONS = new Set([
+  ".pdf", ".docx", ".xlsx", ".csv", ".pptx", ".txt", ".md", ".py", ".js", ".mjs",
+  ".html", ".css", ".json",
+]);
+
+function normalizedSearchTerm(searchTerm) {
+  if (searchTerm === undefined || searchTerm === null) return "";
+  if (typeof searchTerm !== "string") throw new Error("searchTerm debe ser texto");
+  return searchTerm.trim();
+}
+
+function trimExtractedContent(content, searchTerm) {
+  if (content.length <= MAX_EXTRACTED_CHARACTERS) return { content, truncated: false };
+  const term = normalizedSearchTerm(searchTerm).toLocaleLowerCase();
+  const lower = content.toLocaleLowerCase();
+  const chunks = [];
+  let from = 0;
+  while (term && chunks.length < 8) {
+    const index = lower.indexOf(term, from);
+    if (index < 0) break;
+    chunks.push(content.slice(Math.max(0, index - 1_200), Math.min(content.length, index + 2_800)));
+    from = index + term.length;
+  }
+  if (chunks.length === 0) chunks.push(content.slice(0, MAX_EXTRACTED_CHARACTERS));
+  return { content: chunks.join("\n\n…\n\n").slice(0, MAX_EXTRACTED_CHARACTERS), truncated: true };
+}
+
+async function authorizedFilePath(filePath, allowedRoots) {
+  if (typeof filePath !== "string" || !isAbsolute(filePath)) throw new Error("filePath debe ser una ruta absoluta");
+  if (!Array.isArray(allowedRoots) || allowedRoots.length === 0) throw new Error("No hay raíces locales autorizadas para leer");
+  const safeFile = await realpath(filePath);
+  for (const root of allowedRoots) {
+    if (typeof root !== "string" || !isAbsolute(root)) continue;
+    const safeRoot = await realpath(root);
+    const rel = relative(safeRoot, safeFile);
+    if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return safeFile;
+  }
+  throw new Error("La ruta está fuera de las carpetas locales autorizadas");
+}
+
+async function extractOfficeText(filePath, extension, buffer) {
+  if (extension === ".pdf") {
+    const module = await import("pdf-parse");
+    const parse = module.default || module.pdf || module;
+    if (typeof parse !== "function") throw new Error("pdf-parse no expone un parser compatible");
+    return String((await parse(buffer)).text || "");
+  }
+  if (extension === ".docx") {
+    const module = await import("mammoth");
+    const mammoth = module.default || module;
+    return String((await mammoth.extractRawText({ buffer })).value || "");
+  }
+  if (extension === ".xlsx") {
+    const ExcelJS = (await import("exceljs")).default;
+    if (!ExcelJS) throw new Error("exceljs no está disponible");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    return workbook.worksheets.map((sheet) => {
+      const rows = [];
+      sheet.eachRow((row) => rows.push(row.values.slice(1).map((value) => String(value ?? "")).join("\t")));
+      return `## ${sheet.name}\n${rows.join("\n")}`;
+    }).join("\n\n");
+  }
+  if (extension === ".pptx") {
+    const module = await import("officeparser");
+    const parser = module.default || module;
+    const parse = parser.parseOfficeAsync || parser.parseOffice;
+    if (typeof parse !== "function") throw new Error("officeparser no expone una API compatible");
+    if (parse.length >= 2) return await new Promise((resolveText, reject) => parse(filePath, (error, text) => error ? reject(error) : resolveText(String(text || ""))));
+    return String(await parse(filePath) || "");
+  }
+  return buffer.toString("utf8");
+}
+
+/** Extrae contenido local de documentos y lo limita priorizando searchTerm. */
+export async function readFileContent({ filePath, searchTerm = "", allowedRoots = [] } = {}) {
+  const safePath = await authorizedFilePath(filePath, allowedRoots);
+  const info = await stat(safePath);
+  if (!info.isFile()) throw new Error("La ruta no corresponde a un archivo");
+  const extension = extname(safePath).toLowerCase();
+  if (!CONTENT_EXTENSIONS.has(extension)) throw new Error(`Formato no soportado para lectura: ${extension || "sin extensión"}`);
+  const content = trimExtractedContent(await extractOfficeText(safePath, extension, await readFile(safePath)), searchTerm);
+  return { ok: true, filePath: safePath, name: basename(safePath), extension, size: info.size, ...content, searchTerm: normalizedSearchTerm(searchTerm) };
+}
+
+export const universalFileReader = readFileContent;

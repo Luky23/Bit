@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, access } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, access, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { isUrlAllowed, downloadSecureAsset } from "../src/core/downloader.mjs";
@@ -18,6 +18,25 @@ async function calculateSha256(filePath) {
 
 async function createTempDir() {
   return mkdtemp(join(tmpdir(), "bit-downloader-test-"));
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function responseFor(value, headers) {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "OK",
+    headers,
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(value));
+        controller.close();
+      },
+    }),
+  };
 }
 
 test("downloader: isUrlAllowed bloquea dominios no permitidos", () => {
@@ -144,6 +163,93 @@ test("downloader: downloadSecureAsset falla con hash incorrecto (mock fetch)", a
 
     assert.equal(result.ok, false);
     assert.ok(result.error.includes("Hash mismatch"));
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("downloader: no sobrescribe un archivo destino existente", async () => {
+  const dir = await createTempDir();
+  try {
+    const dest = join(dir, "out.bin");
+    await writeFile(dest, "contenido original");
+    let fetchCalled = false;
+    const result = await downloadSecureAsset(
+      "https://huggingface.co/test/file",
+      dest,
+      sha256("nuevo contenido"),
+      "test-file",
+      async () => true,
+      async () => { fetchCalled = true; return responseFor("nuevo contenido"); },
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "El archivo destino ya existe y no se sobrescribirá");
+    assert.equal(fetchCalled, false);
+    assert.equal(await import("node:fs/promises").then((fs) => fs.readFile(dest, "utf8")), "contenido original");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("downloader: descargas concurrentes usan temporales únicos y una sola gana el destino", async () => {
+  const dir = await createTempDir();
+  try {
+    const dest = join(dir, "out.bin");
+    const content = "contenido concurrente";
+    const fetchExternal = async () => {
+      await new Promise((resolvePromise) => setTimeout(resolvePromise, 20));
+      return responseFor(content);
+    };
+    const args = ["https://huggingface.co/test/file", dest, sha256(content), "test-file", async () => true, fetchExternal];
+    const [first, second] = await Promise.all([
+      downloadSecureAsset(...args),
+      downloadSecureAsset(...args),
+    ]);
+
+    assert.deepEqual([first.ok, second.ok].sort(), [false, true]);
+    assert.equal((await import("node:fs/promises").then((fs) => fs.readFile(dest, "utf8"))), content);
+    assert.deepEqual((await readdir(dir)).sort(), ["out.bin"]);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("downloader: rechaza una descarga que supera maxBytes y limpia el temporal", async () => {
+  const dir = await createTempDir();
+  try {
+    const dest = join(dir, "out.bin");
+    const result = await downloadSecureAsset(
+      "https://huggingface.co/test/file",
+      dest,
+      sha256("demasiado grande"),
+      "test-file",
+      async () => true,
+      async () => responseFor("demasiado grande"),
+      4,
+    );
+
+    assert.equal(result.ok, false);
+    assert.ok(result.error.includes("supera el límite permitido"));
+    assert.deepEqual(await readdir(dir), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("downloader: valida que url, destPath y expectedHash sean strings", async () => {
+  const dir = await createTempDir();
+  try {
+    const validHash = sha256("contenido");
+    for (const [url, destPath, expectedHash] of [
+      [null, join(dir, "a"), validHash],
+      ["https://huggingface.co/test/file", null, validHash],
+      ["https://huggingface.co/test/file", join(dir, "c"), null],
+    ]) {
+      const result = await downloadSecureAsset(url, destPath, expectedHash, "test", async () => true);
+      assert.equal(result.ok, false);
+      assert.match(result.error, /debe ser un string/);
+    }
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

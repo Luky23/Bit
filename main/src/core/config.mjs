@@ -78,6 +78,7 @@ const STARTUP_DEFAULTS = {
   overlayPosition: "top-right",
   screenAnalysisEnabled: false,
   speechEnabled: true,
+  audioOutputDeviceId: "default",
   userName: "Usuario",
   personalityPrompt: "Eres Bit, un asistente personal local inteligente, eficiente, conciso y técnico. Responde de forma directa sin divagar.",
   whisperModelPath: "",
@@ -100,6 +101,41 @@ function configDir() {
 
 function configPath() {
   return join(configDir(), "config.json");
+}
+
+async function isWhisperModelDirectory(modelPath) {
+  try {
+    const [modelStats, configStats] = await Promise.all([
+      stat(join(modelPath, "model.bin")),
+      stat(join(modelPath, "config.json")),
+    ]);
+    return modelStats.isFile() && configStats.isFile();
+  } catch {
+    return false;
+  }
+}
+
+/** Detecta modelos STT instalados en las ubicaciones locales administradas por Bit. */
+async function detectWhisperModelPath() {
+  const roots = [
+    join(configDir(), "voice-models"),
+    process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, "Bit", "voice-models") : "",
+  ].filter(Boolean);
+  const candidates = [];
+  for (const root of roots) {
+    candidates.push(join(root, "faster-whisper-base"));
+    candidates.push(join(root, "faster-whisper-small"));
+    try {
+      const entries = await readdir(root, { withFileTypes: true });
+      candidates.push(...entries.filter(entry => entry.isDirectory()).map(entry => join(root, entry.name)));
+    } catch {
+      // La carpeta puede no existir todavía.
+    }
+  }
+  for (const candidate of [...new Set(candidates)]) {
+    if (await isWhisperModelDirectory(candidate)) return resolve(candidate);
+  }
+  return "";
 }
 
 function musicDir() {
@@ -285,9 +321,12 @@ async function readConfig() {
       const userName = normalizeUserName(parsed.userName);
       config.userName = userName.ok ? userName.value : STARTUP_DEFAULTS.userName;
     }
+    if (!config.whisperModelPath) config.whisperModelPath = await detectWhisperModelPath();
     return config;
   } catch {
-    return { ...STARTUP_DEFAULTS };
+    const config = { ...STARTUP_DEFAULTS };
+    config.whisperModelPath = await detectWhisperModelPath();
+    return config;
   }
 }
 
@@ -367,6 +406,11 @@ export async function configSet(key, value) {
       return { ok: false, error: "speechEnabled debe ser boolean" };
     }
     config[key] = value;
+  } else if (key === "audioOutputDeviceId") {
+    if (typeof value !== "string" || !value.trim()) {
+      return { ok: false, error: "audioOutputDeviceId debe ser un identificador de salida de audio vÃ¡lido" };
+    }
+    config[key] = value.trim();
   } else if (key === "userName") {
     const userName = normalizeUserName(value);
     if (!userName.ok) return userName;

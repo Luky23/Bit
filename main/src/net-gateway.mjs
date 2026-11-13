@@ -195,6 +195,13 @@ export function parseSearchResults(xml) {
   return results.sort((a, b) => Number(isOfficialSourceUrl(b.url)) - Number(isOfficialSourceUrl(a.url)));
 }
 
+export function isCurrencySearchRequest(message) {
+  const text = normalizeWeatherInput(message);
+  const currency = /\b(?:dolares?|dolar|usd|euros?|eur|bitcoin|btc|peso(?:s)? argentino(?:s)?|ars|real(?:es)? brasileno(?:s)?|libra(?:s)? esterlina(?:s)?)\b/u.test(text);
+  return currency && (/\b(?:cuanto|cotiza|cotizacion|cambio|precio|valor|hoy|ahora)\b/u.test(text)
+    || /\b(?:usd|eur|btc)\s+(?:a|en)\s+(?:ars|usd|eur)\b/u.test(text));
+}
+
 export function isWebSearchRequest(message) {
   const input = String(message ?? "");
   const explicitSearch = /(?:\b(?:b[uú]sc(?:a|ar|ame|á)|investiga(?:r)?|consulta(?:r)?|averigua(?:r)?|search)(?=$|[^\p{L}\p{N}_]).{0,60}\b(?:internet|web|google|online|red)\b|\b(?:internet|web)\b.{0,60}\b(?:b[uú]sc(?:a|ar|ame|á)|investiga(?:r)?|consulta(?:r)?|averigua(?:r)?|search)(?=$|[^\p{L}\p{N}_]))/iu.test(input);
@@ -207,6 +214,7 @@ export function isWebSearchRequest(message) {
   // precios o versiones. Una búsqueda web explícita conserva su propia ruta.
   const privateContext = /\b(?:mis? (?:notas?|archivos?|documentos?|proyectos?|calendarios?|carpetas?|correos?|(?:nuev[oa]s? )?(?:computadoras?|equipos?|telefonos?))|boveda|obsidian|archivo local|pantalla)\b/u.test(normalized);
   if (privateContext && !explicitSearch) return false;
+  const publicSearch = /\b(?:busca(?:me|r)?|investiga(?:r)?|averigua(?:r)?)\s+(?:informacion|datos|noticias|sobre|quien|que|cuando|cuanto|como)\b/u.test(normalized);
   const novelty = /\b(?:nuev[oa]s?|ultim[oa]s?|recientes?|recientemente|actual(?:es|mente)?|novedades|mas reciente)\b/u.test(normalized);
   const informational = /\b(?:que|cual(?:es)?|quien|cuando|donde|cuanto|contame|cuentame|hablame|informacion|novedades)\b/u.test(normalized);
   const creativeOrConceptual = /\b(?:crea|crear|escrib[aei]|escribir|redacta|inventa|imagina|aprend(?:o|er)|idioma|nueva espana|nuevo testamento|nuevo mundo)\b/u.test(normalized);
@@ -217,7 +225,7 @@ export function isWebSearchRequest(message) {
   const eventTopic = /\b(?:mundial|copa|olimpiadas|juegos olimpicos|elecciones|torneo|concierto|partido|festival)\b/u.test(normalized);
   const eventQuestion = eventTopic && /\b(?:proxim[oa]s?|siguiente|cuando es|cuando sera|donde sera)\b/u.test(normalized);
   const currentOffice = /\bquien\s+es\b/u.test(normalized) && /\b(?:presidente|papa|primer ministro|gobernador|alcalde|rey|reina)\b/u.test(normalized);
-  return explicitSearch || asksNovelty || releaseQuestion || changingQuestion || isWeatherSearchRequest(input) || currentQualifier || upcomingEvent || eventQuestion || currentOffice || (currentTopic && asksCurrentTopic);
+  return explicitSearch || publicSearch || isCurrencySearchRequest(input) || asksNovelty || releaseQuestion || changingQuestion || isWeatherSearchRequest(input) || currentQualifier || upcomingEvent || eventQuestion || currentOffice || (currentTopic && asksCurrentTopic);
 }
 
 /**
@@ -274,6 +282,12 @@ export function isDownloadUrlAllowed(value) {
 
 export function buildWebSearchQuery(message) {
   const input = String(message ?? "").trim().replace(/\s+/g, " ");
+  const normalized = normalizeWeatherInput(input);
+  if (isCurrencySearchRequest(input) && /\b(?:dolar|dolares|usd)\b/u.test(normalized)
+    && /\b(?:pesos? argentinos?|argentina|ars)\b/u.test(normalized)) {
+    const market = normalized.match(/\b(?:blue|oficial|mep|tarjeta|ccl)\b/u)?.[0];
+    return `dólar ${market ? market + ' ' : ''}peso argentino cotización hoy compra venta${market ? '' : ' oficial blue MEP'}`;
+  }
   if (isWeatherSearchRequest(input)) {
     const locationMatch = input.match(/\b(?:en|de|para|cerca de)\s+(.+?)(?=\s+\b(?:hoy|ahora|actual|actualmente|mañana)\b|[?.!]|$)/i);
     const location = locationMatch?.[1]?.trim().replace(/,+$/u, "");

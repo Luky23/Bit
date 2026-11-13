@@ -9,6 +9,8 @@
   "scripts": {
     "start": "set \"ELECTRON_RUN_AS_NODE=\"&& electron main/electron/main.mjs",
     "build:preview": "electron-builder --config electron-builder.yml",
+    "preflight:installer": "node scripts/preflight-installer.mjs",
+    "pre-dist:installer": "npm run preflight:installer",
     "dist:installer": "electron-builder --win nsis",
     "dist:dir": "electron-builder --win dir",
     "dist:portable": "electron-builder --win portable",
@@ -18,7 +20,11 @@
     "eval:models": "node main/src/models/eval-models.mjs"
   },
   "dependencies": {
-    "node-llama-cpp": "3.20.0"
+    "exceljs": "4.4.0",
+    "mammoth": "1.8.0",
+    "node-llama-cpp": "3.20.0",
+    "officeparser": "4.2.0",
+    "pdf-parse": "1.1.1"
   },
   "overrides": {
     "@simple-git/argv-parser": "2.0.1",

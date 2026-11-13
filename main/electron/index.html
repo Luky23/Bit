@@ -696,6 +696,8 @@
 @media(max-width:600px){#chat-form.composer{gap:4px}}
 </style>
   <link rel="stylesheet" href="response-cards.css">
+  <link rel="stylesheet" href="message-editor.css">
+  <link rel="stylesheet" href="response-timing.css">
 </head>
 <body>
   <header class="topbar"><div class="brand"><img class="brand-mark" src="assets/bit-orb.png" alt="Bit"><div><div class="brand-name">BIT</div><span class="brand-sub">ASISTENTE LOCAL PRIVADO</span></div></div><div class="status"><i id="status-dot" class="status-dot"></i><span id="connection">COMPROBANDO</span><span>·</span><span>LOCAL + WEB POR PEDIDO</span></div><div class="top-right"><div class="clock"><span id="clock"></span><small>BUENOS AIRES / LOCAL</small></div><button id="settings" class="settings" type="button">AJUSTES</button></div></header>
@@ -707,7 +709,7 @@
       <div class="core-ring"></div>
       <div class="core-ring"></div>
     </div>
-    <div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Hola. Soy Bit. Sistemas locales listos.</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="">Detectando modelos locales...</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Micrófono continuo" aria-pressed="false" title="Activar escucha continua">MIC CONTINUO</button><button id="send" class="send" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">ENVIAR</button></form></section>
+    <div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Estoy preparando el inicio?</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="">Detectando modelos locales...</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Micrófono continuo" aria-pressed="false" title="Activar escucha continua">MIC CONTINUO</button><button id="send" class="send" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">ENVIAR</button></form></section>
     <aside id="context-panel" class="context right-widgets" hidden><div class="context-head"><span>BIT / CONTEXTO</span><span id="card-count">0</span></div><div id="cards"><div id="cardsStack" class="cards-stack" aria-live="polite"></div></div><p id="daily-summary" class="context-empty">Sistema local listo<br><small>Privacidad máxima · Loopback</small></p></aside>
   </main>
   <div id="drawer-backdrop" class="drawer-backdrop"></div><aside class="drawer" aria-label="Ajustes"><div class="drawer-title"><span>Configuraci?n</span><button id="drawer-close" class="drawer-close" type="button" aria-label="Cerrar configuraci?n">✕</button></div><div class="setting"><label for="user-name">NOMBRE PREFERIDO</label><div class="vault-row"><input id="user-name" class="vault-path" type="text" maxlength="40" autocomplete="name" placeholder="¿Cómo prefiere que le llame?"><button id="user-name-save" class="vault-button" type="button">GUARDAR</button></div><p id="user-name-status" class="vault-status" aria-live="polite"></p></div><div class="setting"><label for="drawer-model">MODELO LOCAL</label><select id="drawer-model"><option value="">Detectando modelos locales...</option></select></div><div class="setting"><label for="drawer-voice">VOZ PIPER TTS</label><select id="drawer-voice"><option>Voz local configurada</option></select></div><div class="setting"><label for="stt-model-pick">MODELO LOCAL PARA DICTADO</label><button id="stt-model-pick" class="vault-button" type="button">ELEGIR CARPETA DEL MODELO</button><p id="stt-model-status" class="vault-status" aria-live="polite">Sin modelo local configurado</p></div><div class="setting"><label for="drawer-camera">CÁMARA WEB</label><select id="drawer-camera"><option>Desactivada</option><option>Disponible bajo permiso</option></select></div><div class="setting"><label for="drawer-screen">ANÁLISIS DE PANTALLA</label><select id="drawer-screen"><option value="false">Preguntar cada vez</option><option value="true">Permitir siempre</option></select></div><div class="display-layout-section">
@@ -741,13 +743,16 @@
   </div>
 
   <script src="core-animation.js"></script>
+  <script src="message-editor.js"></script>
+  <script src="voice-draft.js"></script>
+  <script src="response-timing.js"></script>
   <script>
     document.querySelector('.drawer')?.insertAdjacentHTML('beforeend','<div class="setting vault-setting"><label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p></div>');
   </script>
   <script>
-    const $=id=>document.getElementById(id);const State={IDLE:'idle',PROCESSING:'processing',ERROR:'error',SPEAKING:'speaking'};let currentState=State.IDLE,history=[],conversationHistory=[],historyIndex=-1,audioContext,nextAudioTime=0,speechResetTimer=0,voiceEnabled=true,renderOrb=()=>{};
+    const $=id=>document.getElementById(id);const State={IDLE:'idle',PROCESSING:'processing',ERROR:'error',SPEAKING:'speaking'};let currentState=State.IDLE,history=[],conversationHistory=[],historyIndex=-1,audioContext,nextAudioTime=0,speechResetTimer=0,voiceEnabled=true,audioOutputDeviceId='default',renderOrb=()=>{};
     window.startBitCore($('orb-canvas'), () => ({state:currentState}));
-    let chatPending=false,stopPending=false;
+    let chatPending=false,stopPending=false,activeChatDone=Promise.resolve(),finishActiveChat;
     function updateSendButton(){const button=$('send');const stopping=chatPending||currentState===State.PROCESSING||currentState===State.SPEAKING;button.dataset.action=stopping?'stop':'send';const label=stopping?'Detener respuesta':'Enviar mensaje';button.title=label;button.setAttribute('aria-label',label);button.textContent=stopping?'DETENER':'ENVIAR';button.disabled=stopPending;}
     async function stopCurrentResponse(){if(stopPending)return;stopPending=true;updateSendButton();try{await window.bitRuntime.stopChat()}catch(error){addMessage(`No se pudo detener el pedido: ${error.message}`,'error')}finally{stopPending=false;updateSendButton()}}
     function setState(state){currentState=state;updateSendButton();const orb=$('orb-canvas').parentElement;orb.classList.toggle('processing',state===State.PROCESSING);orb.classList.toggle('speaking',state===State.SPEAKING);$('activity').textContent=state==='processing'?'PROCESANDO':state==='speaking'?'HABLANDO':state==='error'?'ERROR':'LISTO';$('core-status').textContent=state==='processing'?'ANALIZANDO…':state==='speaking'?'RESPONDIENDO EN VOZ':state==='error'?'SEÑAL INTERRUMPIDA':'LISTO PARA RECIBIR';renderOrb()}
@@ -763,14 +768,16 @@
     const cleanupVoiceTranscript=window.bitRuntime.onVoiceTranscript(text=>{if(typeof text!=='string'||!text.trim())return;if(window.__bitContinuousVoiceEnabled){window.__bitContinuousVoiceTranscript?.(text);return}$('prompt').value=text.trim().slice(0,8000);$('prompt').focus();addMessage('Transcripción local lista para revisar y enviar.','system')});
     const cleanupVoiceError=window.bitRuntime.onVoiceError(message=>{voiceCaptureActive=false;voiceCaptureStarting=false;updateVoiceCaptureButton();if(window.__bitContinuousVoiceEnabled){window.__bitContinuousVoiceError?.(message);return}addMessage(`Error de voz local: ${message}`,'error')});window.addEventListener('blur',()=>{if(!window.__bitContinuousVoiceEnabled)void stopVoiceCapture()});window.addEventListener('beforeunload',()=>{cleanupVoiceTranscript();cleanupVoiceError()});
     function scrollChatToLatest(){requestAnimationFrame(()=>$('chat').scrollTop=$('chat').scrollHeight)}
-    function addMessage(text,kind='assistant'){const node=document.createElement('div');node.className=`message ${kind}`;node.textContent=text;$('chat').append(node);scrollChatToLatest();while($('chat').children.length>50)$('chat').removeChild($('chat').firstChild);return node}
+    const messageEditor=window.BitMessageEditor.create({input:$('prompt'),isBusy:()=>chatPending||stopPending||currentState===State.SPEAKING,stop:async()=>{const result=await window.bitRuntime.stopChat();if(result?.ok===false)throw new Error(result.error||'No pude detener la respuesta.');await activeChatDone;setState(State.IDLE)},onError:error=>addMessage(`No pude preparar la edición: ${error.message}`,'error'),onCommit:snapshot=>{conversationHistory=snapshot.slice()}});
+    function addMessage(text,kind='assistant'){const node=document.createElement('div');node.className=`message ${kind}`;node.textContent=text;$('chat').append(node);if(kind==='user')messageEditor.attach(node,text,conversationHistory.slice());scrollChatToLatest();while($('chat').children.length>50)$('chat').removeChild($('chat').firstChild);return node}
     function showResponseCard(result={}){
       if(result.busy||result.cancelled||!String(result.text??'').trim())return;
+      const duration=Number.isFinite(result.durationMs)?' · Tiempo total: '+(result.durationMs/1000).toFixed(1).replace('.',',')+' s':'';
       const weather=result.cards?.find(card=>card.kind==='weather');
-      if(weather){hideCard('answer');showCard({id:'weather:'+weather.location,label:'Tiempo en '+weather.location,value:weather.temperature,subtext:'Humedad: '+weather.humidity+' · Viento: '+weather.wind+' · Lluvia: '+weather.rain,metaText:weather.condition});return}
+      if(weather){hideCard('answer');showCard({id:'weather:'+weather.location,label:'Tiempo en '+weather.location,value:weather.temperature,subtext:'Humedad: '+weather.humidity+' · Viento: '+weather.wind+' · Lluvia: '+weather.rain,metaText:weather.condition+duration});return}
       const card=result.cards?.find(card=>card.kind==='answer');
       const text=String(result.text).trim();
-      showCard({id:'answer',label:card?.label||(result.sources?.length?'RESULTADO WEB':'RESPUESTA'),value:card?.value||text.slice(0,160),subtext:card?.detail??text.slice(160),metaText:card?.badge||(result.sources?.length?'INTERNET':'BIT LOCAL')});
+      showCard({id:'answer',label:card?.label||(result.sources?.length?'RESULTADO WEB':'RESPUESTA'),value:card?.value||text.slice(0,160),subtext:card?.detail??text.slice(160),metaText:(card?.badge||(result.sources?.length?'INTERNET':'BIT LOCAL'))+duration});
     }
     function updateCardCount(){const n=$('cardsStack').children.length;$('card-count').textContent=String(n);$('context-panel').hidden=!n;}
     function hideCard(id){const card=[...$('cardsStack').children].find(n=>n.dataset.cardId===id);if(card){card.classList.add('leaving');setTimeout(()=>{card.remove();updateCardCount()},180)}}
@@ -805,18 +812,18 @@
     $('settings').onclick=()=>window.BitUI.openDrawer();$('drawer-close').onclick=()=>window.BitUI.closeDrawer();$('drawer-backdrop').onclick=()=>window.BitUI.closeDrawer();document.addEventListener('keydown',event=>{if(event.key==='Escape')window.BitUI.closeDrawer()});$('drawer-model').onchange=event=>{$('model').value=event.target.value;localStorage.setItem('bit.model',event.target.value);window.bitRuntime.setConfig('model',event.target.value).then(result=>{if(!result?.ok)addMessage(result?.error||'No pude guardar el modelo','error')}).catch(error=>addMessage(error.message,'error'))};$('model').onchange=event=>{$('drawer-model').value=event.target.value;localStorage.setItem('bit.model',event.target.value);window.bitRuntime.setConfig('model',event.target.value).then(result=>{if(!result?.ok)addMessage(result?.error||'No pude guardar el modelo','error')}).catch(error=>addMessage(error.message,'error'))};$('drawer-screen').onchange=async(event)=>{const result=await window.bitRuntime.setConfig('screenAnalysisEnabled',event.target.value==='true');if(!result?.ok)addMessage(`No pude guardar el ajuste de pantalla: ${result.error}`,'error')};
     updateVoiceButton();$('history-up').onclick=()=>{if(history.length){historyIndex=Math.max(0,historyIndex-1);$('prompt').value=history[historyIndex];$('prompt').focus()}};$('history-down').onclick=()=>{if(history.length){historyIndex=Math.min(history.length,historyIndex+1);$('prompt').value=history[historyIndex]||'';$('prompt').focus()}};$('voice').onclick=async()=>{const previous=voiceEnabled;voiceEnabled=!voiceEnabled;updateVoiceButton();try{const result=await window.bitRuntime.setConfig('speechEnabled',voiceEnabled);if(!result.ok)throw new Error(result.error);$('prompt').focus()}catch(error){voiceEnabled=previous;updateVoiceButton();addMessage(`No pude guardar el ajuste de voz: ${error.message}`,'error')}};
     async function loadLocalModelOptions(configuredModel){const result=await window.bitRuntime.getConfig('availableModels');if(!result?.ok||!Array.isArray(result.value))throw new Error(result?.error||'No pude detectar los modelos locales');const models=result.value.filter(entry=>entry.kind==='model');const savedModel=await window.bitRuntime.getConfig('model');const preferred=localStorage.getItem('bit.model')||savedModel?.value||configuredModel||'qwen2.5:3b';const selected=models.find(entry=>entry.name===preferred||entry.path===preferred)||models[0];for(const id of ['model','drawer-model']){const select=$(id);select.replaceChildren();if(!models.length){const option=document.createElement('option');option.value='';option.textContent='Sin modelo local disponible';select.append(option)}for(const entry of models){const option=document.createElement('option');option.value=entry.name;option.textContent=entry.name;select.append(option)}select.value=selected?.name||'';select.disabled=!models.length}if(!models.length)addMessage('No hay modelos locales disponibles. Compruebe que Ollama est? iniciado y tenga modelos instalados, o configure un GGUF local.','system')}
-    async function boot(){try{const [runtime,speechSetting,nameSetting]=await Promise.all([window.bitRuntime.getRuntime(),window.bitRuntime.getConfig('speechEnabled'),window.bitRuntime.getConfig('userName')]);voiceEnabled=speechSetting?.ok?speechSetting.value!==false:true;if(!speechSetting?.ok)addMessage(`No pude leer el ajuste de voz: ${speechSetting?.error||'respuesta inválida'}`,'error');updateVoiceButton();const name=nameSetting?.ok&&typeof nameSetting.value==='string'?nameSetting.value:'';$('user-name').value=name;$('welcome').textContent=`${new Date().getHours()<12?'Buenos días':new Date().getHours()<20?'Buenas tardes':'Buenas noches'}, ${name||'amigo'}. Soy Bit. Sistemas locales listos.`;$('connection').textContent='LOCAL READY';$('status-dot').classList.add('online');await loadLocalModelOptions(runtime.model);const screenSetting=await window.bitRuntime.getConfig('screenAnalysisEnabled');$('drawer-screen').value=screenSetting?.ok===true?String(screenSetting.value==='true'):'false'}catch(error){$('connection').textContent='LOCAL ERROR';setState(State.ERROR);addMessage(error.message,'error')}}
+    async function boot(){try{const [runtime,speechSetting,nameSetting]=await Promise.all([window.bitRuntime.getRuntime(),window.bitRuntime.getConfig('speechEnabled'),window.bitRuntime.getConfig('userName')]);voiceEnabled=speechSetting?.ok?speechSetting.value!==false:true;if(!speechSetting?.ok)addMessage(`No pude leer el ajuste de voz: ${speechSetting?.error||'respuesta inválida'}`,'error');updateVoiceButton();const name=nameSetting?.ok&&typeof nameSetting.value==='string'?nameSetting.value:'';$('user-name').value=name;$('welcome').textContent='Estoy preparando el inicio?';$('connection').textContent='LOCAL READY';$('status-dot').classList.add('online');await loadLocalModelOptions(runtime.model);const screenSetting=await window.bitRuntime.getConfig('screenAnalysisEnabled');$('drawer-screen').value=screenSetting?.ok===true?String(screenSetting.value==='true'):'false'}catch(error){$('connection').textContent='LOCAL ERROR';setState(State.ERROR);addMessage(error.message,'error')}}
     const cleanupNetworkActivity=window.bitRuntime.onNetworkActivity(({active})=>{$('connection').textContent=active?'BUSCANDO EN INTERNET':'LOCAL READY';$('status-dot').classList.toggle('web',active);if(!active)$('status-dot').classList.add('online')});window.addEventListener('beforeunload',cleanupNetworkActivity);
     $('prompt').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('chat-form').requestSubmit()}});
     updateSendButton();
-    $('chat-form').onsubmit=async event=>{event.preventDefault();if(stopPending)return;if(chatPending||currentState===State.PROCESSING||currentState===State.SPEAKING){await stopCurrentResponse();return}const prompt=$('prompt').value.trim();if(!prompt)return;chatPending=true;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});if(result.busy){pending.textContent=result.text;pending.className='message system';scrollChatToLatest();return}showResponseCard(result);const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer;if(result.sources?.length){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Fuentes ('+result.sources.length+')';details.append(summary);for(const source of result.sources){const link=document.createElement('a');link.textContent=source.title;link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.style.display='block';details.append(link)}pending.append(details)}pending.className='message assistant';scrollChatToLatest();speakResponse(answer)}catch(error){pending.textContent=`No pude completar la consulta: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{chatPending=false;if(currentState!==State.ERROR&&currentState!==State.SPEAKING)setState(State.IDLE);updateSendButton();$('prompt').focus()}};
+    $('chat-form').onsubmit=async event=>{event.preventDefault();if(stopPending)return;if(chatPending||currentState===State.PROCESSING||currentState===State.SPEAKING){await stopCurrentResponse();return}const prompt=$('prompt').value.trim();if(!prompt)return;messageEditor.commit();activeChatDone=new Promise(resolve=>{finishActiveChat=resolve});chatPending=true;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');const responseTiming=window.BitResponseTiming.start(pending);setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});if(result.busy){pending.textContent=result.text;pending.className='message system';scrollChatToLatest();return}showResponseCard({...result,durationMs:responseTiming.durationMs()});const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer;if(result.sources?.length){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Fuentes ('+result.sources.length+')';details.append(summary);for(const source of result.sources){const link=document.createElement('a');link.textContent=source.title;link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.style.display='block';details.append(link)}pending.append(details)}pending.className='message assistant';scrollChatToLatest();speakResponse(answer)}catch(error){pending.textContent=`No pude completar la consulta: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{responseTiming.finish();chatPending=false;if(currentState!==State.ERROR&&currentState!==State.SPEAKING)setState(State.IDLE);updateSendButton();finishActiveChat?.();$('prompt').focus()}};
     document.addEventListener('click',(event)=>{const t=event.target;if(!t.matches('button,input,textarea,select,a,[role="button"]')){$('prompt')?.focus();}});
     window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration;setState(State.SPEAKING);clearTimeout(speechResetTimer);speechResetTimer=setTimeout(()=>{if(currentState===State.SPEAKING)setState(chatPending?State.PROCESSING:State.IDLE)},Math.max(0,(nextAudioTime-audioContext.currentTime)*1000))}catch(error){addMessage(`No pude reproducir la voz local: ${error.message}`,'error')}});boot().then(()=>import('./boot.js')).then(({runBootSequence})=>runBootSequence({model:$('model').value,voiceEnabled})).catch(error=>{console.error('[boot]',error);$('daily-summary').textContent=`No se pudo preparar el resumen del día: ${error.message}`});
     function ensureVaultSetting(){if(!$('vault-path')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p>';firstSetting.before(wrapper)}$('vault-connect').onclick=pickVault;$('vault-prepare').onclick=prepareVault}
     function ensureProjectsSetting(){if(!$('projects-root')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="projects-root">PROYECTOS LOCALES DE BIT</label><div class="vault-row"><input id="projects-root" class="vault-path" type="text" readonly placeholder="Ninguna carpeta elegida"><button id="projects-root-pick" class="vault-button" type="button">ELEGIR</button></div><p id="projects-root-status" class="vault-status" aria-live="polite">Elija una carpeta fuera de servicios de sincronización para conservar la privacidad.</p>';firstSetting.before(wrapper)}$('projects-root-pick').onclick=pickProjectsRoot}
     async function loadProjectsSetting(){ensureProjectsSetting();try{const result=await window.bitRuntime.getConfig('projectsRoot');if(!result?.ok)throw new Error(result?.error||'No se pudo leer la carpeta de proyectos');if(result.value){$('projects-root').value=result.value;$('projects-root-status').textContent='Carpeta local configurada. Evite carpetas sincronizadas para mantenerla privada.';$('projects-root-status').className='vault-status ok'}else{$('projects-root').value='';$('projects-root-status').textContent='Elija una carpeta local fuera de servicios de sincronización.';$('projects-root-status').className='vault-status'}}catch(error){$('projects-root').value='';$('projects-root-status').textContent=error.message;$('projects-root-status').className='vault-status error'}}
     async function pickProjectsRoot(){const button=$('projects-root-pick'),status=$('projects-root-status');button.disabled=true;status.textContent='Esperando selección…';status.className='vault-status';try{const result=await window.bitRuntime.pickProjectsRoot();if(result?.cancelled)return;if(!result?.ok)throw new Error(result?.error||'No se pudo elegir la carpeta');$('projects-root').value=result.projectsRoot;status.textContent='Carpeta local configurada. Evite carpetas sincronizadas para mantenerla privada.';status.className='vault-status ok'}catch(error){status.textContent=error.message;status.className='vault-status error'}finally{button.disabled=false}}
-    $('user-name-save').onclick=async()=>{const button=$('user-name-save'),status=$('user-name-status');button.disabled=true;status.textContent='Guardando…';status.className='vault-status';try{const result=await window.bitRuntime.setConfig('userName',$('user-name').value);if(!result?.ok)throw new Error(result?.error||'No se pudo guardar el nombre');const saved=$('user-name').value.trim().replace(/\s+/gu,' ');$('user-name').value=saved;$('welcome').textContent=`${new Date().getHours()<12?'Buenos días':new Date().getHours()<20?'Buenas tardes':'Buenas noches'}, ${saved||'amigo'}. Soy Bit. Sistemas locales listos.`;status.textContent=saved?'Nombre guardado.':'Nombre eliminado.';status.className='vault-status ok'}catch(error){status.textContent=error.message;status.className='vault-status error'}finally{button.disabled=false}};
+    $('user-name-save').onclick=async()=>{const button=$('user-name-save'),status=$('user-name-status');button.disabled=true;status.textContent='Guardando…';status.className='vault-status';try{const result=await window.bitRuntime.setConfig('userName',$('user-name').value);if(!result?.ok)throw new Error(result?.error||'No se pudo guardar el nombre');const saved=$('user-name').value.trim().replace(/\s+/gu,' ');$('user-name').value=saved;status.textContent=saved?'Nombre guardado.':'Nombre eliminado.';status.className='vault-status ok'}catch(error){status.textContent=error.message;status.className='vault-status error'}finally{button.disabled=false}};
     async function loadVaultSetting(){ensureVaultSetting();const result=await window.bitRuntime.getConfig('vaultPath');if(result?.ok&&result.value){$('vault-path').value=result.value;$('vault-prepare').disabled=false;$('vault-status').textContent='Bóveda conectada';$('vault-status').className='vault-status ok'}else{$('vault-path').value='';$('vault-prepare').disabled=true;$('vault-status').textContent='Ninguna bóveda conectada';$('vault-status').className='vault-status'}}
     async function pickVault(){const button=$('vault-connect');button.disabled=true;$('vault-status').textContent='Analizando la bóveda…';$('vault-status').className='vault-status';try{const result=await window.bitRuntime.pickVault();if(result?.cancelled)return;if(!result?.ok)throw new Error(result?.error||'No se pudo conectar la bóveda');$('vault-path').value=result.vaultPath;$('vault-prepare').disabled=false;$('vault-status').textContent=`Conectada · ${result.totalFiles} archivos Markdown`;$('vault-status').className='vault-status ok'}catch(error){$('vault-status').textContent=error.message;$('vault-status').className='vault-status error'}finally{button.disabled=false}}
     async function prepareVault(){const button=$('vault-prepare');button.disabled=true;$('vault-status').textContent='Esperando confirmación…';$('vault-status').className='vault-status';try{const result=await window.bitRuntime.initializeVault();if(result?.cancelled){$('vault-status').textContent='Bóveda conectada';$('vault-status').className='vault-status ok';return}if(!result?.ok)throw new Error(result?.error||'No se pudo preparar el grafo');const created=result.created?.length||0;const existing=result.existing?.length||0;$('vault-status').textContent=`Grafo listo · ${created} notas creadas, ${existing} ya existían`;$('vault-status').className='vault-status ok'}catch(error){$('vault-status').textContent=error.message;$('vault-status').className='vault-status error'}finally{button.disabled=!$('vault-path').value}}
@@ -988,11 +995,61 @@
     };
   </script>
   <script>
+    const audioOutputSetting = document.createElement('section');
+    audioOutputSetting.className = 'setting';
+    audioOutputSetting.innerHTML = '<label for="drawer-audio-output">SALIDA DE AUDIO</label><select id="drawer-audio-output"><option value="default">Salida predeterminada de Windows</option></select><p id="audio-output-status" class="vault-status" aria-live="polite"></p>';
+    const audioOutputSelect = audioOutputSetting.querySelector('#drawer-audio-output');
+    const audioOutputStatus = audioOutputSetting.querySelector('#audio-output-status');
+    const settingsDrawer = document.querySelector('.drawer');
+    const firstSetting = settingsDrawer?.querySelector('.setting');
+    if (firstSetting) firstSetting.before(audioOutputSetting);
+    async function applyAudioOutput(context) {
+      if (!context || typeof context.setSinkId !== 'function') return false;
+      try {
+        await context.setSinkId(audioOutputDeviceId || 'default');
+        return true;
+      } catch (error) {
+        if (audioOutputStatus) audioOutputStatus.textContent = `No se pudo usar esa salida: ${error.message}`;
+        return false;
+      }
+    }
+    const NativeAudioContext = window.AudioContext;
+    if (NativeAudioContext && NativeAudioContext.prototype && typeof NativeAudioContext.prototype.setSinkId === 'function') {
+      window.AudioContext = class BitAudioContext extends NativeAudioContext {
+        constructor(...args) {
+          super(...args);
+          void applyAudioOutput(this);
+        }
+      };
+    }
+    async function loadAudioOutputSetting() {
+      try {
+        const saved = await window.bitRuntime.getConfig('audioOutputDeviceId');
+        if (saved?.ok && typeof saved.value === 'string') audioOutputDeviceId = saved.value || 'default';
+        const devices = await navigator.mediaDevices?.enumerateDevices?.() || [];
+        const outputs = devices.filter(device => device.kind === 'audiooutput');
+        audioOutputSelect.replaceChildren(new Option('Salida predeterminada de Windows', 'default'));
+        for (const device of outputs) {
+          const label = device.label || `Salida de audio ${audioOutputSelect.options.length}`;
+          audioOutputSelect.append(new Option(label, device.deviceId));
+        }
+        audioOutputSelect.value = [...audioOutputSelect.options].some(option => option.value === audioOutputDeviceId) ? audioOutputDeviceId : 'default';
+        audioOutputStatus.textContent = typeof AudioContext.prototype.setSinkId === 'function' ? 'Se aplica a la voz local de Bit.' : 'Esta versiÃ³n de Electron no permite elegir la salida desde Bit.';
+      } catch (error) {
+        audioOutputStatus.textContent = `No se pudieron leer las salidas de audio: ${error.message}`;
+      }
+    }
+    audioOutputSelect.addEventListener('change', async () => {
+      audioOutputDeviceId = audioOutputSelect.value || 'default';
+      const result = await window.bitRuntime.setConfig('audioOutputDeviceId', audioOutputDeviceId);
+      if (!result?.ok) { audioOutputStatus.textContent = result?.error || 'No se pudo guardar la salida de audio.'; return; }
+      if (audioContext) await applyAudioOutput(audioContext);
+      audioOutputStatus.textContent = 'Salida de audio guardada.';
+    });
+    document.getElementById('settings')?.addEventListener('click', loadAudioOutputSetting);
     const startupSetting = document.createElement('section');
     startupSetting.className = 'setting vault-setting';
     startupSetting.innerHTML = '<label>SONIDO DE INICIO</label><p id="startup-song-status" class="vault-status" aria-live="polite"></p><div class="vault-row"><button id="startup-song-pick" class="vault-button" type="button">ELEGIR CANCIÓN</button><button id="startup-song-preview" class="vault-button" type="button" disabled>PROBAR</button></div><button id="startup-song-remove" class="vault-button" type="button" disabled>QUITAR CANCIÓN</button><label for="startup-enabled"><input id="startup-enabled" type="checkbox"> REPRODUCIR AL INICIAR</label><label for="startup-volume">VOLUMEN <output id="startup-volume-value"></output></label><input id="startup-volume" type="range" min="0" max="100" step="1"><label for="startup-start">INICIO (SEGUNDOS)</label><input id="startup-start" type="number" min="0" max="600" step="0.5"><label for="startup-duration">FRAGMENTO A REPETIR (SEGUNDOS)</label><input id="startup-duration" type="number" min="1" max="300" step="1"><label for="startup-duck">VOLUMEN MIENTRAS HABLA <output id="startup-duck-value"></output></label><input id="startup-duck" type="range" min="0" max="1" step="0.05">';
-    const settingsDrawer = document.querySelector('.drawer');
-    const firstSetting = settingsDrawer?.querySelector('.setting');
     if (firstSetting) firstSetting.before(startupSetting);
 
     let startupPreviewContext;
@@ -1248,10 +1305,10 @@
   meter.innerHTML='<span class="label">MIC</span><div class="bar"><div class="fill"></div></div><span id="voice-meter-level" class="label">0%</span>';
   document.body.appendChild(meter);
   const fill=meter.querySelector('.fill'), levelText=$('voice-meter-level');
-  const wakeWords=['bit','oye bit','hey bit'];
+  const wakeWords=['bit','bi','bip','beat','vit','vite','vid','oye bit','oye bi','oye bip','oye beat','oye vit','hey bit','hey bi','hey bip','hey beat','hey vit'];
   const SILENCE_MS=900, START_THRESHOLD=.035, STOP_THRESHOLD=.022;
   let continuousEnabled=false, mediaStream=null, audioContext=null, analyser=null, dataArray=null, animationId=null;
-  let recordingActive=false, speechStarted=false, silenceTimer=null, mode='suspended', transcriptBusy=false;
+  let recordingActive=false, recordingStarting=false, speechStarted=false, silenceTimer=null, mode='suspended', transcriptBusy=false;
   const continuousButton=voiceCaptureButton;
 
   function setContinuousUi(){
@@ -1276,9 +1333,12 @@
     const pct=normalizedLevel(rms);
     if(fill)fill.style.width=pct+'%';
     if(levelText)levelText.textContent=pct+'%';
-    const speaking=rms>=((speechStarted||mode==='active')?STOP_THRESHOLD:START_THRESHOLD);
+    const speaking=rms>=(speechStarted?STOP_THRESHOLD:START_THRESHOLD);
     if(speaking){
-      speechStarted=true;
+      if(!speechStarted){
+        speechStarted=true;
+        if(!recordingActive&&!recordingStarting&&!transcriptBusy) void beginUtterance();
+      }
       if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
     }else if(speechStarted&&!silenceTimer){
       silenceTimer=setTimeout(()=>{silenceTimer=null;speechStarted=false;void finishUtterance();},SILENCE_MS);
@@ -1286,20 +1346,22 @@
     animationId=requestAnimationFrame(updateMeter);
   }
   async function beginUtterance(){
-    if(!continuousEnabled||recordingActive||transcriptBusy)return;
+    if(!continuousEnabled||recordingActive||recordingStarting||transcriptBusy)return;
+    recordingStarting=true;
     try{
       await window.bitRuntime.startVoiceCapture();
       recordingActive=true;
-      speechStarted=false;
     }catch(error){
       continuousEnabled=false;
       setContinuousUi();
       addMessage(`No pude iniciar el micrófono local: ${error.message}`,'error');
       throw error;
+    }finally{
+      recordingStarting=false;
     }
   }
   function wakeMatch(text){
-    const normalized=String(text).toLocaleLowerCase('es-AR').replace(/[¿?¡!,.;:]/gu,' ').replace(/\s+/gu,' ').trim();
+    const normalized=String(text).toLocaleLowerCase('es-AR').normalize('NFD').replace(/\p{M}/gu,'').replace(/[¿?¡!,.;:]/gu,' ').replace(/\s+/gu,' ').trim();
     for(const word of wakeWords){
       const re=new RegExp('^(?:'+word.replace(/\s+/gu,'\\s+')+')\\b[\\s,:-]*(.*)$','iu');
       const match=normalized.match(re);
@@ -1307,22 +1369,34 @@
     }
     return null;
   }
-  function handleContinuousTranscript(text){
+  async function handleContinuousTranscript(text){
     if(!continuousEnabled)return;
     transcriptBusy=false;
-    const command=mode==='suspended'?wakeMatch(text):String(text).trim();
+    const heard=mode==='suspended'?wakeMatch(text):String(text).trim();
+    const command=heard===null?null:window.BitVoiceDraft.correctSpokenText(heard);
     if(mode==='suspended'){
-      if(command===null){setContinuousUi();setTimeout(()=>void beginUtterance(),150);return;}
+      if(command===null){setContinuousUi();return;}
       mode='active';
-      addMessage('Lo escucho.','system');
-      if(command){$('prompt').value=command;$('chat-form').requestSubmit();mode='suspended';}
+      const wakeOnly=!command||/^(?:(?:est[aá]s?|t[aá]s?)\s+despierto|est[aá]s\s+ah[ií]|me\s+escuchas|escuch[aá]s?)$/iu.test(command);
+      const preferredName=String($('user-name')?.value||'').trim()||'señor';
+      const readyResponse=`Para usted siempre, ${preferredName}. Dígame.`;
+      addMessage(wakeOnly?readyResponse:'Lo escucho.','system');
+      const listeningMessage = $('chat').lastElementChild;
+      const spokenReadyResponse = `Lo escucho, ${preferredName}. ¿En qué puedo asistirle?`;
+      if (wakeOnly && listeningMessage) listeningMessage.textContent = spokenReadyResponse;
+      if(wakeOnly){
+        try{
+          if(typeof window.bitRuntime.speakAndWait==='function') await window.bitRuntime.speakAndWait(spokenReadyResponse);
+          else await window.bitRuntime.speak?.(spokenReadyResponse);
+        }catch(error){addMessage(`No pude responder por voz: ${error.message}`,'error');}
+      }
+      if(command&&!wakeOnly){$('prompt').value=command;$('chat-form').requestSubmit();mode='suspended';}
     }else if(command){
       $('prompt').value=command;
       $('chat-form').requestSubmit();
       mode='suspended';
     }
     setContinuousUi();
-    setTimeout(()=>void beginUtterance(),150);
   }
   async function finishUtterance(){
     if(!recordingActive||transcriptBusy)return;
@@ -1334,7 +1408,7 @@
   window.__bitContinuousVoiceTranscript=handleContinuousTranscript;
   window.__bitContinuousVoiceError=(message)=>{
     transcriptBusy=false;
-    if(continuousEnabled){addMessage(`Error de voz local: ${message}`,'error');setTimeout(()=>void beginUtterance(),500);}
+    if(continuousEnabled){addMessage(`Error de voz local: ${message}`,'error');}
   };
   async function startContinuousVoice(){
     if(continuousEnabled)return;
@@ -1352,7 +1426,7 @@
       window.__bitContinuousVoiceEnabled=true;
       mode='suspended';
       setContinuousUi();
-      await beginUtterance();
+      addMessage('Escuchando «Bit»…','system');
       animationId=requestAnimationFrame(updateMeter);
     }catch(error){
       stopContinuousVoice();
@@ -1379,6 +1453,10 @@
   }
   continuousButton.addEventListener('click',()=>{if(continuousEnabled)stopContinuousVoice();else void startContinuousVoice();});
   window.addEventListener('beforeunload',stopContinuousVoice);
+  // La escucha continua queda activa al abrir Bit, pero permanece suspendida
+  // hasta detectar la palabra de activación. No envía audio fuera del equipo.
+  // Bit queda manos libres: el botón solo permite apagar o reactivar la escucha.
+  void startContinuousVoice();
 
 })();
 </script>
@@ -1418,6 +1496,8 @@
         if (node.textContent?.startsWith('Transcripci')) node.textContent = 'Transcripción local lista para revisar y enviar.';
       };
       new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach(normalizeChatText))).observe(chat, { childList: true });
+      new MutationObserver(() => chat.querySelectorAll('.message').forEach((node) => { if (node.textContent?.includes('suelte el bot')) node.textContent = 'Escucha continua activa. Diga «Bit» para llamarme.'; })).observe(chat, { childList: true, subtree: true, characterData: true });
+      if (microphone) microphone.title = 'Escucha continua manos libres';
       chat.querySelectorAll('.message').forEach(normalizeChatText);
       const idleSuggestions = [
         'Cuando quiera, puedo ayudarle a ordenar una tarea pendiente.',
