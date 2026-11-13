@@ -2,10 +2,19 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; form-action 'none';">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' file: data:; connect-src 'none'; form-action 'none';">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Bit · Asistente local</title>
   <style>
+    /* Barras discretas que conservan el desplazamiento y el arrastre. */
+    * { scrollbar-width: thin; scrollbar-color: #355761 transparent; }
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: #355761; border-radius: 8px; }
+    *::-webkit-scrollbar-thumb:hover { background: #67a6b3; }
+    *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+    *::-webkit-scrollbar-corner { background: transparent; }
+    @supports selector(::-webkit-scrollbar) { * { scrollbar-width: auto; scrollbar-color: auto; } }
     :root{color-scheme:dark;font-family:"Segoe UI",sans-serif;background:#080d12;color:#edf9fb;--text:#edf9fb;--soft:#9cb6bd;--dim:#69858d;--line:#223943;--accent:#67e1f1;--violet:#ad8bff}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(circle at 50% -20%,#18313a 0,#0a1319 37%,#080d12 76%);color:var(--text)}
     body:before{content:"";position:fixed;inset:0;pointer-events:none;opacity:.2;background:radial-gradient(circle at 50% 28%,#3ce2f212,transparent 34%),linear-gradient(90deg,transparent 49.9%,#8ad8e70a 50%,transparent 50.1%),linear-gradient(transparent 49.9%,#8ad8e70a 50%,transparent 50.1%);background-size:auto,64px 64px,64px 64px}
@@ -149,6 +158,7 @@
     }
     .composer select { width: 92px; }
     .composer .icon-button { width: 34px; padding: 0; }
+    .composer .icon-button#voice-capture { width: auto; min-width: 92px; padding-inline: 9px; }
     .composer .send { width: 66px; color: #9dd8df; }
     .composer select:hover,
     .composer button:hover { border-color: #315d66; background: #102126; }
@@ -203,6 +213,7 @@
     .composer textarea{min-width:0}
     .composer .icon-button,.composer .send{flex:0 0 42px}
     .composer .send{flex-basis:76px}
+    .composer #voice-capture{flex-basis:92px}
     @media(max-width:600px){
       .topbar{padding:0 14px}
       .status{font-size:8px}
@@ -333,7 +344,7 @@
     /* Fondo tipo interfaz holográfica: solo halos y profundidad, sin líneas rectas. */
     body { background: radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .15), transparent 18%), radial-gradient(ellipse at 68% 44%, rgba(42, 111, 255, .10), transparent 46%), radial-gradient(ellipse at 18% 84%, rgba(0, 145, 255, .07), transparent 34%), #04070b; }
     body:before { opacity: .12; background: radial-gradient(ellipse at 68% 44%, rgba(0, 243, 255, .18), transparent 35%); background-size: auto; mask-image: none; }
-    body:before { opacity: .04; }
+    body:before { opacity: 0; }
     body:after { opacity: 0; background: none; }
     .orb { filter: drop-shadow(0 0 9px #55eaff55); }
     .orb-core { box-shadow: 0 0 16px #4fe9ff99, 0 0 42px #2bc9f322; }
@@ -342,6 +353,13 @@
     .orb.speaking .orb-canvas { opacity: .84; filter: drop-shadow(0 0 10px #00d9ff66); }
     .orb.speaking .orb-canvas { animation: core-speaking-shimmer 1.15s ease-in-out infinite; }
     @keyframes core-speaking-shimmer { 0%, 100% { transform: scale(.99); filter: drop-shadow(0 0 10px #00d9ff66) brightness(1); } 50% { transform: scale(1.025); filter: drop-shadow(0 0 16px #00d9ff88) brightness(1.1); } }
+
+    /* El núcleo de la ventana comparte el aspecto del overlay: partículas limpias, sin círculo exterior. */
+    #hud-core,.hud-core{display:none!important;}
+    .orb-area .orb{filter:drop-shadow(0 0 14px #00d9ff88);}
+    .orb-area .orb::before,.orb-area .orb::after{display:none;}
+    .orb-area .orb-core{position:absolute;inset:0;width:100%;height:100%;background:transparent;box-shadow:none;}
+    .orb-area .orb-canvas{position:absolute;inset:0;width:100%;height:100%;filter:drop-shadow(0 0 14px #00d9ff88);}
 
     /* ========================================================================
        DRAG & DROP — overlay de pantalla completa y tarjeta modal de cristal.
@@ -389,6 +407,7 @@
       color: #dcfbff;
       overflow-y: auto;
     }
+    #drop-modal{inset:72px 24px auto auto;position:fixed;z-index:2147483647;overflow:auto}
     #drop-modal {
       width: min(560px, 92vw);
       max-height: 90vh;
@@ -452,9 +471,40 @@
       text-align: center;
       color: #79a2aa;
     }
-    @media (max-width: 620px) {
-      .drop-actions { grid-template-columns: 1fr; }
+    #drop-modal {
+      box-sizing: border-box;
+      width: min(560px, calc(100vw - 32px));
+      max-height: calc(100vh - 96px);
+      padding: 28px;
+      border-color: #24535e;
+      border-radius: 22px;
+      background: linear-gradient(145deg, #0b202a, #061219);
+      box-shadow: 0 24px 80px #0009;
     }
+    #drop-modal .drop-dialog { width: 100%; min-width: 0; }
+    #drop-modal h2 { margin: 10px 0 6px; font-size: 24px; font-weight: 600; letter-spacing: -.025em; }
+    .drop-intro { margin: 0 0 22px; color: #9db7c0; font-size: 13px; line-height: 1.5; }
+    .drop-file { display: flex; align-items: flex-start; gap: 12px; padding: 15px; margin-bottom: 22px; background: #ffffff05; border: 1px solid #ffffff12; border-radius: 12px; }
+    .drop-file-icon { display: grid; place-items: center; flex: 0 0 36px; height: 42px; border: 1px solid #42717a; border-radius: 7px; color: #80e5ed; font-size: 20px; }
+    .drop-file-info { min-width: 0; }
+    #drop-file-name { display: block; color: #e1f4f7; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; line-height: 1.5; }
+    #drop-modal p.drop-hint { margin: 5px 0 0; color: #9db7c0; font-size: 11px; line-height: 1.6; overflow-wrap: anywhere; }
+    .drop-actions { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+    .drop-actions button { display: flex; align-items: flex-start; gap: 10px; min-height: 88px; padding: 16px 12px; border-color: #284650; border-radius: 12px; background: #0c252e; color: #e1f4f7; }
+    .drop-actions button[data-action="summarize"] { border-color: #3a9da8; background: #0b333d; }
+    .drop-action-icon { flex: 0 0 22px; color: #7bdde6; font-size: 20px; line-height: 22px; text-align: center; }
+    .drop-actions strong { display: block; font-size: 13px; font-weight: 600; line-height: 1.5; }
+    .drop-actions small { display: block; margin-top: 4px; color: #9db7c0; font-size: 11px; line-height: 1.5; }
+    .drop-actions button:hover { border-color: #63d7e2; background: #123b46; }
+    #drop-modal button:focus-visible { outline: 2px solid #89f1f7; outline-offset: 3px; }
+    #drop-modal .drop-cancel { display: block; width: auto; margin: 20px 0 0 auto; padding: 9px 18px; border: 1px solid #36515b; border-radius: 9px; background: transparent; color: #b7cdd3; font: inherit; font-size: 12px; cursor: pointer; }
+    #drop-modal .drop-cancel:hover { background: #ffffff08; color: #e1f4f7; }
+    @media (max-width: 480px) {
+      #drop-modal { inset: 16px 16px auto; max-height: calc(100vh - 32px); padding: 20px; }
+      .drop-actions { grid-template-columns: minmax(0, 1fr); }
+      .drop-actions button { min-height: 72px; }
+    }
+  </style>
   <style>
     /* ========================================================================
        DISPOSICIÓN MULTIMONITOR — sección en el cajón de ajustes
@@ -535,9 +585,8 @@
     }
   </style>
   <style>
-    /* Núcleo 3D central: anillos orbitales con aceleración por hardware (translateZ(0)).
-       Siempre visible, centrado en la pantalla, sin depender de reglas anteriores. */
-    #hud-core,.hud-core{position:fixed!important;top:50%!important;left:50%!important;transform:translate(-50%,-50%) translateZ(0);width:340px;height:340px;display:block!important;visibility:visible!important;pointer-events:none;z-index:10;transform-style:preserve-3d}
+    /* El núcleo orbital auxiliar queda oculto: la ventana usa el núcleo de partículas del overlay. */
+    #hud-core,.hud-core{display:none!important;visibility:hidden!important;}
     #hud-core .core-ring,.hud-core .core-ring{position:absolute!important;inset:0!important;border:1px solid rgba(103,225,241,.45);border-radius:50%;display:block!important;visibility:visible!important;transform:translateZ(0);transform-style:preserve-3d;box-sizing:border-box}
     #hud-core .core-ring:nth-child(1){transform:rotateX(70deg) rotateY(18deg) translateZ(0);animation:core-orbit-1 14s linear infinite}
     #hud-core .core-ring:nth-child(2){transform:rotateX(18deg) rotateY(72deg) translateZ(0);animation:core-orbit-2 18s linear infinite reverse}
@@ -546,6 +595,107 @@
     @keyframes core-orbit-2{to{transform:rotateX(18deg) rotateY(432deg) translateZ(0)}}
     @keyframes core-orbit-3{to{transform:rotateX(45deg) rotateY(405deg) translateZ(0)}}
   </style>
+<style>
+/* Solo se anima el nucleo, sin circulos decorativos. */
+.orb::before,.orb::after,.workspace::before{content:none!important;display:none!important}
+.orb-core,.core-ring,.orbital-ring,.core-halo{display:none!important}
+.orb .orb-canvas{animation:none!important}
+</style>
+<style>.orb-button:hover .orb{transform:none!important}.orb .orb-canvas{transform:none!important}</style>
+<style>
+#context-panel.right-widgets{display:block!important;position:absolute;left:auto;right:24px;top:24px;width:min(340px,calc(100vw - 48px));max-height:calc(100vh - 180px);overflow:auto;padding:0;border:0;background:none;box-shadow:none;z-index:5}#context-panel[hidden]{display:none!important}
+.cards-stack{display:grid;gap:14px}
+#cardsStack .card{position:relative;inset:auto;display:grid;grid-template-columns:48px 1fr;gap:4px 14px;align-items:center;border-radius:18px;background:rgba(18,26,32,.55);border:1px solid rgba(255,255,255,.09);padding:16px 18px 20px;box-shadow:0 14px 40px rgba(0,0,0,.45);backdrop-filter:blur(16px);animation:cin .25s ease both;overflow-wrap:anywhere}
+#cardsStack .ic{grid-column:1;grid-row:1 / span 4;width:48px;height:48px;border-radius:12px;background:rgba(255,255,255,.04);display:flex;align-items:center;justify-content:center;font-size:22px}
+#cardsStack .lb{grid-column:2;font:10px Consolas,monospace;letter-spacing:.3em;text-transform:uppercase;color:var(--mut,var(--dim));display:flex;justify-content:space-between;padding-right:18px}
+#cardsStack .val{grid-column:2;font-size:26px;font-weight:500;color:#f2fbff}
+#cardsStack .sub,#cardsStack .meta{grid-column:2;font-size:14px;color:#9db6c1}
+#cardsStack .card-close{display:block;position:absolute;right:8px;top:6px;background:none;border:0;padding:5px;color:#9db6c1;cursor:pointer}
+#cardsStack .leaving{animation:cout .18s ease forwards;pointer-events:none}
+@keyframes cin{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}@keyframes cout{to{opacity:0;transform:translateX(16px)}}
+@media(prefers-reduced-motion:reduce){#cardsStack .card{animation:none}#cardsStack .leaving{opacity:0}}
+</style><style>
+/* El nucleo se presenta exclusivamente en la ventana flotante. */
+#hud-core,.hud-core{display:none!important}
+</style>
+<style>
+/* Barra de conversacion: una superficie continua y controles claros. */
+#chat-form.composer{display:flex;align-items:center;gap:6px;padding:8px;border:0;border-radius:0;background:transparent;box-shadow:none;opacity:1;backdrop-filter:none}
+#chat-form.composer:focus-within{border:0;box-shadow:none}
+#chat-form.composer textarea{flex:1;min-width:0;width:auto;min-height:44px;max-height:140px;padding:12px 14px;border:0;border-radius:14px;background:transparent;box-shadow:none;color:#e4f0f4;font:14px/1.5 'Segoe UI',sans-serif;resize:none}
+#chat-form.composer textarea::placeholder{color:#8297a3}
+#chat-form.composer button{display:grid;place-items:center;flex:0 0 42px;width:42px;min-width:42px;height:42px;min-height:42px;padding:0;border:0;border-radius:0;background:transparent;color:#91a8b4;box-shadow:none;transform:none;font-size:0;transition:background 180ms ease,color 180ms ease,border-color 180ms ease}
+#chat-form.composer button:hover{background:transparent;color:#e3faff;transform:none}
+#chat-form.composer button:focus-visible{outline:2px solid #7ad8e7;outline-offset:2px}
+#chat-form.composer button.active,#chat-form.composer button[aria-pressed="true"]{background:transparent;color:#8fe4d7;border:0;box-shadow:none}
+#chat-form.composer #send{background:transparent;color:#99e3df;border:0}
+#chat-form.composer #send:hover{background:transparent;color:#d7fffa}
+#chat-form.composer #send:disabled{opacity:.4;cursor:default}
+#chat-form #voice::before,#chat-form #voice-capture::before,#chat-form #stop-chat::before,#chat-form #send::before{content:'';display:block;width:21px;height:21px;background:currentColor;mask:var(--control-icon) center/contain no-repeat}
+#chat-form #voice{--control-icon:url('./assets/control-speaker.svg')}
+#chat-form #voice-capture{--control-icon:url('./assets/control-microphone.svg')}
+#chat-form #send{--control-icon:url('./assets/control-send.svg')}
+#chat-form #send[data-action="stop"]{--control-icon:url('./assets/control-stop.svg')}
+#chat-form #stop-chat:disabled{opacity:.4;cursor:default}
+#chat-form #history-up,#chat-form #history-down{display:none}
+@media(max-width:600px){#chat-form.composer{gap:2px;padding:6px;border-radius:18px}#chat-form.composer button{flex-basis:36px;min-width:36px;width:36px;height:38px;min-height:38px}#chat-form.composer textarea{padding:10px 8px;font-size:13px}}
+@media(prefers-reduced-motion:reduce){#chat-form.composer button{transition:none}}
+</style>
+<style>
+/* Interfaz minimalista, sin marcos decorativos. */
+#chat-form.composer,#chat-form.composer:focus-within{border:0;border-radius:0;background:transparent;box-shadow:none;padding:4px 0}
+#chat-form.composer textarea{border:0;border-radius:0;background:transparent;box-shadow:none}
+#chat-form.composer button,#chat-form.composer button.active,#chat-form.composer button[aria-pressed="true"],#chat-form.composer #send{border:0;background:transparent;box-shadow:none}
+#chat-form.composer #send{color:#99e3df}
+#chat-form.composer button:hover,#chat-form.composer #send:hover{background:transparent;color:#e2fffb}
+/* Configuracion: jerarquia por espacio y tipografia, sin cajas anidadas. */
+.drawer{width:min(460px,100vw);padding:0 30px 40px;background:#10171c;border:0;box-shadow:-16px 0 60px #0005;color:#d8e3e9;font:14px/1.5 'Segoe UI',sans-serif;scrollbar-gutter:stable;scrollbar-width:thin;scrollbar-color:#3e535d transparent;transition:transform 300ms cubic-bezier(.22,1,.36,1)}
+.drawer .drawer-title{position:sticky;top:0;z-index:3;margin:0 -8px 24px;padding:26px 8px 20px;background:#10171c;color:#edf5f7;font:600 21px/1.3 'Segoe UI',sans-serif;letter-spacing:-.025em}
+.drawer .drawer-close{display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:#91a3ad;font:18px 'Segoe UI',sans-serif;box-shadow:none}
+.drawer .drawer-close:hover{background:#1e2b33;color:#fff}
+.drawer .setting,.drawer .vault-setting{margin:0 0 28px;padding:0;border:0}
+.drawer .setting label{margin:0 0 9px;color:#a7b8c2;font:500 12px/1.5 'Segoe UI',sans-serif;letter-spacing:.015em}
+.drawer .setting select,.drawer .setting input:not([type="checkbox"]):not([type="range"]),.drawer .setting textarea,.drawer .display-card select{width:100%;min-width:0;min-height:42px;padding:11px 12px;border:0;border-radius:9px;background:#1a252d;color:#e0ebf0;font:13px/1.5 'Segoe UI',sans-serif;box-shadow:none}
+.drawer .setting textarea{min-height:110px;resize:vertical}
+.drawer .setting select:focus-visible,.drawer input:focus-visible,.drawer textarea:focus-visible,.drawer button:focus-visible{outline:2px solid #78bfc8;outline-offset:3px}
+.drawer .vault-row{gap:8px;align-items:center;flex-wrap:wrap}
+.drawer .vault-row input{flex:1 1 180px}
+.drawer .vault-button{padding:10px 12px;min-height:38px;border:0;border-radius:8px;background:#22343c;color:#c3e1e5;font:500 12px 'Segoe UI',sans-serif;letter-spacing:0;box-shadow:none}
+.drawer .vault-button:hover{background:#2c444d;color:#edffff}
+.drawer button:disabled{opacity:.4;cursor:default}
+.drawer .vault-status,.drawer .drawer-note{font:12px/1.65 'Segoe UI',sans-serif;color:#8a9fa9;overflow-wrap:anywhere}
+.drawer .vault-status:empty{display:none}
+.drawer .vault-status.ok{color:#8cd2bc}.drawer .vault-status.error{color:#f1a4ab}
+.drawer .drawer-note{margin:32px 0 0;padding:0;border:0}
+.drawer input[type="range"],.drawer input[type="checkbox"]{accent-color:#86c9c8}
+.drawer .setting output{color:#a6d8d9;font-variant-numeric:tabular-nums}
+.drawer .display-layout-section{margin:32px 0;padding:0;border:0;background:transparent}
+.drawer .section-title{color:#a7b8c2;font:500 12px 'Segoe UI',sans-serif;letter-spacing:0}
+.drawer .display-card{padding:14px;border:0;background:#1a252d;box-shadow:none;border-radius:10px}
+.drawer::-webkit-scrollbar{width:10px}.drawer::-webkit-scrollbar-thumb{background:#3e535d;border:3px solid #10171c;border-radius:8px}
+@media(max-width:480px){.drawer{padding:0 20px 32px}}
+@media(prefers-reduced-motion:reduce){.drawer{transition:none}}
+</style>
+<style>
+/* Controles sin marcos en todos los estados, incluida la escucha activa. */
+#chat-form.composer,#chat-form.composer:focus-within,
+#chat-form.composer textarea,#chat-form.composer textarea:focus,
+#chat-form.composer button,#chat-form.composer button:hover,
+#chat-form.composer button.active,#chat-form.composer button[aria-pressed="true"],
+#chat-form.composer #send,#chat-form.composer #send:hover{
+  border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;
+}
+#chat-form.composer{gap:10px;padding:0;backdrop-filter:none}
+#chat-form.composer textarea{padding:12px 0;font-size:15px;outline:none}
+#chat-form.composer button{flex:0 0 36px;width:36px;min-width:36px;padding:0;font-size:0!important;color:#8299a3}
+#chat-form.composer button:hover{color:#e2f3f5}
+#chat-form.composer button[aria-pressed="true"]{color:#9cddd2}
+#chat-form.composer #send{color:#a5d8d5}
+#chat-form.composer #send:hover{color:#e0fff9}
+#chat-form.composer button:focus-visible{outline:2px solid #7ad8e7;outline-offset:2px}
+@media(max-width:600px){#chat-form.composer{gap:4px}}
+</style>
+  <link rel="stylesheet" href="response-cards.css">
 </head>
 <body>
   <header class="topbar"><div class="brand"><img class="brand-mark" src="assets/bit-orb.png" alt="Bit"><div><div class="brand-name">BIT</div><span class="brand-sub">ASISTENTE LOCAL PRIVADO</span></div></div><div class="status"><i id="status-dot" class="status-dot"></i><span id="connection">COMPROBANDO</span><span>·</span><span>LOCAL + WEB POR PEDIDO</span></div><div class="top-right"><div class="clock"><span id="clock"></span><small>BUENOS AIRES / LOCAL</small></div><button id="settings" class="settings" type="button">AJUSTES</button></div></header>
@@ -557,10 +707,10 @@
       <div class="core-ring"></div>
       <div class="core-ring"></div>
     </div>
-    <div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Hola. Soy Bit. Sistemas locales listos.</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="qwen2.5:3b">QWEN 3B</option><option value="qwen2.5-coder:7b">CODER 7B</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Mantener para hablar" aria-pressed="false" title="Mantener para dictar">MIC</button><button id="send" class="send" type="submit">ENVIAR</button></form></section>
-    <aside id="context-panel" class="context"><div class="context-head"><span>BIT / CONTEXTO</span><span id="card-count">0</span></div><div id="cards" aria-live="polite"></div><p id="daily-summary" class="context-empty">Sistema local listo<br><small>Privacidad máxima · Loopback</small></p></aside>
+    <div class="orb-area"><div class="orb"><canvas id="orb-canvas" class="orb-canvas" aria-label="Núcleo visual de Bit"></canvas><div class="orb-core"></div></div><small id="core-status">LISTO PARA RECIBIR</small></div><div class="messages" id="chat" aria-live="polite"><div class="message assistant" id="welcome">Hola. Soy Bit. Sistemas locales listos.</div></div><form id="chat-form" class="composer"><button id="history-up" class="icon-button" type="button" aria-label="Mensaje anterior">↑</button><button id="history-down" class="icon-button" type="button" aria-label="Mensaje siguiente">↓</button><textarea id="prompt" placeholder="Escribí un comando para Bit…" aria-label="Mensaje para Bit"></textarea><select id="model" aria-label="Modelo"><option value="">Detectando modelos locales...</option></select><button id="voice" class="icon-button" type="button" aria-label="Voz">◉</button><button id="voice-capture" class="icon-button" type="button" aria-label="Micrófono continuo" aria-pressed="false" title="Activar escucha continua">MIC CONTINUO</button><button id="send" class="send" type="submit" aria-label="Enviar mensaje" title="Enviar mensaje">ENVIAR</button></form></section>
+    <aside id="context-panel" class="context right-widgets" hidden><div class="context-head"><span>BIT / CONTEXTO</span><span id="card-count">0</span></div><div id="cards"><div id="cardsStack" class="cards-stack" aria-live="polite"></div></div><p id="daily-summary" class="context-empty">Sistema local listo<br><small>Privacidad máxima · Loopback</small></p></aside>
   </main>
-  <div id="drawer-backdrop" class="drawer-backdrop"></div><aside class="drawer" aria-label="Ajustes"><div class="drawer-title"><span>AJUSTES DE BIT</span><button id="drawer-close" class="drawer-close" type="button">✕</button></div><div class="setting"><label for="user-name">NOMBRE PREFERIDO</label><div class="vault-row"><input id="user-name" class="vault-path" type="text" maxlength="40" autocomplete="name" placeholder="¿Cómo prefiere que le llame?"><button id="user-name-save" class="vault-button" type="button">GUARDAR</button></div><p id="user-name-status" class="vault-status" aria-live="polite"></p></div><div class="setting"><label for="drawer-model">MODELO OLLAMA</label><select id="drawer-model"><option value="qwen2.5:3b">Qwen 2.5 · 3B</option><option value="qwen2.5-coder:7b">Qwen 2.5 Coder · 7B</option></select></div><div class="setting"><label for="drawer-voice">VOZ PIPER TTS</label><select id="drawer-voice"><option>Voz local configurada</option></select></div><div class="setting"><label for="stt-model-pick">MODELO LOCAL PARA DICTADO</label><button id="stt-model-pick" class="vault-button" type="button">ELEGIR CARPETA DEL MODELO</button><p id="stt-model-status" class="vault-status" aria-live="polite">Sin modelo local configurado</p></div><div class="setting"><label for="drawer-camera">CÁMARA WEB</label><select id="drawer-camera"><option>Desactivada</option><option>Disponible bajo permiso</option></select></div><div class="setting"><label for="drawer-screen">ANÁLISIS DE PANTALLA</label><select id="drawer-screen"><option value="false">Preguntar cada vez</option><option value="true">Permitir siempre</option></select></div><div class="display-layout-section">
+  <div id="drawer-backdrop" class="drawer-backdrop"></div><aside class="drawer" aria-label="Ajustes"><div class="drawer-title"><span>Configuraci?n</span><button id="drawer-close" class="drawer-close" type="button" aria-label="Cerrar configuraci?n">✕</button></div><div class="setting"><label for="user-name">NOMBRE PREFERIDO</label><div class="vault-row"><input id="user-name" class="vault-path" type="text" maxlength="40" autocomplete="name" placeholder="¿Cómo prefiere que le llame?"><button id="user-name-save" class="vault-button" type="button">GUARDAR</button></div><p id="user-name-status" class="vault-status" aria-live="polite"></p></div><div class="setting"><label for="drawer-model">MODELO LOCAL</label><select id="drawer-model"><option value="">Detectando modelos locales...</option></select></div><div class="setting"><label for="drawer-voice">VOZ PIPER TTS</label><select id="drawer-voice"><option>Voz local configurada</option></select></div><div class="setting"><label for="stt-model-pick">MODELO LOCAL PARA DICTADO</label><button id="stt-model-pick" class="vault-button" type="button">ELEGIR CARPETA DEL MODELO</button><p id="stt-model-status" class="vault-status" aria-live="polite">Sin modelo local configurado</p></div><div class="setting"><label for="drawer-camera">CÁMARA WEB</label><select id="drawer-camera"><option>Desactivada</option><option>Disponible bajo permiso</option></select></div><div class="setting"><label for="drawer-screen">ANÁLISIS DE PANTALLA</label><select id="drawer-screen"><option value="false">Preguntar cada vez</option><option value="true">Permitir siempre</option></select></div><div class="display-layout-section">
   <span class="section-title">Disposición Multimonitor</span>
   <div class="displays-grid" id="displays-container">
     <!-- Tarjetas de pantalla inyectadas por JavaScript -->
@@ -573,51 +723,95 @@
   <div id="drop-modal" class="glass-card" role="dialog" aria-modal="true" aria-label="Archivo soltado">
     <div class="drop-dialog">
       <div class="kicker">BIT / ARCHIVO DETECTADO</div>
-      <h2>¿Qué deseas hacer con <em id="drop-file-name"></em>?</h2>
-      <p class="drop-hint" id="drop-file-hint"></p>
-      <div class="drop-actions">
-        <button type="button" data-action="summarize">📄 Resumir contenido / Extraer texto</button>
-        <button type="button" data-action="edit">✏️ Modificar / Editar archivo</button>
-        <button type="button" data-action="vision">👁️ Analizar con Visión de IA</button>
-        <button type="button" data-action="vault">🧠 Guardar en Bóveda / Obsidian</button>
+      <h2>¿Qué desea hacer?</h2>
+      <p class="drop-intro">Seleccione una acción para trabajar con su archivo.</p>
+      <div class="drop-file">
+        <span class="drop-file-icon" aria-hidden="true">≡</span>
+        <div class="drop-file-info"><strong id="drop-file-name"></strong><p class="drop-hint" id="drop-file-hint"></p></div>
       </div>
-      <button type="button" class="drop-cancel" id="drop-cancel">CANCELAR</button>
+      <div class="drop-actions">
+        <button type="button" data-action="summarize"><span class="drop-action-icon" aria-hidden="true">≡</span><span><strong>Resumir archivo</strong><small>Extraer texto y puntos clave</small></span></button>
+        <button type="button" data-action="edit"><span class="drop-action-icon" aria-hidden="true">✎</span><span><strong>Editar archivo</strong><small>Solicitar cambios al contenido</small></span></button>
+        <button type="button" data-action="vision"><span class="drop-action-icon" aria-hidden="true">◎</span><span><strong>Analizar imagen</strong><small>Examinar su contenido visual</small></span></button>
+        <button type="button" data-action="vault"><span class="drop-action-icon" aria-hidden="true">◇</span><span><strong>Guardar en bóveda</strong><small>Crear una nota en Obsidian</small></span></button>
+        <button type="button" data-action="attach"><span class="drop-action-icon" aria-hidden="true">＋</span><span><strong>Adjuntar al chat</strong><small>Usar en esta conversación</small></span></button>
+      </div>
+      <button type="button" class="drop-cancel" id="drop-cancel">Cancelar</button>
     </div>
   </div>
 
+  <script src="core-animation.js"></script>
   <script>
     document.querySelector('.drawer')?.insertAdjacentHTML('beforeend','<div class="setting vault-setting"><label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p></div>');
   </script>
   <script>
-    void import('./boot.js').then(({runBootSequence})=>runBootSequence({model:localStorage.getItem('bit.model')||'qwen2.5:3b'})).catch(error=>{console.error('[boot]',error);document.getElementById('daily-summary').textContent=`No se pudo preparar el resumen del día: ${error.message}`});
-  </script>
-  <script>
     const $=id=>document.getElementById(id);const State={IDLE:'idle',PROCESSING:'processing',ERROR:'error',SPEAKING:'speaking'};let currentState=State.IDLE,history=[],conversationHistory=[],historyIndex=-1,audioContext,nextAudioTime=0,speechResetTimer=0,voiceEnabled=true,renderOrb=()=>{};
-    function setState(state){currentState=state;const orb=$('orb-canvas').parentElement;orb.classList.toggle('processing',state===State.PROCESSING);orb.classList.toggle('speaking',state===State.SPEAKING);$('activity').textContent=state==='processing'?'PROCESANDO':state==='speaking'?'HABLANDO':state==='error'?'ERROR':'LISTO';$('core-status').textContent=state==='processing'?'ANALIZANDO…':state==='speaking'?'RESPONDIENDO EN VOZ':state==='error'?'SEÑAL INTERRUMPIDA':'LISTO PARA RECIBIR';renderOrb()}
+    window.startBitCore($('orb-canvas'), () => ({state:currentState}));
+    let chatPending=false,stopPending=false;
+    function updateSendButton(){const button=$('send');const stopping=chatPending||currentState===State.PROCESSING||currentState===State.SPEAKING;button.dataset.action=stopping?'stop':'send';const label=stopping?'Detener respuesta':'Enviar mensaje';button.title=label;button.setAttribute('aria-label',label);button.textContent=stopping?'DETENER':'ENVIAR';button.disabled=stopPending;}
+    async function stopCurrentResponse(){if(stopPending)return;stopPending=true;updateSendButton();try{await window.bitRuntime.stopChat()}catch(error){addMessage(`No se pudo detener el pedido: ${error.message}`,'error')}finally{stopPending=false;updateSendButton()}}
+    function setState(state){currentState=state;updateSendButton();const orb=$('orb-canvas').parentElement;orb.classList.toggle('processing',state===State.PROCESSING);orb.classList.toggle('speaking',state===State.SPEAKING);$('activity').textContent=state==='processing'?'PROCESANDO':state==='speaking'?'HABLANDO':state==='error'?'ERROR':'LISTO';$('core-status').textContent=state==='processing'?'ANALIZANDO…':state==='speaking'?'RESPONDIENDO EN VOZ':state==='error'?'SEÑAL INTERRUMPIDA':'LISTO PARA RECIBIR';renderOrb()}
     function updateVoiceButton(){const button=$('voice');button.classList.toggle('active',voiceEnabled);button.setAttribute('aria-pressed',String(voiceEnabled));button.title=voiceEnabled?'Respuesta hablada activada':'Respuesta hablada desactivada'}
     function speakResponse(text){if(!voiceEnabled||!text.trim())return;void window.bitRuntime.speak(text.slice(0,4000)).catch(error=>addMessage(`No pude activar la voz local: ${error.message}`,'error'))}
     let voiceCaptureActive=false,voiceCaptureStarting=false,voiceCaptureStopRequested=false;
+    // La respuesta hablada ya se encola en el proceso principal al completar el chat.
+    function speakResponse(){return}
     function updateVoiceCaptureButton(){const button=$('voice-capture');button.classList.toggle('active',voiceCaptureActive||voiceCaptureStarting);button.setAttribute('aria-pressed',String(voiceCaptureActive||voiceCaptureStarting));button.title=voiceCaptureActive?'Escuchando; soltar para transcribir':'Mantener para dictar'}
     async function startVoiceCapture(){if(voiceCaptureActive||voiceCaptureStarting)return;voiceCaptureStarting=true;voiceCaptureStopRequested=false;updateVoiceCaptureButton();try{await window.bitRuntime.startVoiceCapture();voiceCaptureActive=true;if(voiceCaptureStopRequested){voiceCaptureStarting=false;await stopVoiceCapture()}else addMessage('Escuchando… suelte el botón para transcribir.','system')}catch(error){addMessage(`No pude iniciar el dictado local: ${error.message}`,'error')}finally{voiceCaptureStarting=false;updateVoiceCaptureButton()}}
     async function stopVoiceCapture(){if(voiceCaptureStarting){voiceCaptureStopRequested=true;return}if(!voiceCaptureActive)return;voiceCaptureActive=false;updateVoiceCaptureButton();try{await window.bitRuntime.stopVoiceCapture()}catch(error){addMessage(`No pude detener el dictado local: ${error.message}`,'error')}}
-    const voiceCaptureButton=$('voice-capture');voiceCaptureButton.addEventListener('pointerdown',event=>{event.preventDefault();voiceCaptureButton.setPointerCapture(event.pointerId);void startVoiceCapture()});voiceCaptureButton.addEventListener('pointerup',()=>void stopVoiceCapture());voiceCaptureButton.addEventListener('pointercancel',()=>void stopVoiceCapture());voiceCaptureButton.addEventListener('keydown',event=>{if((event.key===' '||event.key==='Enter')&&!event.repeat){event.preventDefault();void startVoiceCapture()}});voiceCaptureButton.addEventListener('keyup',event=>{if(event.key===' '||event.key==='Enter'){event.preventDefault();void stopVoiceCapture()}});window.addEventListener('blur',()=>void stopVoiceCapture());
-    const cleanupVoiceTranscript=window.bitRuntime.onVoiceTranscript(text=>{if(typeof text!=='string'||!text.trim())return;$('prompt').value=text.trim().slice(0,8000);$('prompt').focus();addMessage('Transcripción local lista para revisar y enviar.','system')});const cleanupVoiceError=window.bitRuntime.onVoiceError(message=>{voiceCaptureActive=false;voiceCaptureStarting=false;updateVoiceCaptureButton();addMessage(`Error de voz local: ${message}`,'error')});window.addEventListener('beforeunload',()=>{cleanupVoiceTranscript();cleanupVoiceError()});
+    const voiceCaptureButton=$('voice-capture');
+    const cleanupVoiceTranscript=window.bitRuntime.onVoiceTranscript(text=>{if(typeof text!=='string'||!text.trim())return;if(window.__bitContinuousVoiceEnabled){window.__bitContinuousVoiceTranscript?.(text);return}$('prompt').value=text.trim().slice(0,8000);$('prompt').focus();addMessage('Transcripción local lista para revisar y enviar.','system')});
+    const cleanupVoiceError=window.bitRuntime.onVoiceError(message=>{voiceCaptureActive=false;voiceCaptureStarting=false;updateVoiceCaptureButton();if(window.__bitContinuousVoiceEnabled){window.__bitContinuousVoiceError?.(message);return}addMessage(`Error de voz local: ${message}`,'error')});window.addEventListener('blur',()=>{if(!window.__bitContinuousVoiceEnabled)void stopVoiceCapture()});window.addEventListener('beforeunload',()=>{cleanupVoiceTranscript();cleanupVoiceError()});
     function scrollChatToLatest(){requestAnimationFrame(()=>$('chat').scrollTop=$('chat').scrollHeight)}
     function addMessage(text,kind='assistant'){const node=document.createElement('div');node.className=`message ${kind}`;node.textContent=text;$('chat').append(node);scrollChatToLatest();while($('chat').children.length>50)$('chat').removeChild($('chat').firstChild);return node}
-    function hideCard(id){const card=$(id);if(card)card.remove();$('card-count').textContent=$('cards').children.length;if(!$('cards').children.length)$('context-panel').style.display='none'}
-    function showCard(data={}){const id=`card-${Date.now()}`;const card=document.createElement('article');card.className='card';card.id=id;const icon=document.createElement('div');icon.className='card-icon';icon.textContent=data.icon||'◌';const body=document.createElement('div');const label=document.createElement('div');label.className='card-label';label.textContent=data.label||'BIT CONTEXT';const value=document.createElement('div');value.className='card-value';value.textContent=data.value||'';const subtitle=document.createElement('div');subtitle.className='card-subtitle';subtitle.textContent=data.subtitle||'';body.append(label,value,subtitle);const close=document.createElement('button');close.className='card-close';close.type='button';close.textContent='✕';close.onclick=()=>hideCard(id);card.append(icon,body,close);$('cards').prepend(card);$('context-panel').style.display='block';$('card-count').textContent=$('cards').children.length;return card}
-    function detectCard(text){const lower=text.toLowerCase();const temp=text.match(/(-?\d{1,2})\s*\u00b0/);const hour=text.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);if(temp||/clima|temperatura|soleado|nublado|lluvia|despejado/.test(lower))showCard({icon:/lluvia|nublado/.test(lower)?'☁️':'☀️',label:'CLIMA',value:temp?`${temp[1]}°`:'Ahora',subtitle:text.slice(0,90)});else if(hour||/agenda|reunión|evento|turno|calendario/.test(lower))showCard({icon:'⏰',label:'AGENDA',value:hour?hour[0].replace('.',':'):'Evento',subtitle:text.slice(0,90)})}
-    window.BitUI={addMessage,setState,showCard,hideCard,clearCards:()=>{$('cards').replaceChildren();$('card-count').textContent='0';$('context-panel').style.display='none'},openDrawer:()=>document.body.classList.add('drawer-open'),closeDrawer:()=>document.body.classList.remove('drawer-open')};
-    function startOrbParticles(){const canvas=$('orb-canvas');if(!canvas)return;const context=canvas.getContext('2d');let frameId=0;const particles=Array.from({length:260},()=>({angle:Math.random()*Math.PI*2,radius:10+Math.pow(Math.random(),.55)*124,speed:(Math.random()-.5)*.0028,size:.35+Math.random()*1.45,alpha:.2+Math.random()*.8,seed:Math.random()*Math.PI*2}));function resize(){const box=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.max(1,box.width*ratio);canvas.height=Math.max(1,box.height*ratio);context.setTransform(ratio,0,0,ratio,0,0);draw(performance.now())}function draw(time){const thinking=currentState===State.PROCESSING;const box=canvas.getBoundingClientRect();const cx=box.width/2,cy=box.height/2;context.clearRect(0,0,box.width,box.height);const pulse=thinking?1:1+Math.sin(time*.0014)*.035;for(const particle of particles){if(!thinking)particle.angle+=particle.speed;const wave=thinking?0:Math.sin(time*.001+particle.seed)*5;const radius=(particle.radius+wave)*pulse;const x=cx+Math.cos(particle.angle)*radius;const y=cy+Math.sin(particle.angle)*radius*.82;const glow=particle.size>1.2?'#62c4d0':'#16879a';context.globalAlpha=particle.alpha*(.2+Math.max(0,1-particle.radius/145))*.72;context.fillStyle=glow;context.beginPath();context.arc(x,y,particle.size,0,Math.PI*2);context.fill()}context.globalAlpha=1;const core=context.createRadialGradient(cx-4,cy-5,1,cx,cy,19);core.addColorStop(0,'#c9f7fa');core.addColorStop(.2,'#4bb8c7');core.addColorStop(.52,'#08778c55');core.addColorStop(1,'#08778c00');context.fillStyle=core;context.beginPath();context.arc(cx,cy,21,0,Math.PI*2);context.fill();if(!thinking)frameId=requestAnimationFrame(draw);else frameId=0}renderOrb=()=>{if(frameId)cancelAnimationFrame(frameId);draw(performance.now());if(currentState!==State.PROCESSING)frameId=requestAnimationFrame(draw)};window.addEventListener('resize',resize);resize();frameId=requestAnimationFrame(draw)}
+    function showResponseCard(result={}){
+      if(result.busy||result.cancelled||!String(result.text??'').trim())return;
+      const weather=result.cards?.find(card=>card.kind==='weather');
+      if(weather){hideCard('answer');showCard({id:'weather:'+weather.location,label:'Tiempo en '+weather.location,value:weather.temperature,subtext:'Humedad: '+weather.humidity+' · Viento: '+weather.wind+' · Lluvia: '+weather.rain,metaText:weather.condition});return}
+      const card=result.cards?.find(card=>card.kind==='answer');
+      const text=String(result.text).trim();
+      showCard({id:'answer',label:card?.label||(result.sources?.length?'RESULTADO WEB':'RESPUESTA'),value:card?.value||text.slice(0,160),subtext:card?.detail??text.slice(160),metaText:card?.badge||(result.sources?.length?'INTERNET':'BIT LOCAL')});
+    }
+    function updateCardCount(){const n=$('cardsStack').children.length;$('card-count').textContent=String(n);$('context-panel').hidden=!n;}
+    function hideCard(id){const card=[...$('cardsStack').children].find(n=>n.dataset.cardId===id);if(card){card.classList.add('leaving');setTimeout(()=>{card.remove();updateCardCount()},180)}}
+    function showCard(data={}){
+      const stack=$('cardsStack'),id=String(data.id||'result');
+      let card=[...stack.children].find(n=>n.dataset.cardId===id&&!n.classList.contains('leaving'));
+      if(!card){card=document.createElement('article');card.className='card glass-card';card.dataset.cardId=id;
+        for(const cls of ['ic','lb','val','sub','meta']){const node=document.createElement('div');node.className=cls;card.append(node)}
+        const close=document.createElement('button');close.className='card-close';close.type='button';close.textContent='\u00d7';close.setAttribute('aria-label','Descartar tarjeta');close.title='Descartar tarjeta';close.onclick=()=>hideCard(id);card.append(close);stack.prepend(card);
+        while(stack.children.length>10)stack.lastElementChild.remove();
+      }
+      for(const [cls,value] of [['ic',data.icon||'?'],['lb',data.label||'BIT'],['val',data.value],['sub',data.subtext??data.subtitle],['meta',data.metaText]])card.querySelector('.'+cls).textContent=String(value??'');
+      const label=String(data.label||'').toLocaleLowerCase('es');
+      card.dataset.tone=/clima|weather|temperatura/.test(label)||id.startsWith('weather')?'weather':/web|internet/.test(label)?'web':'answer';
+      card.dataset.density=String(data.value??'').length>100?'long':'normal';
+      card.querySelector('.ic').textContent='';
+      const iconNode=card.querySelector('.ic');
+      iconNode.dataset.weatherIcon='false';
+      if(card.dataset.tone==='weather'){
+        const condition=String(data.condition??data.metaText??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase();
+        const weatherIcons=[[/torment|thunder/,'⛈️'],[/nieve|nev|snow/,'❄️'],[/lluv|llov|rain|drizzle/,'🌧️'],[/niebla|neblina|fog|mist/,'🌫️'],[/parcial|interval|partly/,'⛅'],[/nubl|nubos|cloud|overcast/,'☁️'],[/despejad|solead|clear|sunny/,'☀️']];
+        const weatherIcon=weatherIcons.find(([pattern])=>pattern.test(condition))?.[1];
+        if(weatherIcon){iconNode.textContent=weatherIcon;iconNode.dataset.weatherIcon='true';}
+      }
+      card.querySelector('.ic').setAttribute('aria-hidden','true');
+      updateCardCount();return card;
+    }
+    window.BitUI={addMessage,setState,showCard,hideCard,clearCards:()=>{$('cardsStack').replaceChildren();updateCardCount()},openDrawer:()=>document.body.classList.add('drawer-open'),closeDrawer:()=>document.body.classList.remove('drawer-open')};
+    const cleanupDisplayCard=window.bitRuntime.onDisplayCard(showCard);window.addEventListener('beforeunload',cleanupDisplayCard);
+    function startOrbParticles(){renderOrb=()=>{};}
     const tick=()=>{$('clock').textContent=new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})};setInterval(tick,1000);tick();startOrbParticles();
-    $('settings').onclick=()=>window.BitUI.openDrawer();$('drawer-close').onclick=()=>window.BitUI.closeDrawer();$('drawer-backdrop').onclick=()=>window.BitUI.closeDrawer();document.addEventListener('keydown',event=>{if(event.key==='Escape')window.BitUI.closeDrawer()});$('drawer-model').onchange=event=>{$('model').value=event.target.value;localStorage.setItem('bit.model',event.target.value)};$('model').onchange=event=>{$('drawer-model').value=event.target.value;localStorage.setItem('bit.model',event.target.value)};$('drawer-screen').onchange=async(event)=>{const result=await window.bitRuntime.setConfig('screenAnalysisEnabled',event.target.value==='true');if(!result?.ok)addMessage(`No pude guardar el ajuste de pantalla: ${result.error}`,'error')};
+    $('settings').onclick=()=>window.BitUI.openDrawer();$('drawer-close').onclick=()=>window.BitUI.closeDrawer();$('drawer-backdrop').onclick=()=>window.BitUI.closeDrawer();document.addEventListener('keydown',event=>{if(event.key==='Escape')window.BitUI.closeDrawer()});$('drawer-model').onchange=event=>{$('model').value=event.target.value;localStorage.setItem('bit.model',event.target.value);window.bitRuntime.setConfig('model',event.target.value).then(result=>{if(!result?.ok)addMessage(result?.error||'No pude guardar el modelo','error')}).catch(error=>addMessage(error.message,'error'))};$('model').onchange=event=>{$('drawer-model').value=event.target.value;localStorage.setItem('bit.model',event.target.value);window.bitRuntime.setConfig('model',event.target.value).then(result=>{if(!result?.ok)addMessage(result?.error||'No pude guardar el modelo','error')}).catch(error=>addMessage(error.message,'error'))};$('drawer-screen').onchange=async(event)=>{const result=await window.bitRuntime.setConfig('screenAnalysisEnabled',event.target.value==='true');if(!result?.ok)addMessage(`No pude guardar el ajuste de pantalla: ${result.error}`,'error')};
     updateVoiceButton();$('history-up').onclick=()=>{if(history.length){historyIndex=Math.max(0,historyIndex-1);$('prompt').value=history[historyIndex];$('prompt').focus()}};$('history-down').onclick=()=>{if(history.length){historyIndex=Math.min(history.length,historyIndex+1);$('prompt').value=history[historyIndex]||'';$('prompt').focus()}};$('voice').onclick=async()=>{const previous=voiceEnabled;voiceEnabled=!voiceEnabled;updateVoiceButton();try{const result=await window.bitRuntime.setConfig('speechEnabled',voiceEnabled);if(!result.ok)throw new Error(result.error);$('prompt').focus()}catch(error){voiceEnabled=previous;updateVoiceButton();addMessage(`No pude guardar el ajuste de voz: ${error.message}`,'error')}};
-    async function boot(){try{const [runtime,speechSetting,nameSetting]=await Promise.all([window.bitRuntime.getRuntime(),window.bitRuntime.getConfig('speechEnabled'),window.bitRuntime.getConfig('userName')]);voiceEnabled=speechSetting?.ok?speechSetting.value!==false:true;if(!speechSetting?.ok)addMessage(`No pude leer el ajuste de voz: ${speechSetting?.error||'respuesta inválida'}`,'error');updateVoiceButton();const name=nameSetting?.ok&&typeof nameSetting.value==='string'?nameSetting.value:'';$('user-name').value=name;$('welcome').textContent=`${new Date().getHours()<12?'Buenos días':new Date().getHours()<20?'Buenas tardes':'Buenas noches'}, ${name||'amigo'}. Soy Bit. Sistemas locales listos.`;$('connection').textContent='LOCAL READY';$('status-dot').classList.add('online');$('drawer-model').value=localStorage.getItem('bit.model')||runtime.model||'qwen2.5:3b';$('model').value=$('drawer-model').value;const screenSetting=await window.bitRuntime.getConfig('screenAnalysisEnabled');$('drawer-screen').value=screenSetting?.ok===true?String(screenSetting.value==='true'):'false'}catch(error){$('connection').textContent='LOCAL ERROR';setState(State.ERROR);addMessage(error.message,'error')}}
+    async function loadLocalModelOptions(configuredModel){const result=await window.bitRuntime.getConfig('availableModels');if(!result?.ok||!Array.isArray(result.value))throw new Error(result?.error||'No pude detectar los modelos locales');const models=result.value.filter(entry=>entry.kind==='model');const savedModel=await window.bitRuntime.getConfig('model');const preferred=localStorage.getItem('bit.model')||savedModel?.value||configuredModel||'qwen2.5:3b';const selected=models.find(entry=>entry.name===preferred||entry.path===preferred)||models[0];for(const id of ['model','drawer-model']){const select=$(id);select.replaceChildren();if(!models.length){const option=document.createElement('option');option.value='';option.textContent='Sin modelo local disponible';select.append(option)}for(const entry of models){const option=document.createElement('option');option.value=entry.name;option.textContent=entry.name;select.append(option)}select.value=selected?.name||'';select.disabled=!models.length}if(!models.length)addMessage('No hay modelos locales disponibles. Compruebe que Ollama est? iniciado y tenga modelos instalados, o configure un GGUF local.','system')}
+    async function boot(){try{const [runtime,speechSetting,nameSetting]=await Promise.all([window.bitRuntime.getRuntime(),window.bitRuntime.getConfig('speechEnabled'),window.bitRuntime.getConfig('userName')]);voiceEnabled=speechSetting?.ok?speechSetting.value!==false:true;if(!speechSetting?.ok)addMessage(`No pude leer el ajuste de voz: ${speechSetting?.error||'respuesta inválida'}`,'error');updateVoiceButton();const name=nameSetting?.ok&&typeof nameSetting.value==='string'?nameSetting.value:'';$('user-name').value=name;$('welcome').textContent=`${new Date().getHours()<12?'Buenos días':new Date().getHours()<20?'Buenas tardes':'Buenas noches'}, ${name||'amigo'}. Soy Bit. Sistemas locales listos.`;$('connection').textContent='LOCAL READY';$('status-dot').classList.add('online');await loadLocalModelOptions(runtime.model);const screenSetting=await window.bitRuntime.getConfig('screenAnalysisEnabled');$('drawer-screen').value=screenSetting?.ok===true?String(screenSetting.value==='true'):'false'}catch(error){$('connection').textContent='LOCAL ERROR';setState(State.ERROR);addMessage(error.message,'error')}}
     const cleanupNetworkActivity=window.bitRuntime.onNetworkActivity(({active})=>{$('connection').textContent=active?'BUSCANDO EN INTERNET':'LOCAL READY';$('status-dot').classList.toggle('web',active);if(!active)$('status-dot').classList.add('online')});window.addEventListener('beforeunload',cleanupNetworkActivity);
     $('prompt').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();$('chat-form').requestSubmit()}});
-    $('chat-form').onsubmit=async event=>{event.preventDefault();const prompt=$('prompt').value.trim();if(!prompt||currentState===State.PROCESSING)return;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer+(result.sources?.length?`\n\nFuentes consultadas:\n${result.sources.map(source=>`• ${source.title} — ${source.url}`).join('\n')}`:'');pending.className='message assistant';scrollChatToLatest();detectCard(answer);speakResponse(answer)}catch(error){pending.textContent=`No pude conectarme con Ollama local: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{if(currentState!==State.ERROR)setState(State.IDLE);$('prompt').focus()}};
+    updateSendButton();
+    $('chat-form').onsubmit=async event=>{event.preventDefault();if(stopPending)return;if(chatPending||currentState===State.PROCESSING||currentState===State.SPEAKING){await stopCurrentResponse();return}const prompt=$('prompt').value.trim();if(!prompt)return;chatPending=true;history.push(prompt);historyIndex=history.length;$('prompt').value='';addMessage(prompt,'user');const pending=addMessage('Pensando…','system');setState(State.PROCESSING);try{const result=await window.bitRuntime.chat({model:$('model').value,message:prompt,history:conversationHistory.slice(-8)});if(result.busy){pending.textContent=result.text;pending.className='message system';scrollChatToLatest();return}showResponseCard(result);const answer=result.text||'No recibí una respuesta.';conversationHistory.push({role:'user',content:prompt.slice(0,2000)},{role:'assistant',content:answer.slice(0,2000)});conversationHistory=conversationHistory.slice(-8);pending.textContent=answer;if(result.sources?.length){const details=document.createElement('details');const summary=document.createElement('summary');summary.textContent='Fuentes ('+result.sources.length+')';details.append(summary);for(const source of result.sources){const link=document.createElement('a');link.textContent=source.title;link.href=source.url;link.target='_blank';link.rel='noopener noreferrer';link.style.display='block';details.append(link)}pending.append(details)}pending.className='message assistant';scrollChatToLatest();speakResponse(answer)}catch(error){pending.textContent=`No pude completar la consulta: ${error.message}`;pending.className='message error';scrollChatToLatest();setState(State.ERROR)}finally{chatPending=false;if(currentState!==State.ERROR&&currentState!==State.SPEAKING)setState(State.IDLE);updateSendButton();$('prompt').focus()}};
     document.addEventListener('click',(event)=>{const t=event.target;if(!t.matches('button,input,textarea,select,a,[role="button"]')){$('prompt')?.focus();}});
-    window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration;setState(State.SPEAKING);clearTimeout(speechResetTimer);speechResetTimer=setTimeout(()=>{if(currentState===State.SPEAKING)setState(State.IDLE)},Math.max(0,(nextAudioTime-audioContext.currentTime)*1000))}catch(error){addMessage(`No pude reproducir la voz local: ${error.message}`,'error')}});boot().then(()=>import('./boot.js')).then(({runBootSequence})=>runBootSequence({model:$('model').value,voiceEnabled})).catch(error=>{console.error('[boot]',error);$('daily-summary').textContent=`No se pudo preparar el resumen del día: ${error.message}`});
+    window.bitRuntime.onVoiceAudio(chunk=>{try{audioContext??=new AudioContext();const bytes=Uint8Array.from(atob(chunk.pcmBase64),char=>char.charCodeAt(0));const samples=new Int16Array(bytes.buffer);const buffer=audioContext.createBuffer(chunk.channels,samples.length/chunk.channels,chunk.sampleRate);for(let channel=0;channel<chunk.channels;channel++){const output=buffer.getChannelData(channel);for(let i=0;i<output.length;i++)output[i]=samples[i*chunk.channels+channel]/32768}const source=audioContext.createBufferSource();source.buffer=buffer;source.connect(audioContext.destination);nextAudioTime=Math.max(nextAudioTime,audioContext.currentTime);source.start(nextAudioTime);nextAudioTime+=buffer.duration;setState(State.SPEAKING);clearTimeout(speechResetTimer);speechResetTimer=setTimeout(()=>{if(currentState===State.SPEAKING)setState(chatPending?State.PROCESSING:State.IDLE)},Math.max(0,(nextAudioTime-audioContext.currentTime)*1000))}catch(error){addMessage(`No pude reproducir la voz local: ${error.message}`,'error')}});boot().then(()=>import('./boot.js')).then(({runBootSequence})=>runBootSequence({model:$('model').value,voiceEnabled})).catch(error=>{console.error('[boot]',error);$('daily-summary').textContent=`No se pudo preparar el resumen del día: ${error.message}`});
     function ensureVaultSetting(){if(!$('vault-path')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="vault-path">BÓVEDA DE OBSIDIAN</label><div class="vault-row"><input id="vault-path" class="vault-path" type="text" readonly placeholder="Ninguna bóveda conectada"><button id="vault-connect" class="vault-button" type="button">ELEGIR</button></div><button id="vault-prepare" class="vault-button" type="button" disabled>GENERAR GRAFO</button><p id="vault-status" class="vault-status" aria-live="polite"></p>';firstSetting.before(wrapper)}$('vault-connect').onclick=pickVault;$('vault-prepare').onclick=prepareVault}
     function ensureProjectsSetting(){if(!$('projects-root')){const firstSetting=document.querySelector('.drawer .setting');if(!firstSetting)return;const wrapper=document.createElement('div');wrapper.className='setting vault-setting';wrapper.innerHTML='<label for="projects-root">PROYECTOS LOCALES DE BIT</label><div class="vault-row"><input id="projects-root" class="vault-path" type="text" readonly placeholder="Ninguna carpeta elegida"><button id="projects-root-pick" class="vault-button" type="button">ELEGIR</button></div><p id="projects-root-status" class="vault-status" aria-live="polite">Elija una carpeta fuera de servicios de sincronización para conservar la privacidad.</p>';firstSetting.before(wrapper)}$('projects-root-pick').onclick=pickProjectsRoot}
     async function loadProjectsSetting(){ensureProjectsSetting();try{const result=await window.bitRuntime.getConfig('projectsRoot');if(!result?.ok)throw new Error(result?.error||'No se pudo leer la carpeta de proyectos');if(result.value){$('projects-root').value=result.value;$('projects-root-status').textContent='Carpeta local configurada. Evite carpetas sincronizadas para mantenerla privada.';$('projects-root-status').className='vault-status ok'}else{$('projects-root').value='';$('projects-root-status').textContent='Elija una carpeta local fuera de servicios de sincronización.';$('projects-root-status').className='vault-status'}}catch(error){$('projects-root').value='';$('projects-root-status').textContent=error.message;$('projects-root-status').className='vault-status error'}}
@@ -658,8 +852,23 @@
       function hideModal() {
         if (!modal) return;
         modal.style.display = 'none';
+      }
+      function clearDroppedFile() {
+        hideModal();
         droppedFile = null;
       }
+      function retainFile(selected) {
+        droppedFile = selected;
+      }
+      const cleanupForwardDrop=window.bitRuntime.onFileDropRequested?.(selected=>{
+        const extension=selected.name.includes('.')?'.'+selected.name.split('.').pop().toLowerCase():'';
+        retainFile({...selected,extension});
+        fileNameNode.textContent=selected.name;
+        fileHintNode.textContent=`Ruta: ${selected.filePath} · ${(selected.size/1024).toFixed(1)} KB`;
+        if(visionNode)visionNode.style.display=IMAGE_EXTENSIONS.has(extension)?'':'none';
+        modal.style.display='grid';
+      });
+      window.addEventListener('beforeunload',()=>cleanupForwardDrop?.());
       function appendChatResult(text) {
         if (!text) return;
         const node = document.createElement('div');
@@ -698,7 +907,8 @@
 
         let filePath;
         try {
-          filePath = await window.bitRuntime.getPathForFile(file);
+          filePath = await window.bitRuntime?.getPathForFile?.(file);
+          if (!filePath && typeof file.path === 'string') filePath = file.path;
         } catch (error) {
           addMessage(`No se pudo leer la ruta del archivo soltado: ${error.message}`, 'error');
           return;
@@ -711,7 +921,8 @@
         const name = file.name || 'archivo';
         const extension = name.includes('.') ? `.${name.split('.').pop().toLowerCase()}` : '';
         const sizeKb = (file.size / 1024).toFixed(1);
-        droppedFile = { filePath, name, extension };
+        const selected = { filePath, name, extension };
+        retainFile(selected);
         fileNameNode.textContent = name;
         fileHintNode.textContent = `Ruta: ${filePath} · ${extension || '(sin extensión)'} · ${sizeKb} KB`;
         if (visionNode) visionNode.style.display = IMAGE_EXTENSIONS.has(extension) ? '' : 'none';
@@ -722,9 +933,12 @@
         const file = droppedFile;
         hideModal();
         if (!file) return;
+        const pending = appendChatResult(`Procesando ${file.name}…`);
         try {
           const result = await window.bitRuntime.processDroppedFile({ filePath: file.filePath, action });
+          pending.remove();
           appendChatResult(result?.text || 'Archivo procesado.');
+          clearDroppedFile();
           if (result?.status) {
             const statusNode = document.createElement('div');
             statusNode.className = 'message system';
@@ -734,11 +948,13 @@
             chat.scrollTop = chat.scrollHeight;
           }
         } catch (error) {
+          pending.remove();
           addMessage(`No pude procesar el archivo: ${error.message}`, 'error');
+          modal.style.display = 'grid';
         }
       }
 
-      cancelNode?.addEventListener('click', () => hideModal());
+      cancelNode?.addEventListener('click', clearDroppedFile);
       actionsNode?.addEventListener('click', (event) => {
         const button = event.target.closest('button[data-action]');
         if (!button) return;
@@ -758,7 +974,7 @@
       }
       audioContext = undefined;
       nextAudioTime = 0;
-      if (currentState === State.SPEAKING) setState(State.IDLE);
+      if (currentState === State.SPEAKING) setState(chatPending ? State.PROCESSING : State.IDLE);
     });
     window.bitWaitForVoicePlayback = async () => {
       const context = audioContext;
@@ -942,50 +1158,13 @@
       pending.dataset.streaming = 'true';
       pending.className = 'message assistant';
       pending.textContent = (pending.textContent === 'Pensando…' ? '' : pending.textContent) + text;
+      showResponseCard({text:pending.textContent});
       const chat = document.getElementById('chat');
       chat.scrollTop = chat.scrollHeight;
     });
   </script>
-<script>
-  window.addEventListener('load', async () => {
-    try {
-      const result = await window.bitRuntime.listOllamaModels();
-      const models = Array.isArray(result?.models) ? result.models : [];
-      const selected = result?.selected || models[0] || '';
-      const picker = document.getElementById('drawer-model');
-      const model = document.getElementById('model');
-      if (!picker || !model || !selected) return;
-      const options = () => models.map(name => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; });
-      picker.replaceChildren(...options());
-      model.replaceChildren(...options());
-      picker.value = selected;
-      model.value = selected;
-      localStorage.setItem('bit.model', selected);
-      await window.bitRuntime.setConfig('model', selected);
-      picker.onchange = async event => {
-        const next = event.target.value;
-        model.value = next;
-        localStorage.setItem('bit.model', next);
-        await window.bitRuntime.setConfig('model', next);
-      };
-      model.onchange = async event => {
-        const next = event.target.value;
-        picker.value = next;
-        localStorage.setItem('bit.model', next);
-        await window.bitRuntime.setConfig('model', next);
-      };
-    } catch (error) {
-      console.warn('[ollama] No se pudieron detectar modelos locales:', error.message);
-    }
-  });
-</script>
+
 <style>
-  .glass-card{position:relative;padding:16px 18px;border:1px solid #355965;border-radius:16px;background:linear-gradient(145deg,#17303aee,#0b171ddd);backdrop-filter:blur(16px);box-shadow:0 18px 46px #0007,inset 0 1px #e2ffff14;color:#d8fbff;display:none;animation:appear .28s ease both}
-  .glass-card.visible{display:block}
-  .glass-card .kicker{color:#72f8ff;font:9px Consolas,monospace;letter-spacing:.18em;margin-bottom:8px}
-  .glass-card .label{color:#9cb6bd;font:9px Consolas,monospace;letter-spacing:.12em}
-  .glass-card .value{font-size:30px;font-weight:300;letter-spacing:-.02em;margin:6px 0 2px}
-  .glass-card .detail{color:#69858d;font-size:12px;line-height:1.4}
   .voice-meter{position:fixed;right:24px;bottom:24px;width:150px;height:44px;border:1px solid #355965;border-radius:12px;background:#0b171dcc;backdrop-filter:blur(10px);display:none;align-items:center;gap:10px;padding:0 12px;color:#9cb6bd;font:11px Consolas,monospace;z-index:50;box-shadow:0 10px 30px #0007}
   .voice-meter.visible{display:flex}
   .voice-meter .bar{flex:1;height:10px;background:#10242d;border-radius:5px;overflow:hidden;border:1px solid #223943}
@@ -1021,7 +1200,7 @@
         <select data-display-id="${display.id}">
           <option value="main" ${display.role === "main" ? "selected" : ""}>Ventana Principal (Núcleo + Chat + Tarjetas)</option>
           <option value="project" ${display.role === "project" ? "selected" : ""}>Workspace del Proyecto (Archivos + Diffs)</option>
-          <option value="info" ${display.role === "info" ? "selected" : ""}>Telemetría & Grafo de Obsidian</option>
+          <option value="info" ${display.role === "info" ? "selected" : ""}>Información del proyecto y actividad</option>
           <option value="none" ${display.role === "none" ? "selected" : ""}>Desactivar pantalla / Ocultar</option>
         </select>
       `;
@@ -1030,9 +1209,10 @@
         const nextRole = event.target.value;
         try {
           await window.bitRuntime.setDisplayRole(Number(display.id), nextRole);
-          await window.bitRuntime.updateDisplayLayout();
         } catch (error) {
           console.error("[display-layout] No se pudo asignar el rol:", error);
+          window.BitUI.addMessage(error.message,'error');
+          await renderDisplayLayout();
         }
       };
       container.appendChild(card);
@@ -1060,149 +1240,218 @@
 (()=>{
   'use strict';
   const $=id=>document.getElementById(id);
-  const orb = $('orb-canvas') ? $('orb-canvas').parentElement : null;
-  const chat = $('chat');
-  let context = $('context');
-  let cards = $('cards');
-  if (!context && chat) {
-    context = document.createElement('div'); context.id='context'; context.className='context';
-    context.innerHTML='<div class="context-head"><span>CONTEXTO</span><strong id="context-title">BIT CORE</strong></div><div id="cards"></div><div class="context-empty">Sin datos contextuales.</div>';
-    document.body.appendChild(context); cards=$('cards');
-  } else if (!cards) {
-    cards=document.createElement('div'); cards.id='cards'; context.appendChild(cards);
-  }
-  let card=document.createElement('div'); card.className='glass-card';
-  card.innerHTML='<div class="kicker">DATO ESTRUCTURADO</div><div class="label">UBICACIÓN</div><div class="value" id="glass-location">—</div><div class="label">VALOR DESTACADO</div><div class="value" id="glass-value">—</div><div class="label">DETALLE</div><div class="detail" id="glass-detail">Esperando datos…</div>';
-  cards.appendChild(card);
-  const glassLocation=$('glass-location'), glassValue=$('glass-value'), glassDetail=$('glass-detail');
-  function showGlass(location,value,detail){ if(!card)return; card.classList.add('visible'); if(glassLocation)glassLocation.textContent=location||'—'; if(glassValue)glassValue.textContent=value||'—'; if(glassDetail)glassDetail.textContent=detail||'—'; }
-  function hideGlass(){ if(card) card.classList.remove('visible'); }
-
-  const CLIMA_RE = /(?:clima|temperatura|°c|humedad|lluvia|precipitaci[oó]n)/iu;
-  function extraerClima(texto){
-    if(!texto || !CLIMA_RE.test(texto)) return null;
-    const mTemp = texto.match(/(-?\d{1,3}\s*°\s*[Cc])/u);
-    const mHum = texto.match(/humedad\s*(\d{1,3}\s*%)/iu);
-    const mLluvia = texto.match(/probabilidad de precipitaci[oó]n\s*(\d{1,3}\s*%)/iu);
-    const mLugar = texto.match(/en\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ\s]{2,40}?)(?:[,:.]|$)/iu);
-    const valor = mTemp ? mTemp[1] : (mHum ? mHum[1] : (mLluvia ? mLluvia[1] : '—'));
-    return { lugar: mLugar ? mLugar[1].trim() : '—', valor, detalle: String(texto).slice(0,160) };
-  }
-
-  if (chat && cards) {
-    const obs = new MutationObserver((muts)=>{
-      for (const mut of muts){
-        for (const node of mut.addedNodes){
-          if (node.nodeType!==1) continue;
-          let el = node;
-          if (el.nodeName!=='DIV' || !el.classList || !el.classList.contains('message') || !el.classList.contains('assistant')) {
-            el = el.querySelector ? el.querySelector('.message.assistant') : null;
-          }
-          if (!el) continue;
-          const texto = (el.textContent||'').replace(/^BIT\s*/u,'').trim();
-          const clima = extraerClima(texto);
-          if (clima) showGlass(clima.lugar, clima.valor, clima.detalle);
-        }
-      }
-    });
-    obs.observe(chat,{childList:true,subtree:true});
-  }
-
-  // ===== CAPTURA CONTINUA DE VOZ (micrófono) =====
-  const meter = document.createElement('div'); meter.id='voice-meter'; meter.className='voice-meter';
+  // ===== ESCUCHA CONTINUA LOCAL CON PALABRA DE ACTIVACIÓN =====
+  const meter = document.createElement('div');
+  meter.id='voice-meter';
+  meter.className='voice-meter';
+  meter.setAttribute('aria-live','polite');
   meter.innerHTML='<span class="label">MIC</span><div class="bar"><div class="fill"></div></div><span id="voice-meter-level" class="label">0%</span>';
   document.body.appendChild(meter);
-  const fill = meter.querySelector('.fill'); const levelText = $('voice-meter-level');
+  const fill=meter.querySelector('.fill'), levelText=$('voice-meter-level');
+  const wakeWords=['bit','oye bit','hey bit'];
+  const SILENCE_MS=900, START_THRESHOLD=.035, STOP_THRESHOLD=.022;
+  let continuousEnabled=false, mediaStream=null, audioContext=null, analyser=null, dataArray=null, animationId=null;
+  let recordingActive=false, speechStarted=false, silenceTimer=null, mode='suspended', transcriptBusy=false;
+  const continuousButton=voiceCaptureButton;
 
-  function setOrbListening(on){
-    if(!orb) return;
-    if(on){ orb.classList.add('processing','speaking'); } else { orb.classList.remove('processing','speaking'); }
+  function setContinuousUi(){
+    continuousButton.textContent=continuousEnabled?'MIC ACTIVO':'MIC CONTINUO';
+    continuousButton.classList.toggle('active',continuousEnabled);
+    continuousButton.setAttribute('aria-pressed',String(continuousEnabled));
+    continuousButton.title=continuousEnabled
+      ? (mode==='active'?'Escuchando una orden':'Suspendido; diga “Bit” para activarme')
+      : 'Activar escucha continua';
+    meter.classList.toggle('visible',continuousEnabled);
+    if(!continuousEnabled){if(fill)fill.style.width='0%';if(levelText)levelText.textContent='0%';}
   }
-
-  let mediaRecorder=null; let analyser=null; let dataArray=null; let animationId=null;
-  let speechStarted=false; let silenceTimer=null; const SILENCE_MS=800; const RMS_THRESHOLD=0.06;
-
+  function normalizedLevel(rms){
+    return Math.round(Math.min(1,Math.max(0,(rms-.008)/.052))*100);
+  }
+  function updateMeter(){
+    if(!analyser||!continuousEnabled)return;
+    analyser.getByteTimeDomainData(dataArray);
+    let sum=0;
+    for(const sample of dataArray){const centered=(sample-128)/128;sum+=centered*centered;}
+    const rms=Math.sqrt(sum/dataArray.length);
+    const pct=normalizedLevel(rms);
+    if(fill)fill.style.width=pct+'%';
+    if(levelText)levelText.textContent=pct+'%';
+    const speaking=rms>=((speechStarted||mode==='active')?STOP_THRESHOLD:START_THRESHOLD);
+    if(speaking){
+      speechStarted=true;
+      if(silenceTimer){clearTimeout(silenceTimer);silenceTimer=null;}
+    }else if(speechStarted&&!silenceTimer){
+      silenceTimer=setTimeout(()=>{silenceTimer=null;speechStarted=false;void finishUtterance();},SILENCE_MS);
+    }
+    animationId=requestAnimationFrame(updateMeter);
+  }
+  async function beginUtterance(){
+    if(!continuousEnabled||recordingActive||transcriptBusy)return;
+    try{
+      await window.bitRuntime.startVoiceCapture();
+      recordingActive=true;
+      speechStarted=false;
+    }catch(error){
+      continuousEnabled=false;
+      setContinuousUi();
+      addMessage(`No pude iniciar el micrófono local: ${error.message}`,'error');
+      throw error;
+    }
+  }
+  function wakeMatch(text){
+    const normalized=String(text).toLocaleLowerCase('es-AR').replace(/[¿?¡!,.;:]/gu,' ').replace(/\s+/gu,' ').trim();
+    for(const word of wakeWords){
+      const re=new RegExp('^(?:'+word.replace(/\s+/gu,'\\s+')+')\\b[\\s,:-]*(.*)$','iu');
+      const match=normalized.match(re);
+      if(match)return match[1].trim();
+    }
+    return null;
+  }
+  function handleContinuousTranscript(text){
+    if(!continuousEnabled)return;
+    transcriptBusy=false;
+    const command=mode==='suspended'?wakeMatch(text):String(text).trim();
+    if(mode==='suspended'){
+      if(command===null){setContinuousUi();setTimeout(()=>void beginUtterance(),150);return;}
+      mode='active';
+      addMessage('Lo escucho.','system');
+      if(command){$('prompt').value=command;$('chat-form').requestSubmit();mode='suspended';}
+    }else if(command){
+      $('prompt').value=command;
+      $('chat-form').requestSubmit();
+      mode='suspended';
+    }
+    setContinuousUi();
+    setTimeout(()=>void beginUtterance(),150);
+  }
+  async function finishUtterance(){
+    if(!recordingActive||transcriptBusy)return;
+    recordingActive=false;
+    transcriptBusy=true;
+    try{await window.bitRuntime.stopVoiceCapture();}catch(error){window.__bitContinuousVoiceError?.(error.message);}
+  }
+  window.__bitContinuousVoiceEnabled=false;
+  window.__bitContinuousVoiceTranscript=handleContinuousTranscript;
+  window.__bitContinuousVoiceError=(message)=>{
+    transcriptBusy=false;
+    if(continuousEnabled){addMessage(`Error de voz local: ${message}`,'error');setTimeout(()=>void beginUtterance(),500);}
+  };
   async function startContinuousVoice(){
-    if (mediaRecorder) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({audio:true});
-      const AC = window.AudioContext||window.webkitAudioContext;
-      if (!AC) throw new Error('AudioContext no disponible');
-      const ac = new AC();
-      const source = ac.createMediaStreamSource(stream);
-      analyser = ac.createAnalyser(); analyser.fftSize=2048;
+    if(continuousEnabled)return;
+    try{
+      mediaStream=await navigator.mediaDevices.getUserMedia({audio:true});
+      const AC=window.AudioContext||window.webkitAudioContext;
+      if(!AC)throw new Error('AudioContext no disponible');
+      audioContext=new AC();
+      const source=audioContext.createMediaStreamSource(mediaStream);
+      analyser=audioContext.createAnalyser();
+      analyser.fftSize=2048;
       source.connect(analyser);
-      dataArray = new Uint8Array(analyser.frequencyBinCount);
-      mediaRecorder = new MediaRecorder(stream);
-      meter.classList.add('visible');
-      setOrbListening(true);
-      function loop(){
-        if(!analyser) return;
-        analyser.getByteFrequencyData(dataArray);
-        let sum=0; for(let i=0;i<dataArray.length;i++) sum+=dataArray[i];
-        const rms = Math.sqrt(sum/dataArray.length)/255;
-        const pct = Math.min(100, Math.round(rms*400));
-        if(fill) fill.style.width = pct + '%';
-        if(levelText) levelText.textContent = pct + '%';
-        const speaking = rms > RMS_THRESHOLD;
-        if (speaking) {
-          speechStarted = true;
-          if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer=null; }
-        } else if (speechStarted && !silenceTimer) {
-          silenceTimer = setTimeout(()=>{
-            silenceTimer=null; speechStarted=false;
-            stopContinuousVoice();
-            transcribirYEnviar();
-          }, SILENCE_MS);
-        }
-        animationId = requestAnimationFrame(loop);
-      }
-      loop();
-    } catch (error){
-      console.warn('[voice-continuo] No se pudo acceder al micrófono:', error instanceof Error ? error.message : String(error));
-      const prompt=$('prompt'); if(prompt && !prompt.value) prompt.value='(No se pudo activar el micrófono continuo: conceda permiso de audio.)';
+      dataArray=new Uint8Array(analyser.fftSize);
+      continuousEnabled=true;
+      window.__bitContinuousVoiceEnabled=true;
+      mode='suspended';
+      setContinuousUi();
+      await beginUtterance();
+      animationId=requestAnimationFrame(updateMeter);
+    }catch(error){
+      stopContinuousVoice();
+      addMessage(`No pude activar la escucha continua: ${error.message}`,'error');
     }
   }
-
   function stopContinuousVoice(){
-    try { if(animationId) cancelAnimationFrame(animationId); } catch{}
-    animationId=null; analyser=null; dataArray=null;
-    try { if(mediaRecorder) mediaRecorder.stop(); } catch{}
-    mediaRecorder=null;
-    meter.classList.remove('visible');
-    setOrbListening(false);
-    if(fill) fill.style.width='0%'; if(levelText) levelText.textContent='0%';
+    continuousEnabled=false;
+    window.__bitContinuousVoiceEnabled=false;
+    if(silenceTimer)clearTimeout(silenceTimer);
+    silenceTimer=null;
+    if(animationId)cancelAnimationFrame(animationId);
+    animationId=null;
+    analyser=null;
+    dataArray=null;
+    if(recordingActive){recordingActive=false;void window.bitRuntime.stopVoiceCapture().catch(()=>{});}
+    if(mediaStream){for(const track of mediaStream.getTracks())track.stop();}
+    mediaStream=null;
+    if(audioContext){void audioContext.close().catch(()=>{});}
+    audioContext=null;
+    transcriptBusy=false;
+    mode='suspended';
+    setContinuousUi();
   }
+  continuousButton.addEventListener('click',()=>{if(continuousEnabled)stopContinuousVoice();else void startContinuousVoice();});
+  window.addEventListener('beforeunload',stopContinuousVoice);
 
-  async function transcribirYEnviar(){
-    const prompt = $('prompt');
-    const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRec) {
-      if (prompt) prompt.value='(Voz detectada; transcripción continua no disponible en este entorno. Use el teclado o el botón de dictado.)';
-      return;
-    }
-    const rec = new SpeechRec();
-    rec.lang='es-ES'; rec.interimResults=false; rec.maxAlternatives=1;
-    rec.onresult = (event)=>{
-      const texto = event.results[0][0].transcript.trim();
-      if (prompt) { prompt.value = texto; prompt.focus(); }
-      const form = $('chat-form');
-      if (form) form.dispatchEvent(new Event('submit'));
-    };
-    rec.onerror = ()=>{};
-    rec.onend = ()=>{};
-    try { rec.start(); } catch (error){ console.warn('[voice-continuo] Error al transcribir:', error instanceof Error ? error.message : String(error)); }
-  }
-
-  window.addEventListener('load', ()=>{
-    setTimeout(()=>{ try { startContinuousVoice(); } catch(e){ console.warn('[voice-continuo] inicio diferido falló:', e.message); } }, 1500);
-    const btn = document.createElement('button');
-    btn.type='button'; btn.id='voice-continuous-toggle'; btn.textContent='MIC CONTÍNUO';
-    btn.style.cssText='position:fixed;right:24px;bottom:80px;padding:8px 12px;border:1px solid #355965;border-radius:10px;background:#0b171dcc;color:#d8fbff;font:11px Consolas,monospace;cursor:pointer;z-index:51';
-    btn.onclick=()=>{ if(mediaRecorder){ stopContinuousVoice(); } else { startContinuousVoice(); } btn.classList.toggle('active',!!mediaRecorder); };
-    document.body.appendChild(btn);
-  });
 })();
 </script>
+  <script>
+    (() => {
+      const prompt = document.getElementById('prompt');
+      if (prompt) { prompt.placeholder = 'Escriba un comando para Bit…'; prompt.setAttribute('aria-label', 'Mensaje para Bit'); }
+      const drawer = document.querySelector('.drawer');
+      if (drawer && !document.getElementById('personality-prompt')) {
+        const setting = document.createElement('div');
+        setting.className = 'setting vault-setting';
+        setting.innerHTML = '<label for="personality-prompt">PERSONALIDAD Y FORMA DE HABLAR</label><textarea id="personality-prompt" class="personality-prompt" maxlength="4000" placeholder="Ejemplo: formal, cercano, breve y con iniciativa moderada"></textarea><button id="personality-save" class="vault-button" type="button">GUARDAR PERSONALIDAD</button><p id="personality-status" class="vault-status" aria-live="polite"></p>';
+        drawer.insertBefore(setting, drawer.querySelector('.drawer-note'));
+        const personality = document.getElementById('personality-prompt');
+        const status = document.getElementById('personality-status');
+        void window.bitRuntime.getConfig('personalityPrompt').then((result) => { if (result?.ok) personality.value = result.value || ''; });
+        document.getElementById('personality-save').onclick = async () => {
+          const result = await window.bitRuntime.setConfig('personalityPrompt', personality.value);
+          status.textContent = result?.ok ? 'Personalidad guardada para las próximas conversaciones.' : (result?.error || 'No se pudo guardar la personalidad.');
+          status.className = `vault-status ${result?.ok ? 'ok' : 'error'}`;
+        };
+      }
+      const historyUp = document.getElementById('history-up');
+      if (historyUp) { historyUp.textContent = 'ATRÁS'; historyUp.setAttribute('aria-label', 'Mensaje anterior'); }
+      const historyDown = document.getElementById('history-down');
+      if (historyDown) { historyDown.textContent = 'ADELANTE'; historyDown.setAttribute('aria-label', 'Mensaje siguiente'); }
+      const voice = document.getElementById('voice');
+      if (voice) { voice.textContent = 'VOZ'; voice.setAttribute('aria-label', 'Voz'); voice.title = 'Activar o desactivar respuesta hablada'; }
+      const microphone = document.getElementById('voice-capture');
+      if (microphone) { microphone.textContent = 'MIC'; microphone.setAttribute('aria-label', 'Micrófono continuo'); microphone.title = 'Mantener para dictar'; }
+      const chat = document.getElementById('chat');
+      if (!chat) return;
+      const normalizeChatText = (node) => {
+        if (!(node instanceof HTMLElement)) return;
+        if (node.textContent?.startsWith('Pensando')) node.textContent = 'Pensando…';
+        if (node.textContent?.startsWith('Escuchando')) node.textContent = 'Escuchando… suelte el botón para transcribir.';
+        if (node.textContent?.startsWith('Transcripci')) node.textContent = 'Transcripción local lista para revisar y enviar.';
+      };
+      new MutationObserver((records) => records.forEach((record) => record.addedNodes.forEach(normalizeChatText))).observe(chat, { childList: true });
+      chat.querySelectorAll('.message').forEach(normalizeChatText);
+      const idleSuggestions = [
+        'Cuando quiera, puedo ayudarle a ordenar una tarea pendiente.',
+        'Si le sirve, podemos convertir una idea en un plan de trabajo.',
+        'Puedo ayudarle a revisar sus proyectos o preparar el próximo paso.',
+        'Cuando esté listo, podemos definir una prioridad para avanzar.',
+        'También puedo ayudarle a organizar el día o comenzar un proyecto nuevo.',
+      ];
+      const idleDelay = 5 * 60 * 1000;
+      let idleTimer;
+      const scheduleIdleSuggestion = () => {
+        clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          if (document.visibilityState === 'visible' && Math.random() < 0.35 && typeof addMessage === 'function') {
+            let recent = [];
+            try { recent = JSON.parse(sessionStorage.getItem('bit.idleSuggestions') || '[]'); } catch { recent = []; }
+            const available = idleSuggestions.filter((suggestion) => !recent.includes(suggestion));
+            const pool = available.length ? available : idleSuggestions;
+            const suggestion = pool[Math.floor(Math.random() * pool.length)];
+            addMessage(suggestion, 'system');
+            try { sessionStorage.setItem('bit.idleSuggestions', JSON.stringify([suggestion, ...recent].slice(0, 3))); } catch { /* almacenamiento opcional */ }
+          }
+          scheduleIdleSuggestion();
+        }, idleDelay);
+      };
+      ['pointerdown', 'keydown', 'input'].forEach((eventName) => document.addEventListener(eventName, scheduleIdleSuggestion, { passive: true }));
+      scheduleIdleSuggestion();
+    })();
+  </script>
+
 </body>
 </html>
+
+
+
+
+

@@ -1,5 +1,7 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import { isBrowserTarget, validateBrowserPage } from "./core/browser-actions.mjs";
+import { datedAnswer, findDatedPassage } from "./core/dated-answer.mjs";
 
 const SEARCH_ENDPOINT = "https://www.bing.com/search";
 const GEOCODING_ENDPOINT = "https://geocoding-api.open-meteo.com/v1/search";
@@ -17,7 +19,11 @@ const OFFICIAL_DOMAIN_SUFFIXES = [
   ".gob.es", ".edu", ".ac.uk", ".edu.au", ".edu.ar", ".edu.br", ".int",
   ".europa.eu",
 ];
-const OFFICIAL_ORGANIZATION_HOSTS = new Set(["un.org", "open-meteo.com"]);
+const OFFICIAL_ORGANIZATION_HOSTS = new Set([
+  "un.org", "open-meteo.com", "vatican.va", "vaticannews.va", "fifa.com",
+  "rockstargames.com", "take2games.com", "playstation.com", "xbox.com",
+  "nintendo.com", "mozilla.org", "apple.com", "samsung.com", "microsoft.com",
+]);
 const DOWNLOAD_HOSTS = new Set([
   "huggingface.co",
   "cdn-lfs.huggingface.co",
@@ -29,11 +35,13 @@ const DOWNLOAD_HOSTS = new Set([
 ]);
 
 function decodeEntities(value) {
-  const named = { amp: "&", apos: "'", gt: ">", lt: "<", nbsp: " ", quot: "\"" };
+  const named = { amp: "&", apos: "'", gt: ">", lt: "<", nbsp: " ", quot: "\"",
+    aacute: "á", eacute: "é", iacute: "í", oacute: "ó", uacute: "ú", ntilde: "ñ", uuml: "ü",
+    Aacute: "Á", Eacute: "É", Iacute: "Í", Oacute: "Ó", Uacute: "Ú", Ntilde: "Ñ", Uuml: "Ü" };
   return value
     .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
     .replace(/&#x([a-f\d]+);/gi, (_match, code) => String.fromCodePoint(Number.parseInt(code, 16)))
-    .replace(/&([a-z]+);/gi, (match, entity) => named[entity.toLowerCase()] ?? match);
+    .replace(/&([a-z]+);/gi, (match, entity) => named[entity] ?? match);
 }
 
 function xmlField(item, name) {
@@ -52,6 +60,21 @@ export function isOfficialSourceUrl(value) {
       || [...OFFICIAL_ORGANIZATION_HOSTS].some((domain) => hostname.endsWith(`.${domain}`))
       || /\.(?:gov|gob)\.[a-z]{2}$/u.test(hostname)
       || OFFICIAL_DOMAIN_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+  } catch {
+    return false;
+  }
+}
+
+/** Un enlace de búsqueda no certifica autoridad ni autoriza leer su destino. */
+export function isPublicSearchSourceUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/\.$/u, '');
+    if (url.protocol !== 'https:' || url.username || url.password || url.port) return false;
+    // Solo nombres DNS públicos; ninguna IP, dominio de red local o de pruebas.
+    if (host.length > 253 || !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/u.test(host)) return false;
+    return !/(?:^|\.)(?:localhost|local|internal|intranet|lan|home|test|invalid|example|onion|arpa)$/u.test(host)
+      && !/(?:^|\.)example\.(?:com|net|org)$/u.test(host);
   } catch {
     return false;
   }
@@ -162,14 +185,14 @@ export function parseSearchResults(xml) {
     const title = xmlField(item, "title");
     const url = xmlField(item, "link");
     const snippet = xmlField(item, "description");
-    if (!title || !isOfficialSourceUrl(url)) continue;
+    if (!title || !isPublicSearchSourceUrl(url)) continue;
     const canonicalUrl = new URL(url).href;
     if (seenUrls.has(canonicalUrl)) continue;
     seenUrls.add(canonicalUrl);
     results.push({ title: title.slice(0, 300), url: canonicalUrl, snippet: snippet.slice(0, 600) });
     if (results.length >= MAX_RESULTS) break;
   }
-  return results;
+  return results.sort((a, b) => Number(isOfficialSourceUrl(b.url)) - Number(isOfficialSourceUrl(a.url)));
 }
 
 export function isWebSearchRequest(message) {
@@ -178,7 +201,23 @@ export function isWebSearchRequest(message) {
   const currentTopic = /\b(?:noticias|actualidad|cotizaci[oó]n|precio actual)\b/iu.test(input);
   const currentQualifier = /\b(?:hoy|actual|ahora|[uú]ltim[oa]s?|reciente)\b.{0,50}\b(?:noticias|precio|cotizaci[oó]n|temperatura|resultado|informaci[oó]n)\b/iu.test(input);
   const asksCurrentTopic = /\b(?:qu[eé]|c[oó]mo|cu[aá]l|cu[aá]nto|qui[eé]n|d[oó]nde)\b/iu.test(input);
-  return explicitSearch || isWeatherSearchRequest(input) || currentQualifier || (currentTopic && asksCurrentTopic);
+  const upcomingEvent = /\bcuando\b.{0,70}\b(?:viene|vendra|llega|llegara|visitara|se\s+(?:celebra|juega|realiza))\b/u.test(normalizeWeatherInput(input));
+  const normalized = normalizeWeatherInput(input);
+  // Los pedidos privados no se convierten en consultas públicas por mencionar
+  // precios o versiones. Una búsqueda web explícita conserva su propia ruta.
+  const privateContext = /\b(?:mis? (?:notas?|archivos?|documentos?|proyectos?|calendarios?|carpetas?|correos?|(?:nuev[oa]s? )?(?:computadoras?|equipos?|telefonos?))|boveda|obsidian|archivo local|pantalla)\b/u.test(normalized);
+  if (privateContext && !explicitSearch) return false;
+  const novelty = /\b(?:nuev[oa]s?|ultim[oa]s?|recientes?|recientemente|actual(?:es|mente)?|novedades|mas reciente)\b/u.test(normalized);
+  const informational = /\b(?:que|cual(?:es)?|quien|cuando|donde|cuanto|contame|cuentame|hablame|informacion|novedades)\b/u.test(normalized);
+  const creativeOrConceptual = /\b(?:crea|crear|escrib[aei]|escribir|redacta|inventa|imagina|aprend(?:o|er)|idioma|nueva espana|nuevo testamento|nuevo mundo)\b/u.test(normalized);
+  const asksNovelty = novelty && informational && !creativeOrConceptual;
+  const releaseQuestion = /\b(?:cuando (?:sale|saldra|se estrena|se lanza|estara disponible)|fecha de (?:lanzamiento|estreno)|ya (?:salio|se estreno|esta disponible))\b/u.test(normalized);
+  const changingQuestion = /\b(?:cuanto (?:cuesta|vale|sale)|cual es (?:la|el) (?:ultima|ultimo|nueva|nuevo) (?:version|modelo)|quien gano .{0,60}(?:ayer|hoy|anoche)|sigue disponible|que se sabe (?:actualmente|hoy|ahora))\b/u.test(normalized)
+    && !/\b(?:calcular|algoritmo|complejidad)\b/u.test(normalized);
+  const eventTopic = /\b(?:mundial|copa|olimpiadas|juegos olimpicos|elecciones|torneo|concierto|partido|festival)\b/u.test(normalized);
+  const eventQuestion = eventTopic && /\b(?:proxim[oa]s?|siguiente|cuando es|cuando sera|donde sera)\b/u.test(normalized);
+  const currentOffice = /\bquien\s+es\b/u.test(normalized) && /\b(?:presidente|papa|primer ministro|gobernador|alcalde|rey|reina)\b/u.test(normalized);
+  return explicitSearch || asksNovelty || releaseQuestion || changingQuestion || isWeatherSearchRequest(input) || currentQualifier || upcomingEvent || eventQuestion || currentOffice || (currentTopic && asksCurrentTopic);
 }
 
 /**
@@ -240,6 +279,18 @@ export function buildWebSearchQuery(message) {
     const location = locationMatch?.[1]?.trim().replace(/,+$/u, "");
     return `clima actual en ${location || "Buenos Aires, Argentina"}`;
   }
+  const visitQuestion = input.match(/^¿?\s*cu[aá]ndo\s+(?:viene|vendr[aá]|llega|llegar[aá]|visitar[aá])\s+(.+?)[?!.]*$/iu);
+  if (visitQuestion) {
+    const terms = visitQuestion[1]
+      .replace(/^(?:el|la|los|las)\s+/iu, "")
+      .replace(/\s+(?:a|en)\s+/iu, " ")
+      .trim();
+    if (terms) return `${terms} visita fecha`.slice(0, 300);
+  }
+  if (/\bmundial\b/u.test(normalizeWeatherInput(input)) && /\b(?:proxim[oa]|siguiente|cuando es|cuando sera|donde sera)\b/u.test(normalizeWeatherInput(input))) {
+    const topic = input.replace(/^¿?\s*(?:(?:cu[aá]ndo|d[oó]nde|cu[aá]l)\s+(?:es|ser[aá])\s+)?(?:el|la)?\s*(?:pr[oó]xim[oa]|siguiente)?\s*/iu, '').replace(/[?!.]+$/u, '').trim();
+    return `${topic} próxima edición calendario oficial site:fifa.com`.slice(0, 300);
+  }
   const query = input
     .replace(/^(?:por favor[,]?\s*)?(?:b[uú]sc(?:a|ar|ame|á)|investiga(?:r)?|consulta(?:r)?|averigua(?:r)?|search)\s+(?:en\s+)?(?:internet|la\s+web|web|google)\s*(?:sobre|acerca de|por)?\s*/i, "")
     .replace(/[?!.]+$/g, "")
@@ -271,11 +322,55 @@ async function readBoundedBody(response) {
   return text + decoder.decode();
 }
 
-export function createNetGateway({ auditPath, fetchImpl = globalThis.fetch, onActivity = () => {}, now = () => new Date() } = {}) {
+export function createNetGateway({ auditPath, fetchImpl = globalThis.fetch, openExternal, onActivity = () => {}, now = () => new Date() } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("El gateway necesita fetch");
   if (typeof auditPath !== "string" || !auditPath) throw new Error("El gateway necesita una ruta local para audit.log");
 
   return Object.freeze({
+    async openBrowserPage(value, { browser = "default-browser", signal } = {}) {
+      const url = validateBrowserPage(value);
+      if (!isBrowserTarget(browser)) throw new Error("Navegador no permitido");
+      if (typeof openExternal !== "function") throw new Error("Apertura del navegador no disponible");
+      signal?.throwIfAborted();
+      await mkdir(dirname(auditPath), { recursive: true });
+      const record = async (status) => appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.openBrowserPage", host: new URL(url).hostname, browser, status })}\n`, "utf8");
+      await record("started");
+      onActivity({ active: true, service: "web.openBrowserPage" });
+      try {
+        signal?.throwIfAborted();
+        await openExternal(url, { browser, signal });
+        await record("completed");
+        return { ok: true };
+      } catch (error) {
+        await record("failed");
+        throw error;
+      } finally {
+        onActivity({ active: false, service: "web.openBrowserPage" });
+      }
+    },
+    async openYouTube(value) {
+      const url = new URL(value);
+      if (url.origin !== "https://www.youtube.com" || url.username || url.password || url.hash ||
+          !["/", "/results"].includes(url.pathname) ||
+          [...url.searchParams.keys()].some((key) => key !== "search_query") ||
+          url.searchParams.getAll("search_query").length > 1 ||
+          (url.searchParams.get("search_query") || "").length > 160) throw new Error("Apertura de YouTube no válida");
+      if (typeof openExternal !== "function") throw new Error("Apertura del navegador no disponible");
+      await mkdir(dirname(auditPath), { recursive: true });
+      const record = async (status) => appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.openYouTube", host: url.hostname, status })}\n`, "utf8");
+      await record("started");
+      onActivity({ active: true, service: "web.openYouTube" });
+      try {
+        await openExternal(url.href);
+        await record("completed");
+        return { ok: true };
+      } catch (error) {
+        await record("failed");
+        throw error;
+      } finally {
+        onActivity({ active: false, service: "web.openYouTube" });
+      }
+    },
     async searchWeb(query) {
       const cleanQuery = typeof query === "string" ? query.trim().replace(/\s+/g, " ") : "";
       if (!cleanQuery || cleanQuery.length > 300 || /[\u0000-\u001f\u007f]/.test(cleanQuery)) {
@@ -304,15 +399,45 @@ export function createNetGateway({ auditPath, fetchImpl = globalThis.fetch, onAc
         if (weatherLocation) {
           results = await searchCurrentWeather(fetchImpl, weatherLocation, controller.signal);
         } else {
-          const response = await fetchImpl(url, {
-            method: "GET",
-            headers: { accept: "application/rss+xml, application/xml;q=0.9", "accept-language": "es-AR,es;q=0.9" },
-            redirect: "error",
-            cache: "no-store",
-            signal: controller.signal,
-          });
-          if (!response.ok) throw new Error(`El buscador respondió HTTP ${response.status}`);
-          results = parseSearchResults(await readBoundedBody(response));
+          const search = async (searchUrl) => {
+            const response = await fetchImpl(searchUrl, {
+              method: "GET",
+              headers: { accept: "application/rss+xml, application/xml;q=0.9", "accept-language": "es-AR,es;q=0.9" },
+              redirect: "error",
+              cache: "no-store",
+              signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`El buscador respondió HTTP ${response.status}`);
+            return parseSearchResults(await readBoundedBody(response));
+          };
+          results = await search(url);
+          const dateQuery = / visita fecha$/u.test(cleanQuery);
+          if ((results.length === 0 || (dateQuery && !datedAnswer(results, cleanQuery))) && /\b(?:papa|pontifice|vaticano|santa sede)\b/u.test(normalizeWeatherInput(cleanQuery))) {
+            const retryUrl = new URL(url);
+            const retryQuery = `${cleanQuery.replace(/ visita fecha$/u, "")} site:vaticannews.va`;
+            retryUrl.searchParams.set("q", retryQuery);
+            await appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.search", host: url.hostname, query: retryQuery, status: "retry" })}\n`, "utf8");
+            const retryResults = await search(retryUrl);
+            results = [...retryResults, ...results].filter((item, index, all) => all.findIndex(other => other.url === item.url) === index).slice(0, MAX_RESULTS);
+          }
+          if (dateQuery && !datedAnswer(results, cleanQuery)) {
+            // Dos lecturas en paralelo, dentro del mismo límite de tiempo y tamaño.
+            const candidates = results.filter(item => isOfficialSourceUrl(item.url) && /\/news\/|\/bollettino\//u.test(new URL(item.url).pathname)).slice(0, 2);
+            await Promise.all(candidates.map(async item => {
+              try {
+                await appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.read", url: item.url, status: "started" })}\n`, "utf8");
+                const page = await fetchImpl(new URL(item.url), { redirect: "error", signal: controller.signal, cache: "no-store", headers: { accept: "text/html" } });
+                if (!page.ok) throw new Error(`HTTP ${page.status}`);
+                const html = await readBoundedBody(page);
+                const text = decodeEntities(html.replace(/<(script|style|nav|header|footer)\b[^>]*>[\s\S]*?<\/\1>/giu, " ").replace(/<\/(?:p|div|h[1-6]|li)>/giu, "\n").replace(/<[^>]*>/gu, " "));
+                const passage = findDatedPassage(text, cleanQuery);
+                if (passage) item.snippet = passage;
+                await appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.read", url: item.url, status: "completed", dateFound: Boolean(passage) })}\n`, "utf8");
+              } catch (error) {
+                await appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.read", url: item.url, status: "failed", error: error.message })}\n`, "utf8");
+              }
+            }));
+          }
         }
         await appendFile(auditPath, `${JSON.stringify({ at: now().toISOString(), action: "web.search", host: hosts, status: "completed", resultCount: results.length })}\n`, "utf8");
         return results;

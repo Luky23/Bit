@@ -214,7 +214,7 @@ async function runBootSequenceOnce({ model = "qwen2.5:3b", voiceEnabled } = {}) 
   const songStarted = new Promise((resolve) => { resolveSongStart = resolve; });
   voiceDuckLevel = config?.duckLevel ?? 0.25;
 
-  if (dailySummary) dailySummary.textContent = `${greeting} Preparando el resumen del día…`;
+  if (dailySummary) dailySummary.textContent = "Preparando el resumen del día…";
 
   if (startupEnabled && config.startupSong) {
     songPromise = (async () => {
@@ -270,10 +270,11 @@ async function runBootSequenceOnce({ model = "qwen2.5:3b", voiceEnabled } = {}) 
     if (!result?.ok) throw new Error(result?.error || "No se pudo preparar el resumen del día");
     if (bootCancelled) return;
 
-    if (dailySummary) dailySummary.textContent = result.summary;
-    if (shouldSpeak) {
+    const summaryText = result.noteCount === 0 ? "" : result.summary;
+    if (dailySummary) dailySummary.textContent = summaryText;
+    if (shouldSpeak && summaryText) {
       try {
-        await speakBootText(result.summary);
+        await speakBootText(summaryText);
       } catch (error) {
         voiceError = voiceError ? `${voiceError}; ${error.message}` : error.message;
         console.error("[boot] No se pudo pronunciar el resumen:", error);

@@ -189,7 +189,7 @@ export function requiresExecutionAuthorization(targetInfo) {
  * @param {BrowserWindow} mainWindow - Ventana principal para el dialog
  * @returns {Promise<{ok: boolean, result?: string, error?: string, cancelled?: boolean}>}
  */
-export async function executeWithConfirmation({ target, args = "", mainWindow }) {
+export async function executeWithConfirmation({ target, args = "", mainWindow, spawnImpl = spawn }) {
   const validation = validateExecutionTarget(target);
   if (!validation.ok) {
     return { ok: false, error: validation.reason };
@@ -235,10 +235,14 @@ export async function executeWithConfirmation({ target, args = "", mainWindow })
       case "executable": {
         // Usar spawn para ejecutar desacoplado (no bloquea, no mata al pasar timeout)
         const cmdArgs = (args ? args.trim().split(/\s+/) : []).filter(Boolean);
-        const child = spawn(target, cmdArgs, {
+        const child = spawnImpl(target, cmdArgs, {
           detached: true,
           stdio: "ignore",
           shell: false,
+        });
+        await new Promise((resolve, reject) => {
+          child.once("error", reject);
+          child.once("spawn", resolve);
         });
         child.unref();
 

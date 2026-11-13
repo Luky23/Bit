@@ -45,7 +45,7 @@ test("reconoce solicitudes web y convierte el clima sin ubicación a Buenos Aire
   assert.equal(isWebSearchRequest("Hola, ¿cómo estás?"), false);
 });
 
-test("el parser conserva solo fuentes oficiales HTTPS con texto limpio", () => {
+test("el parser conserva enlaces HTTPS públicos con texto limpio y descarta destinos reservados", () => {
   assert.deepEqual(parseSearchResults(rss), [
     { title: "Servicio Meteorológico Nacional", url: "https://www.smn.gob.ar/", snippet: "Pronóstico oficial para Argentina" },
   ]);

@@ -167,12 +167,12 @@ test("main precarga Piper en paralelo con la carga de la ventana", async () => {
   assert.match(source, /if \(config\.speechEnabled === true\) void ensureVoiceProcess\(\)\.catch\([\s\S]*?session\.defaultSession\.setPermissionRequestHandler/);
 });
 
-test("main usa el cliente Llama nativo sin importar Ollama", async () => {
+test("main usa el cliente Llama nativo con Ollama y GGUF", async () => {
   const source = await readFile(mainUrl, "utf8");
 
   assert.match(source, /import\s+\{\s*LocalLlamaClient\s*\}\s+from\s+"\.\.\/src\/models\/llama-client\.mjs"/);
   assert.match(source, /new LocalLlamaClient\(/);
-  assert.doesNotMatch(source, /127\.0\.0\.1:11434|OllamaClient/);
+  assert.match(source, /new ModelService/);
 });
 
 test("el resumen de inicio usa notas recientes locales y audita la lectura", async () => {
@@ -182,7 +182,7 @@ test("el resumen de inicio usa notas recientes locales y audita la lectura", asy
   assert.match(source, /event\.sender !== mainWindow\.webContents/);
   assert.match(source, /collectRecentVaultNotes\(config\.vaultPath\)/);
   assert.match(source, /action: "boot\.daily-summary"/);
-  assert.match(source, /llamaClient\.generate\(localModel,/);
+  assert.match(source, /modelService\.generate\(localModel,/);
   assert.match(source, /AbortSignal\.timeout\(90_000\)/);
 });
 

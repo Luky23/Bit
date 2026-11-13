@@ -1,6 +1,7 @@
 import pkg from "electron";
 const { app, BrowserWindow, desktopCapturer, dialog, ipcMain, screen, session, Tray, nativeImage, globalShortcut, Menu, shell } = pkg;
 import { initDisplayManager, getConnectedDisplays, setDisplayRole, updateDisplayLayout, createProjectWindow, createInfoWindow } from "./display-manager.mjs";
+import { isDisplayPanel, notifyProjectPanels } from './display-manager.mjs';
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { existsSync, watch } from "node:fs";
@@ -15,10 +16,15 @@ import { validateExecutionTarget, executeWithConfirmation } from "../src/screen/
 import { searchFiles, searchSystemFiles, isSafeToOpenExternally, readDroppedFile } from "../src/core/file-tools.mjs";
 import { enforceSandbox } from "../src/core/sandbox.mjs";
 import { toolSchemaName, validateToolInput } from "../src/core/validation.mjs";
-import { runAgentTurn, AGENT_TOOLS, isScreenQuestion, buildDroppedFileMessage } from "../src/core/agent.mjs";
+import { runAgentTurn, AGENT_TOOLS, isScreenQuestion, runDroppedFileTurn, resolveDirectOpenRequest } from "../src/core/agent.mjs";
+import { readConversationMemory } from "../src/obsidian/conversation-memory.mjs";
+import { createInstalledApps } from "../src/core/installed-apps.mjs";
+import { BROWSER_APPS, executeBrowserAction, isBrowserTarget } from "../src/core/browser-actions.mjs";
+import { LocalLlamaClient } from "../src/models/llama-client.mjs";
 import { OllamaClient } from "../src/models/ollama-client.mjs";
+import { ModelService } from "../src/models/model-service.mjs";
 import { createNetGateway, isWeatherLocationFollowUp, isWeatherSearchRequest } from "../src/net-gateway.mjs";
-import { configGet, configSet, configPickSong, configPickWhisperModel, configPickProjectsRoot, configRemoveSong, bootGetSong, getStartupConfig } from "../src/core/config.mjs";
+import { configGet, configSet, configPickSong, configPickWhisperModel, configPickProjectsRoot, configRemoveSong, bootGetSong, getStartupConfig, resolveLocalModel, listLocalModels } from "../src/core/config.mjs";
 import { auditVaultCompatibility } from "../src/obsidian/compatibility.mjs";
 import { collectRecentVaultNotes } from "../src/obsidian/daily-summary.mjs";
 import { ObsidianVault } from "../src/obsidian/vault.mjs";
@@ -31,7 +37,10 @@ import { downloadSecureAsset, ensurePiperModel, PIPER_MODELS } from "../src/core
 const here = fileURLToPath(new URL(".", import.meta.url));
 const CODEBASE_DIR = resolve(here, "../../..");
 const APP_ICON = join(here, "assets", "bit-orb.png");
-const ollamaClient = new OllamaClient();
+const llamaClient = new LocalLlamaClient({
+  resolveModelPath: async (requested) => (await resolveLocalModel(requested)).path,
+});
+const modelService = new ModelService({ ollama: new OllamaClient(), llama: llamaClient, listGguf: listLocalModels });
 const previewData = join(app.getPath("appData"), "Bit Preview");
 app.setPath("userData", previewData);
 app.setName("Bit");
@@ -45,7 +54,10 @@ app.commandLine.appendSwitch("disable-application-cache");
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
 let mainWindow;
+const projectActivity = [];
+let activeProject = '';
 let overlayWindow;
+let screenQueryWindow;
 let tray = null;
 let trayHintShown = false;
 let appQuitting = false;
@@ -55,18 +67,74 @@ let overlayLaunchTimer;
 const GLOBAL_SHORTCUT = "Control+Alt+B";
 const netGateway = createNetGateway({
   auditPath: join(previewData, "audit.log"),
+  openExternal: async (url, { browser = "default-browser", signal } = {}) => {
+    if (browser === "default-browser") {
+      signal?.throwIfAborted();
+      return shell.openExternal(url);
+    }
+    const target = await installedApps.browserTarget(browser);
+    signal?.throwIfAborted();
+    const child = spawn(target, [url], { detached: true, stdio: "ignore", shell: false });
+    await new Promise((resolve, reject) => { child.once("error", reject); child.once("spawn", resolve); });
+    child.unref();
+  },
   onActivity: (activity) => {
     const event = { active: activity.active === true, service: activity.service };
-    for (const window of [mainWindow, overlayWindow]) {
+    for (const window of [mainWindow, overlayWindow, screenQueryWindow]) {
       if (window && !window.isDestroyed()) window.webContents.send("bit:network-activity", event);
     }
   },
 });
 
-/**
- * Avisa a la interfaz de los resultados de búsqueda de archivos para pintar
- * la tarjeta flotante "ARCHIVO ENCONTRADO".
- */
+const installedApps = createInstalledApps({
+  roots: [
+    join(app.getPath("appData"), "Microsoft", "Windows", "Start Menu", "Programs"),
+    ...(process.env.ProgramData ? [join(process.env.ProgramData, "Microsoft", "Windows", "Start Menu", "Programs")] : []),
+  ],
+  targetRoots: [process.env.ProgramFiles, process.env["ProgramFiles(x86)"], process.env.LOCALAPPDATA, app.getPath("appData"), process.env.SystemRoot],
+  blockedRoots: [previewData, CODEBASE_DIR, app.getPath("temp")],
+  readShortcut: (path) => shell.readShortcutLink(path),
+  openPath: (path) => shell.openPath(path),
+  audit: (entry) => writeWorkspaceAudit(join(previewData, "audit.log"), entry),
+  confirm: async ({ name, target, args }) => {
+    const known = validateExecutionTarget(target.split(/[\\/]/u).pop());
+    if (known.ok && known.type === "executable" && !args) return true;
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning", title: "Autorizar apertura de aplicación",
+      message: `¿Desea abrir ${name}?`,
+      detail: `Aplicación encontrada en el menú Inicio.\nDestino: ${target}\nArgumentos: ${args || "ninguno"}\n\nLa autorización vale únicamente para esta apertura.`,
+      buttons: ["Cancelar", "Permitir"], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return result.response === 1;
+  },
+});
+
+/** Una misma política de autorización para el agente y el IPC del renderer. */
+async function openBrowserFromMain(action) {
+  return executeBrowserAction(action, {
+    audit: (entry) => writeWorkspaceAudit(join(previewData, "audit.log"), entry),
+    confirm: async ({ target, args }) => {
+      if (!mainWindow || mainWindow.isDestroyed()) return false;
+      const decision = await dialog.showMessageBox(mainWindow, {
+        type: "warning", title: "Autorizar acción del navegador",
+        message: "Esta apertura no está incluida en su pedido. ¿Desea permitirla?",
+        detail: `Navegador o página: ${target}\nDestino: ${args || "abrir navegador"}\n\nLa autorización vale únicamente para esta acción.`,
+        buttons: ["Cancelar", "Permitir"], defaultId: 0, cancelId: 0, noLink: true,
+      });
+      return decision.response === 1;
+    },
+    openPage: (url, options) => netGateway.openBrowserPage(url, options),
+    openApplication: async (browser, { signal } = {}) => {
+      const found = await installedApps.search(BROWSER_APPS[browser]);
+      if (found.results.length) return installedApps.open(BROWSER_APPS[browser], { signal });
+      signal?.throwIfAborted();
+      return executeWithConfirmation({ target: browser, args: "", mainWindow });
+    },
+  });
+}
+
+/** Publica los resultados para la tarjeta flotante de archivos. */
 const notifyFileSearchResults = (result) => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send("bit:file-search-results", result);
@@ -138,13 +206,13 @@ function weatherCardFromSources(sources) {
   if (!weather) return null;
   const details = String(weather.snippet || "");
   const take = (expression) => details.match(expression)?.[1] || "—";
-  const rangeMatch = details.match(/mínima\s+(-?[\d.,]+°C),\s*máxima\s+(-?[\d.,]+°C)/iu);
+  const rangeMatch = details.match(/mínima\s+(-?[\d.,]+\s*°C),\s*máxima\s+(-?[\d.,]+\s*°C)/iu);
   return {
     kind: "weather",
-    location: String(weather.title).replace(/^Clima actual en /u, "").toUpperCase(),
-    temperature: take(/Ahora:[^,]*,\s*(-?\d+(?:[.,]\d+)?°C)/iu),
+    location: String(weather.title).replace(/^Clima actual en /u, ""),
+    temperature: take(/Ahora:[^,]*,\s*(-?\d+(?:[.,]\d+)?\s*°C)/iu),
     humidity: take(/humedad\s+(\d+%)/iu),
-    rain: take(/probabilidad de precipitaci[oó]n\s+(\d+%)/iu),
+    rain: take(/probabilidad de precipitaci[oó]n\s+(\d+\s*%)/iu),
     wind: take(/viento\s+([\d.,]+\s*km\/h)/iu),
     range: rangeMatch ? `${rangeMatch[2]} / ${rangeMatch[1]}` : "—",
     condition: take(/Ahora:\s*([^,;]+)/iu),
@@ -160,12 +228,9 @@ let discardSpeechAudioUntilReady = false;
 let interruptionManager = null;
 let whisperModelPath = "";
 let voiceCaptureActive = false;
-const modelsToUnload = new Set();
 let previousWeatherQuestion = "";
 let shutdownPromise;
 let shutdownComplete = false;
-const OLLAMA_UNLOAD_TIMEOUT_MS = 30_000;
-const DAILY_SUMMARY_MODELS = new Set(["qwen2.5:3b", "qwen2.5-coder:7b"]);
 
 async function captureScreenForUserQuestion({ prompt, visionModel = "llava", maxSide = 1024 }) {
   const auditPath = join(previewData, "audit.log");
@@ -174,12 +239,14 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
   try {
     const mainWasVisible = Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible());
     const overlayWasVisible = Boolean(overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible());
+    const screenQueryWasVisible = Boolean(screenQueryWindow && !screenQueryWindow.isDestroyed() && screenQueryWindow.isVisible());
     let snapshot;
 
     screenCaptureInProgress = true;
     try {
       if (overlayWasVisible) overlayWindow.hide();
       if (mainWasVisible) mainWindow.hide();
+      if (screenQueryWasVisible) screenQueryWindow.hide();
       await new Promise((resolve) => setTimeout(resolve, 180));
       snapshot = await captureScreenBase64({ maxSide });
     } finally {
@@ -189,6 +256,10 @@ async function captureScreenForUserQuestion({ prompt, visionModel = "llava", max
         mainWindow.focus();
       } else if (overlayWasVisible && overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.showInactive();
+      }
+      if (screenQueryWasVisible && screenQueryWindow && !screenQueryWindow.isDestroyed()) {
+        screenQueryWindow.show();
+        screenQueryWindow.focus();
       }
     }
 
@@ -379,29 +450,39 @@ ipcMain.handle("bit:runtime", () => {
 
 ipcMain.handle("bit:ollama-models", async () => {
   const config = await getStartupConfig();
-  const models = await ollamaClient.list().catch(() => []);
-  const names = models.map((entry) => entry?.name ?? entry?.model)
-    .filter((name) => typeof name === "string" && name.trim())
-    .map((name) => name.trim());
+  const models = await modelService.list();
+  const names = models.filter((entry) => entry.kind === "model").map((entry) => entry.name);
   const selected = [config.model, config.fastModel, config.heavyModel]
     .find((name) => names.includes(name)) ?? names[0] ?? "";
   return { models: names, selected };
 });
 
+const activeChatTurns = new Map();
+ipcMain.handle("bit:stop-chat", async (event) => {
+  activeChatTurns.get(event.sender.id)?.abort();
+  speechQueue?.cancel();
+  if (voiceProcess && !voiceProcess.killed) voiceProcess.stdin.write('{"type":"stop"}\n');
+  event.sender.send("bit:voice-clear");
+  await writeWorkspaceAudit(join(previewData, "audit.log"), { action: "chat.stop", status: "completed" });
+  return { ok: true };
+});
 ipcMain.handle("bit:chat", async (event, request = {}) => {
   const validation = validateToolInput("bit:chat", request);
   if (!validation.ok) throw new Error(validation.error);
   const message = typeof request.message === "string" ? request.message.trim().slice(0, 8000) : "";
   if (!message) throw new Error("Escribí un mensaje");
 
+  if (activeChatTurns.has(event.sender.id)) return { busy: true, text: "Ya estoy atendiendo su consulta. Espere a que termine o pulse Detener." };
+  const controller = new AbortController();
+  const { signal } = controller;
+  activeChatTurns.set(event.sender.id, controller);
+  try {
   const config = await getStartupConfig();
+  signal.throwIfAborted();
   let sentenceBuffer = "";
   if (config.speechEnabled === true) ensureVoiceProcess();
-  // Normalizar nombre de modelo: quitar espacios y asegurar formato válido para Ollama
-  const normalizeModel = (m) => String(m || "").replace(/\s+/gu, "").replace(/^qwen2\.5([:\s-]?)3b$/iu, "qwen2.5:3b").replace(/^qwen2\.5([:\s-]?)coder([:\s-]?)7b$/iu, "qwen2.5-coder:7b");
-  const model = normalizeModel(typeof request.model === "string" && request.model.length > 0 ? request.model : config.model) || "qwen2.5:3b";
-  const MODEL_OK_RE = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$/u;
-  const finalModel = MODEL_OK_RE.test(model) ? model : "qwen2.5:3b";
+  const model = typeof request.model === "string" && request.model.trim() ? request.model.trim() : config.model;
+  const finalModel = model || config.fastModel;
   const weatherFollowUp = isWeatherLocationFollowUp(message);
   const history = Array.isArray(request.history) ? [...request.history] : [];
   if (weatherFollowUp && previousWeatherQuestion) {
@@ -409,47 +490,15 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
   }
 
   // Cliente de chat que envuelve Ollama /api/chat
-  const fallbackModels = [config.fastModel, config.heavyModel, config.model, finalModel]
-    .map(normalizeModel)
-    .filter(Boolean);
+  const fallbackModels = [config.fastModel, config.heavyModel, config.model, finalModel].filter((value) => typeof value === "string" && value.trim());
   const chatClient = {
     async resolveModel(modelName) {
-      const resolved = await ollamaClient.resolveModel(normalizeModel(modelName), fallbackModels);
-      if (!resolved) throw new Error("No hay ningun modelo local disponible");
-      return resolved;
+      return modelService.resolveModel(model || modelName, fallbackModels);
     },
     async generate(modelName, req, options = {}) {
-      const attempted = new Set();
-      const tryGenerate = async (requestedModel) => {
-        const m = await chatClient.resolveModel(requestedModel);
-        if (attempted.has(m)) throw new Error(`No quedan modelos de respaldo despues de intentar: ${[...attempted].join(", ")}`);
-        attempted.add(m);
-        if (req.keep_alive && req.keep_alive !== "0" && req.keep_alive !== 0) {
-          modelsToUnload.add(m);
-        }
-        let response;
-        try {
-          response = await ollamaClient.generate(m, req, options);
-        } catch (error) {
-          const retryable = Number(error?.status) >= 500 || /model.+(?:not found|failed|unavailable)|no such model/iu.test(String(error?.message));
-          if (!retryable) throw error;
-          const installed = (await ollamaClient.list()).map((entry) => entry?.name ?? entry?.model).filter(Boolean);
-          const next = [...fallbackModels, ...installed].find((candidate) => candidate && !attempted.has(candidate));
-          if (!next) throw error;
-          response = await ollamaClient.generate(next, req, options);
-          return { ...response, model: next };
-        }
-        if (response && response.ok === false) {
-          const text = await response.text().catch(() => "");
-          if (/formato|invalid|not found/i.test(text) && m !== "qwen2.5:3b") {
-            // Reintentar automáticamente con el modelo por defecto
-            return tryGenerate("qwen2.5:3b");
-          }
-          throw new Error(`Ollama respondió ${response.status}`);
-        }
-        return { ...response, model: m };
-      };
-      return tryGenerate(modelName);
+      const resolvedModel = await chatClient.resolveModel(modelName);
+      signal.throwIfAborted();
+      return modelService.generate(resolvedModel, req, { ...options, signal });
     },
   };
 
@@ -500,7 +549,19 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
       }
     }
 
-    switch (toolName) {
+    signal.throwIfAborted();
+    let before = ''; 
+    if (toolName === 'workspace.updateFile') {
+      try { before = (await workspace.readFile(toolArgs)).content.slice(0,8000); } catch { /* The actual operation reports its error. */ }
+    }
+    const activity = { tool: toolName, project: toolArgs.project ?? '', path: toolArgs.path ?? '', status: 'working', time: new Date().toISOString() };
+    if(activity.project) activeProject=activity.project;
+    projectActivity.unshift(activity);
+    projectActivity.splice(40);
+    notifyProjectPanels();
+    try {
+    signal.throwIfAborted();
+    const result = await (async () => { switch (toolName) {
       case "workspace.listProjects":
         return workspace.listProjects();
       case "workspace.createProject":
@@ -519,11 +580,20 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         return workspace.restoreBackup(toolArgs);
       default:
         throw new Error(`Herramienta de proyectos desconocida: ${toolName}`);
+    } })();
+    activity.status='completed';
+    if(writeActions.has(toolName)) {
+      activity.before=before;
+      activity.after=typeof toolArgs.content==='string'?toolArgs.content.slice(0,8000):'';
     }
+    return result;
+    } catch(error) { activity.status='failed'; throw error; }
+    finally { notifyProjectPanels(); }
   };
 
   // Executor de herramientas: mapea nombres con punto a IPC handlers
   const executeTool = async (toolName, toolArgs) => {
+    signal.throwIfAborted();
     switch (toolName) {
       case "workspace.listProjects":
       case "workspace.createProject":
@@ -543,24 +613,7 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         if (!isScreenQuestion(message)) {
           throw new Error("La pantalla solo se captura cuando el usuario pregunta por su contenido");
         }
-        const screenSetting = await configGet("screenAnalysisEnabled");
-        const screenAllowed = screenSetting?.ok === true && screenSetting.value === true;
-        if (!screenAllowed) {
-          const parentWindow = BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
-          const confirmation = await dialog.showMessageBox(parentWindow, {
-            type: "question",
-            title: "Permitir ver la pantalla",
-            message: "¿Permite que Bit vea su pantalla para responder?",
-            detail: "La captura se mantiene en memoria. No se guarda ni se envía fuera del equipo.",
-            buttons: ["Permitir", "Cancelar"],
-            defaultId: 1,
-            cancelId: 1,
-            noLink: true,
-          });
-          if (confirmation.response !== 0) {
-            return { ok: false, cancelled: true };
-          }
-        }
+        // La pregunta explícita habilita esta lectura local, sin modificar datos.
         return captureScreenForUserQuestion({
           prompt: toolArgs.prompt,
           visionModel: toolArgs.visionModel || config.visionModel || "llava",
@@ -571,6 +624,10 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
         const validation = validateToolInput("bit:system-open-app", toolArgs);
         if (!validation.ok) throw new Error(validation.error);
         const target = String(toolArgs.target).trim();
+        const browserName = target.split(/[\\/]/u).pop().toLowerCase();
+        if (isBrowserTarget(browserName) || target.startsWith("https://")) {
+          return openBrowserFromMain({ target: isBrowserTarget(browserName) ? browserName : target, args: toolArgs.args || "", explicitRequest: resolveDirectOpenRequest(message), externalContent: Boolean(request.imageDataUrl) || config.externalContent === true, signal });
+        }
         // Archivo localizado en el equipo: abrir directamente con el SO.
         if (isAbsolute(target)) {
           let info;
@@ -586,14 +643,36 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
             return { ok: true, target, mode: "open" };
           }
         }
+        const installedAliases = { "chrome.exe": "chrome", "msedge.exe": "microsoft edge", "firefox.exe": "firefox", "spotify.exe": "spotify", "discord.exe": "discord", "teams.exe": "teams", "vlc.exe": "vlc" };
+        const installedName = installedAliases[target.toLowerCase()];
+        if (installedName && !toolArgs.args && !request.imageDataUrl && config.externalContent !== true && resolveDirectOpenRequest(message)?.target === target) {
+          const found = await installedApps.search(installedName);
+          if (found.results.length) return installedApps.open(installedName, { signal });
+        }
         if (!mainWindow || mainWindow.isDestroyed()) {
           return { ok: false, error: "Ventana principal no disponible para confirmación" };
         }
-        return executeWithConfirmation({
+        const opened = await executeWithConfirmation({
           target,
           args: toolArgs.args || "",
           mainWindow,
         });
+        await writeWorkspaceAudit(join(previewData, "audit.log"), { action: "system.openApp", target, status: opened.ok ? "completed" : opened.cancelled ? "cancelled" : "failed" });
+        return opened;
+      }
+      case "system.searchApps": {
+        const validation = validateToolInput("bit:system-search-apps", toolArgs);
+        if (!validation.ok) throw new Error(validation.error);
+        return installedApps.search(toolArgs.query);
+      }
+      case "system.openInstalledApp": {
+        const validation = validateToolInput("bit:system-open-installed-app", toolArgs);
+        if (!validation.ok) throw new Error(validation.error);
+        const openRequest = resolveDirectOpenRequest(message);
+        if (openRequest?.installedName !== toolArgs.name || request.imageDataUrl || config.externalContent === true) {
+          return { ok: false, error: "Solicite explícitamente abrir la aplicación por su nombre" };
+        }
+        return installedApps.open(toolArgs.name, { signal });
       }
       case "system.searchFiles": {
         const validation = validateToolInput("bit:system-search-files", toolArgs);
@@ -706,10 +785,16 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
     history,
     imageDataUrl: request.imageDataUrl || null,
     config: { ...config, model: finalModel },
-    deps: { chatClient, ollamaClient, executeTool, vaultConfig: { vaultPath: config.vaultPath || "" } },
+    deps: {
+      chatClient, modelClient: modelService, executeTool,
+      vaultConfig: { vaultPath: config.vaultPath || "" },
+      readMemoryContext: () => readConversationMemory(config.vaultPath, (entry) => writeWorkspaceAudit(join(previewData, "audit.log"), entry)),
+    },
     onChunk: (text) => {
-      if (typeof text !== "string" || !text) return;
+      if (signal.aborted || typeof text !== "string" || !text) return;
       event.sender.send("bit:chat-chunk", { text });
+      // La voz se encola una sola vez con la respuesta completa al finalizar.
+      return;
       // Segmentación por oraciones: enviar cada oración completa a Piper TTS
       // inmediatamente para que Bit empiece a hablar en < 1 segundo.
       if (!sentenceBuffer) sentenceBuffer = "";
@@ -728,6 +813,7 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
     },
   });
 
+  signal.throwIfAborted();
   if (isWeatherSearchRequest(message)) previousWeatherQuestion = message;
   else if (!weatherFollowUp) previousWeatherQuestion = "";
 
@@ -735,6 +821,17 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
   const sources = result.sources || [];
   const weatherCard = weatherCardFromSources(sources);
   const answerCard = weatherCard ? null : createAnswerCard({ message, text: answerText, sources });
+  for (const card of weatherCard ? [weatherCard] : answerCard ? [answerCard] : []) {
+    const data = card.kind === "weather" ? {
+      id: 'weather:' + card.location,
+      icon: /tormenta/iu.test(card.condition) ? '???' : /lluvia|llovizna/iu.test(card.condition) ? '???' : /nubl/iu.test(card.condition) ? '??' : '??',
+      label: 'Tiempo en ' + card.location,
+      value: card.temperature,
+      subtext: 'Humedad: ' + card.humidity + ' · Viento: ' + card.wind + ' · Lluvia: ' + card.rain,
+      metaText: card.condition,
+    } : { id: 'answer', icon: card.icon, label: card.label, value: card.value, subtext: card.detail, metaText: card.badge };
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bit:display-card", data);
+  }
   // Salida por voz: Bit responde en voz alta mediante Piper TTS.
   if (config.speechEnabled === true && answerText.trim()) {
     void enqueueSpeech(answerText).catch((error) => {
@@ -751,6 +848,12 @@ ipcMain.handle("bit:chat", async (event, request = {}) => {
     sources,
     cards: weatherCard ? [weatherCard] : answerCard ? [answerCard] : [],
   };
+  } catch (error) {
+    if (signal.aborted) return { text: "Pedido detenido.", cancelled: true };
+    throw error;
+  } finally {
+    activeChatTurns.delete(event.sender.id);
+  }
 });
 
 const DROPPED_FILE_ACTIONS = new Set(["summarize", "edit", "vision", "vault", "attach"]);
@@ -768,6 +871,21 @@ function notifyDroppedFile(filePath, name, action, payload = {}) {
     // No bloquea el resultado del turno por una notificación de interfaz.
   }
 }
+
+ipcMain.handle('bit:forward-dropped-file', async (event,filePath) => {
+  if(!overlayWindow || overlayWindow.isDestroyed() || event.sender!==overlayWindow.webContents) throw new Error('Origen IPC no autorizado');
+  const validation=validateToolInput('bit:process-dropped-file',{filePath,action:'attach'});
+  if(!validation.ok) throw new Error(validation.error);
+  if(!isAbsolute(filePath)||filePath.startsWith('\\\\')||filePath.startsWith('//')) throw new Error('Seleccione un archivo local');
+  const info=await stat(filePath);
+  if(!isAbsolute(filePath)||!info.isFile()) throw new Error('Seleccione un archivo local');
+  await writeWorkspaceAudit(join(previewData,'audit.log'),{action:'file.drop.forward',path:filePath,status:'completed'});
+  showMainWindow();
+  const send=()=>mainWindow.webContents.send('bit:file-drop-requested',{filePath,name:filePath.split(/[\\/]/).pop(),size:info.size});
+  if(mainWindow.webContents.isLoading())mainWindow.webContents.once('did-finish-load',send);
+  else send();
+  return {ok:true};
+});
 
 ipcMain.handle("bit:process-dropped-file", async (event, request = {}) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
@@ -829,24 +947,7 @@ ipcMain.handle("bit:process-dropped-file", async (event, request = {}) => {
       );
       text = `Guardé "${file.name}" en la bóveda: ${saved.relativePath}`;
     } else {
-      const message = buildDroppedFileMessage({ file, action });
-      const chatClient = {
-        async generate(modelName, modelRequest) {
-          const response = await fetch("http://127.0.0.1:11434/api/chat", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ model: modelName, stream: false, ...modelRequest }),
-          });
-          if (!response.ok) throw new Error(`Ollama respondió ${response.status}`);
-          return response.json();
-        },
-      };
-      const result = await runAgentTurn({
-        message,
-        history: [],
-        config: { ...config, externalContent: true },
-        deps: { chatClient, ollamaClient, vaultConfig: { vaultPath: config.vaultPath || "" } },
-      });
+      const result = await runDroppedFileTurn({ file, action, config, modelService });
       text = result.text || file.notice;
     }
 
@@ -873,7 +974,9 @@ function overlayBounds(expanded = false) {
   const width = expanded ? 410 : 160;
   const height = expanded ? 560 : 160;
   const margin = 22;
-  return { width, height, x: display.workArea.x + display.workArea.width - width - margin, y: display.workArea.y + margin };
+  // Reservar la barra de título y pestañas, incluido el rectángulo transparente.
+  const topClearance = 40;
+  return { width, height, x: display.workArea.x + display.workArea.width - width - margin, y: display.workArea.y + topClearance };
 }
 
 function setOverlayExpanded(expanded) {
@@ -936,13 +1039,116 @@ ipcMain.handle("bit:open-main", () => {
   return { ok: true };
 });
 
+let screenQueryCloseTimer;
+function finishScreenQueryClose() {
+  clearTimeout(screenQueryCloseTimer);
+  screenQueryCloseTimer = undefined;
+  if (screenQueryWindow && !screenQueryWindow.isDestroyed()) screenQueryWindow.hide();
+}
+function closeScreenQueryWindow() {
+  if (!screenQueryWindow || screenQueryWindow.isDestroyed() || screenQueryCloseTimer !== undefined) return;
+  const closingWindow = screenQueryWindow;
+  // El cierre no depende de que el renderer termine su animacion.
+  screenQueryCloseTimer = setTimeout(() => {
+    if (screenQueryWindow === closingWindow) finishScreenQueryClose();
+    else screenQueryCloseTimer = undefined;
+  }, 300);
+  closingWindow.webContents.send("bit:screen-query-open", "close");
+}
+
+function openScreenQueryWindow() {
+  if (screenQueryWindow && !screenQueryWindow.isDestroyed()) {
+    if (screenQueryWindow.isVisible()) {
+      closeScreenQueryWindow();
+      return;
+    }
+    screenQueryWindow.setOpacity(0);
+    screenQueryWindow.show();
+    screenQueryWindow.webContents.send("bit:screen-query-open");
+    screenQueryWindow.focus();
+    screenQueryWindow.webContents.focus();
+    return;
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const width = 430;
+  const height = 360;
+  const overlay = overlayBounds(false);
+  // El núcleo ocupa el centro del overlay (80, 80). El borde derecho del
+  // holograma termina justo en ese centro para que la cola nazca de allí.
+  const coreCenterX = overlay.x + overlay.width / 2;
+  const coreCenterY = overlay.y + overlay.height / 2;
+  const coreGap = 48;
+  const x = Math.max(display.workArea.x + 16, Math.round(coreCenterX - width - coreGap));
+  const y = Math.max(display.workArea.y + 16, Math.round(coreCenterY - 48));
+  screenQueryWindow = new BrowserWindow({
+    width,
+    height,
+    x,
+    y,
+    minWidth: 380,
+    minHeight: 300,
+    frame: false,
+    transparent: true,
+    resizable: false,
+    movable: true,
+    // Mostrar una vez listo el contenido y reproducir entonces la entrada.
+    show: false,
+    alwaysOnTop: true,
+    backgroundColor: "#00000000",
+    title: "Consulta de pantalla — Bit",
+    webPreferences: {
+      preload: join(here, "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: false,
+    },
+  });
+  screenQueryWindow.setAlwaysOnTop(true, "floating");
+  screenQueryWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  screenQueryWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  screenQueryWindow.loadFile(join(here, "screen-query.html"));
+  screenQueryWindow.once("ready-to-show", () => {
+    screenQueryWindow.setOpacity(0);
+    screenQueryWindow.show();
+    screenQueryWindow.webContents.send("bit:screen-query-open");
+    screenQueryWindow.focus();
+    screenQueryWindow.webContents.focus();
+  });
+  screenQueryWindow.on("closed", () => { screenQueryWindow = undefined; });
+}
+
+function isScreenQueryOpen() {
+  return Boolean(screenQueryWindow && !screenQueryWindow.isDestroyed() && screenQueryWindow.isVisible());
+}
+
+ipcMain.handle("bit:screen-query-closed", (event) => {
+  if (!screenQueryWindow || screenQueryWindow.isDestroyed() || event.sender !== screenQueryWindow.webContents) throw new Error('Origen no autorizado');
+  if (screenQueryCloseTimer !== undefined) finishScreenQueryClose();
+  return { ok: true };
+});
+
+ipcMain.handle("bit:screen-query-prepared", (event) => {
+  if (!screenQueryWindow || screenQueryWindow.isDestroyed() || event.sender !== screenQueryWindow.webContents) throw new Error('Origen no autorizado');
+  if (screenQueryWindow.isVisible()) screenQueryWindow.setOpacity(1);
+  return { ok: true };
+});
+
+ipcMain.handle("bit:open-screen-query", () => {
+  openScreenQueryWindow();
+  return { ok: true };
+});
+
 ipcMain.handle("bit:screen-capture", async () => {
   const validation = validateToolInput("bit:screen-capture", {});
   if (!validation.ok) throw new Error(validation.error);
   const policy = createCapturePolicy({ consent: true, maxSide: 1280 });
   if (!canCapture(policy, "")) throw new Error("La captura requiere consentimiento explícito");
   const wasVisible = overlayWindow && !overlayWindow.isDestroyed() && overlayWindow.isVisible();
+  const queryWasVisible = screenQueryWindow && !screenQueryWindow.isDestroyed() && screenQueryWindow.isVisible();
   if (wasVisible) overlayWindow.hide();
+  if (queryWasVisible) screenQueryWindow.hide();
   try {
     await new Promise((resolve) => setTimeout(resolve, 120));
     const display = screen.getPrimaryDisplay();
@@ -953,6 +1159,7 @@ ipcMain.handle("bit:screen-capture", async () => {
     return { imageDataUrl: source.thumbnail.toDataURL(), width: dimensions.width, height: dimensions.height, source: "primary-screen" };
   } finally {
     if (wasVisible) overlayWindow.showInactive();
+    if (queryWasVisible) screenQueryWindow.show();
   }
 });
 
@@ -1127,7 +1334,7 @@ ipcMain.handle("boot:getDailySummary", async (event, model) => {
   if (!mainWindow || mainWindow.isDestroyed() || event.sender !== mainWindow.webContents) {
     throw new Error("El resumen del día solo puede leerse desde la ventana principal");
   }
-  if (!DAILY_SUMMARY_MODELS.has(model)) throw new Error("El modelo del resumen no está permitido");
+  if (typeof model !== "string" || model.length > 128) throw new Error("El modelo del resumen no es válido");
 
   const auditPath = join(previewData, "audit.log");
   const auditEntry = { action: "boot.daily-summary" };
@@ -1147,7 +1354,8 @@ ipcMain.handle("boot:getDailySummary", async (event, model) => {
       return { ok: true, summary, noteCount: 0 };
     }
 
-    const response = await ollamaClient.generate(model, {
+    const localModel = await modelService.resolveModel(model);
+    const response = await modelService.generate(localModel, {
       stream: false,
       keep_alive: 0,
       messages: [
@@ -1256,14 +1464,34 @@ ipcMain.handle("config:removeSong", async (event) => {
 
 // ===== DISPLAY MANAGER IPC HANDLERS =====
 
+ipcMain.handle('bit:project-panel', async (event, request={}) => {
+  if(!isDisplayPanel(event.sender)) throw new Error('Origen IPC no autorizado');
+  if(!request || typeof request!=='object' || Object.keys(request).some(key=>!['project','path'].includes(key))) throw new Error('Solicitud no válida');
+  const config=await getStartupConfig();
+  const result={activity:projectActivity,activeProject,projects:[],files:[],file:null};
+  if(!config.projectsRoot) return {...result,notice:'Elija una carpeta local para proyectos en Ajustes.'};
+  const workspace=createProjectWorkspace({root:config.projectsRoot,auditPath:join(previewData,'audit.log')});
+  result.projects=await workspace.listProjects();
+  const project=request.project ?? activeProject;
+  if(project) {
+    const validation=validateToolInput(toolSchemaName('workspace.listFiles'),{project});
+    if(!validation.ok) throw new Error(validation.error);
+    result.files=await workspace.listFiles({project});
+    if(request.path) result.file=await workspace.readFile({project,path:request.path});
+  }
+  return result;
+});
+
 ipcMain.handle("bit:get-connected-displays", async () => {
   return getConnectedDisplays();
 });
 
 ipcMain.handle("bit:set-display-role", async (_event, displayId, role) => {
+  if(!mainWindow || mainWindow.isDestroyed() || _event.sender!==mainWindow.webContents) throw new Error('Origen IPC no autorizado');
   const validation = validateToolInput("bit:set-display-role", { displayId, role });
   if (!validation.ok) throw new Error(validation.error);
-  setDisplayRole(displayId, role);
+  await setDisplayRole(displayId, role);
+  await writeWorkspaceAudit(join(previewData,'audit.log'),{action:'display.assign',displayId,role,status:'completed'});
   return { ok: true };
 });
 
@@ -1369,6 +1597,11 @@ ipcMain.handle("bit:system-open-app", async (_event, request = {}) => {
   if (!validation.ok) throw new Error(validation.error);
 
   const target = String(request.target).trim();
+  const browserName = target.split(/[\\/]/u).pop().toLowerCase();
+  if (isBrowserTarget(browserName) || target.startsWith("https://")) {
+    // El renderer no puede declarar que hubo un pedido explícito ni aprobarlo.
+    return openBrowserFromMain({ target: isBrowserTarget(browserName) ? browserName : target, args: request.args || "" });
+  }
   // Archivo localizado en el equipo: abrir directamente con el SO.
   if (isAbsolute(target)) {
     let info;
@@ -1412,7 +1645,7 @@ function createMainWindow() {
     icon: APP_ICON,
     backgroundColor: "#07131b",
     webPreferences: {
-      preload: join(here, "preload.mjs"),
+      preload: join(here, "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -1436,11 +1669,12 @@ function createMainWindow() {
     }
   });
 
-  // Overlay visibility: hide when main window has focus, show when it loses focus
-  mainWindow.on("focus", () => { if (!screenCaptureInProgress && !openingMainFromOverlay && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
-  mainWindow.on("show", () => { if (!screenCaptureInProgress && !openingMainFromOverlay && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
+  // El nucleo flotante no se superpone a la ventana principal activa.
+  mainWindow.on("focus", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
+  mainWindow.on("show", () => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide(); });
   mainWindow.on("blur", () => { if (!screenCaptureInProgress && !openingMainFromOverlay && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
   mainWindow.on("hide", () => { if (!screenCaptureInProgress && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
+  mainWindow.on("minimize", () => { if (!screenCaptureInProgress && overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.showInactive(); });
   mainWindow.on("closed", () => { mainWindow = undefined; });
 }
 
@@ -1468,7 +1702,7 @@ function createOverlayWindow() {
   overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   overlayWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   overlayWindow.loadFile(join(here, "overlay.html"));
-  overlayWindow.once("ready-to-show", () => overlayWindow.showInactive());
+  overlayWindow.once("ready-to-show", () => { if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isFocused()) overlayWindow.showInactive(); });
   overlayWindow.on("closed", () => { overlayWindow = undefined; });
 }
 
@@ -1530,10 +1764,16 @@ app.whenReady().then(async () => {
   // Permisos de audio/micrófono y cámara: conceder automáticamente en entorno local (file:// / localhost)
   const config = await getStartupConfig();
   whisperModelPath = typeof config.whisperModelPath === "string" ? config.whisperModelPath : "";
-  if (config.speechEnabled === true) ensureVoiceProcess();
+  if (config.speechEnabled === true) {
+    try {
+      ensureVoiceProcess();
+    } catch (error) {
+      console.warn("[voz] No se pudo precargar el sidecar de Piper:", error instanceof Error ? error.message : String(error));
+    }
+  }
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     if (permission === 'media' || permission === 'audioCapture') {
-      callback(true); // Conceder permiso automáticamente (micrófono continuo y audio)
+      callback(true); // Conceder permiso automáticamente (micrófono y audio en entorno local)
     } else {
       callback(true);
     }
@@ -1601,16 +1841,7 @@ app.on("before-quit", (event) => {
 
   shutdownPromise = (async () => {
     if (voiceProcess && !voiceProcess.killed) voiceProcess.kill();
-    const models = [...modelsToUnload];
-    modelsToUnload.clear();
-    const results = await Promise.allSettled(models.map((model) =>
-      ollamaClient.unload(model, { signal: AbortSignal.timeout(OLLAMA_UNLOAD_TIMEOUT_MS) })
-    ));
-    for (const [index, result] of results.entries()) {
-      if (result.status === "rejected") {
-        console.error(`[ollama] No se pudo liberar ${models[index]} al cerrar Bit:`, result.reason);
-      }
-    }
+    await llamaClient.dispose();
   })().catch((error) => {
     console.error("[ollama] Error al liberar modelos al cerrar Bit:", error);
   }).finally(() => {

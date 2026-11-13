@@ -1,0 +1,40 @@
+:root{--response-font:Bahnschrift,'Segoe UI Variable Display','Segoe UI',sans-serif;--response-accent:#8deeff}
+.message.assistant{font-family:var(--response-font);line-height:1.65}
+/* Tarjetas de contexto. Tipografía y espacios independientes de la conversación. */
+#context-panel.right-widgets{width:min(380px,calc(100vw - 48px));scrollbar-width:thin;scrollbar-color:#31505c transparent}
+#context-panel .context-head{padding:0 4px 12px;color:#7897a4;font:10px 'Segoe UI',sans-serif;letter-spacing:.16em}
+#context-panel #daily-summary{display:none}
+#cardsStack{gap:16px;padding:2px 3px 16px}
+#cardsStack .card{
+  --card-accent:var(--response-accent);--card-glow:#00d9ff;
+  display:grid;grid-template-columns:36px minmax(0,1fr) 28px;align-items:center;gap:16px 12px;
+  padding:24px 24px 20px;border:1px solid #89e5ff24;border-radius:18px;
+  background:radial-gradient(ellipse at 0 0,#163d4b80,transparent 70%),linear-gradient(145deg,#101e2af5,#080f19f5);
+  box-shadow:inset 0 1px 0 #dcf8ff0a,0 12px 28px #00000030;
+  backdrop-filter:none;overflow:hidden;text-align:left;isolation:isolate;
+}
+#cardsStack .card:before{content:'';position:absolute;inset:0;width:auto;height:auto;pointer-events:none;border-radius:inherit;background:linear-gradient(90deg,transparent,var(--card-accent),transparent) center top/65% 1px no-repeat;opacity:.65}
+#cardsStack .card:after{content:'';position:absolute;z-index:-1;inset:0;pointer-events:none;background:linear-gradient(105deg,#00d9ff06,transparent 50%),repeating-linear-gradient(0deg,transparent 0 5px,#67e8ff04 5px 6px);opacity:.5}
+
+
+#cardsStack .ic{grid-column:1;grid-row:1;width:36px;height:36px;border-radius:0;border:0;background:transparent;color:var(--card-accent);font-size:0;box-shadow:none;filter:drop-shadow(0 0 6px #00d9ff40)}
+#cardsStack .ic[data-weather-icon=true]{font-size:24px;line-height:1}
+#cardsStack .ic[data-weather-icon=true]:before{display:none}
+#cardsStack .ic:before{content:'';width:20px;height:20px;background:var(--card-accent);mask:url('assets/card-response.svg') center/contain no-repeat}
+#cardsStack .card[data-tone=weather] .ic:before{mask-image:url('assets/card-weather.svg')}
+#cardsStack .card[data-tone=web] .ic:before{mask-image:url('assets/card-web.svg')}
+#cardsStack .lb{grid-column:2;grid-row:1;display:block;padding:0;color:#b1dbe6;font:500 12px/1.5 var(--response-font);letter-spacing:.055em;text-transform:none}
+#cardsStack .val{grid-column:1/-1;grid-row:2;margin:4px 0;text-align:left;font:500 25px/1.3 var(--response-font);letter-spacing:-.025em;color:#ecfaff;text-shadow:none;white-space:pre-wrap;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+#cardsStack .card[data-density=long] .val{font-size:18px;line-height:1.5;letter-spacing:-.015em}
+#cardsStack .card[data-tone=weather] .val{font-size:60px;font-weight:400;line-height:1.1;letter-spacing:-.055em}
+#cardsStack .sub{grid-column:1/-1;grid-row:3;text-align:left;color:#b0c4d1;font:400 14px/1.8 var(--response-font);white-space:pre-wrap;max-height:220px;overflow:auto;scrollbar-width:thin}
+#cardsStack .sub:empty{display:none}
+#cardsStack .meta{grid-column:1/-1;grid-row:4;display:flex;align-items:center;justify-content:flex-start;gap:8px;width:100%;margin-top:2px;padding-top:14px;border-top:1px solid #9bd9ee20;color:#8edce9;font:500 11px/1.5 var(--response-font);letter-spacing:.08em;text-transform:uppercase}
+#cardsStack .meta:before{content:'';width:5px;height:5px;flex-shrink:0;border-radius:50%;background:var(--card-accent)}
+#cardsStack .meta:empty{display:none}
+#cardsStack .card-close{position:static;grid-column:3;grid-row:1;display:grid;place-items:center;width:28px;height:28px;padding:0;border:1px solid transparent;border-radius:8px;background:transparent;color:#8299a6;font:20px/1 'Segoe UI',sans-serif;transition:background .15s,color .15s}
+#cardsStack .card-close:hover{background:#ffffff09;border-color:#ffffff10;color:#ecf7fa}
+#cardsStack .card-close:focus-visible{outline:2px solid var(--card-accent);outline-offset:3px}
+@media(max-width:600px){#context-panel.right-widgets{right:12px;width:min(340px,calc(100vw - 24px));max-height:48vh}#cardsStack .card{padding:18px;gap:12px 10px}#cardsStack .val{font-size:22px}#cardsStack .card[data-density=long] .val{font-size:17px}#cardsStack .card[data-tone=weather] .val{font-size:52px}}
+@media(prefers-reduced-motion:reduce){#cardsStack .card-close{transition:none}}
+

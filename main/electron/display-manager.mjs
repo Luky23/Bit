@@ -15,11 +15,14 @@
  * "displayLayout" (mapa de displayId -> rol).
  */
 
-import { app, BrowserWindow, screen } from "electron";
+import pkg from "electron";
+const { BrowserWindow, screen } = pkg;
+import { resolveDisplayRoles } from '../src/core/display-layout.mjs';
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { configGet, configSet } from "../src/core/config.mjs";
 
-const here = new URL(".", import.meta.url);
+const here = fileURLToPath(new URL(".", import.meta.url));
 const APP_ICON = join(here, "assets", "bit-orb.png");
 
 const DISPLAY_LAYOUT_KEY = "displayLayout";
@@ -77,9 +80,7 @@ function computeDefaultRoles(displays) {
  * existe, si no el rol por defecto según la disposición actual.
  */
 function resolveRole(displayId, displays) {
-  if (userRoles.has(displayId)) return userRoles.get(displayId);
-  const defaults = computeDefaultRoles(displays);
-  return defaults.get(displayId) ?? "none";
+  return resolveDisplayRoles(displays, userRoles).get(displayId) ?? 'none';
 }
 
 /* ── Persistencia ───────────────────────────────────────────────── */
@@ -101,7 +102,8 @@ async function saveUserRoles() {
   for (const [displayId, role] of userRoles) {
     obj[String(displayId)] = role;
   }
-  await configSet(DISPLAY_LAYOUT_KEY, obj);
+  const saved = await configSet(DISPLAY_LAYOUT_KEY, obj);
+  if (!saved.ok) throw new Error(saved.error);
 }
 
 /* ── Ventanas secundarias ───────────────────────────────────────── */
@@ -112,8 +114,8 @@ async function saveUserRoles() {
  */
 function createSecondaryWindowOnDisplay(displayBounds, role) {
   const { x, y, width, height } = displayBounds;
-  const winWidth = Math.min(960, width);
-  const winHeight = Math.min(760, height);
+  const winWidth = width;
+  const winHeight = height;
 
   const win = new BrowserWindow({
     width: winWidth,
@@ -135,7 +137,7 @@ function createSecondaryWindowOnDisplay(displayBounds, role) {
     backgroundColor: "#00000000",
     icon: APP_ICON,
     webPreferences: {
-      preload: join(here, "preload.cjs"),
+      preload: join(here, "display-panel-preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -143,7 +145,7 @@ function createSecondaryWindowOnDisplay(displayBounds, role) {
     },
   });
 
-  win.loadFile(join(here, "index.html"));
+  win.loadFile(join(here, 'display-panel.html'), { query: { role } });
 
   win.once("ready-to-show", () => {
     if (win.isDestroyed()) return;
@@ -226,9 +228,9 @@ export async function updateDisplayLayout() {
   // ── Ventana Principal ──
   const mainDisplay = displayByRole.get("main");
   if (mainDisplay && mainWindowRef && !mainWindowRef.isDestroyed()) {
-    const { x, y, width, height } = mainDisplay.bounds;
-    const mwWidth = Math.min(980, width);
-    const mwHeight = Math.min(720, height);
+    const { x, y, width, height } = mainDisplay.workArea;
+    const mwWidth = width;
+    const mwHeight = height;
     mainWindowRef.setBounds({
       x: x + Math.max(0, Math.floor((width - mwWidth) / 2)),
       y: y + Math.max(0, Math.floor((height - mwHeight) / 2)),
@@ -245,7 +247,7 @@ export async function updateDisplayLayout() {
   // ── Ventana del Proyecto ──
   const projectDisplay = displayByRole.get("project");
   if (projectDisplay) {
-    createProjectWindow(projectDisplay.bounds);
+    createProjectWindow(projectDisplay.workArea);
   } else {
     projectWindow = closeWindow(projectWindow);
   }
@@ -253,7 +255,7 @@ export async function updateDisplayLayout() {
   // ── Ventana de Información ──
   const infoDisplay = displayByRole.get("info");
   if (infoDisplay) {
-    createInfoWindow(infoDisplay.bounds);
+    createInfoWindow(infoDisplay.workArea);
   } else {
     infoWindow = closeWindow(infoWindow);
   }
@@ -321,7 +323,7 @@ function regroupToPrimary() {
 export function getConnectedDisplays() {
   return getDisplays().map((d) => ({
     id: d.id,
-    role: userRoles.has(d.id) ? userRoles.get(d.id) : resolveRole(d.id, getDisplays()),
+    role: resolveRole(d.id, getDisplays()),
     bounds: {
       x: d.bounds.x,
       y: d.bounds.y,
@@ -335,7 +337,7 @@ export function getConnectedDisplays() {
       width: d.workArea.width,
       height: d.workArea.height,
     },
-    isPrimary: d.isPrimary,
+    isPrimary: d.id === screen.getPrimaryDisplay().id,
     scaleFactor: d.scaleFactor,
     rotation: d.rotation,
   }));
@@ -344,13 +346,22 @@ export function getConnectedDisplays() {
 /**
  * Asigna un rol a un monitor, lo persiste en config.json y notifica.
  */
-export function setDisplayRole(displayId, role) {
+export async function setDisplayRole(displayId, role) {
   if (!VALID_ROLES.has(role)) {
     throw new Error(`Rol de pantalla no válido: ${role}`);
   }
+  const displays = getDisplays();
+  if (!displays.some(d=>d.id===Number(displayId))) throw new Error('La pantalla ya no está conectada');
+  const assignments = resolveDisplayRoles(displays,userRoles);
+  const previous = assignments.get(Number(displayId));
+  const occupied = displays.find(d=>d.id!==Number(displayId)&&assignments.get(d.id)===role&&role!=='none');
+  if(previous==='main' && role!=='main' && !occupied) throw new Error('Asigne primero la pantalla principal a otro monitor');
+  const before = new Map(userRoles);
+  userRoles = new Map(assignments);
+  if(occupied) userRoles.set(occupied.id,previous);
   userRoles.set(Number(displayId), role);
-  void saveUserRoles();
-  void updateDisplayLayout();
+  try { await saveUserRoles(); } catch(error) { userRoles=before; throw error; }
+  await updateDisplayLayout();
 }
 
 /**
@@ -383,7 +394,7 @@ export function initDisplayManager({ mainWindow } = {}) {
   initialized = true;
   mainWindowRef = mainWindow;
 
-  void loadUserRoles();
+  const loaded = loadUserRoles();
 
   // ── Eventos de pantalla de Electron ────────────────────────────
 
@@ -395,7 +406,6 @@ export function initDisplayManager({ mainWindow } = {}) {
   screen.on("display-removed", (event, oldDisplay) => {
     console.log(`[display-manager] Pantalla removida: id=${oldDisplay.id}`);
     // Agrupar paneles abiertos en la pantalla principal activa
-    regroupToPrimary();
     void updateDisplayLayout();
   });
 
@@ -405,7 +415,17 @@ export function initDisplayManager({ mainWindow } = {}) {
   });
 
   // Notificar a la UI principal sobre la disposición inicial
-  void updateDisplayLayout();
+  void loaded.then(() => updateDisplayLayout());
 }
 
 export { getDisplays, computeDefaultRoles };
+
+export function isDisplayPanel(sender) {
+  return [projectWindow, infoWindow].some(win=>win&&!win.isDestroyed()&&win.webContents===sender);
+}
+
+export function notifyProjectPanels() {
+  for(const win of [projectWindow,infoWindow]) {
+    if(win&&!win.isDestroyed()) win.webContents.send('bit:project-activity');
+  }
+}

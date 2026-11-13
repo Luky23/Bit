@@ -457,7 +457,7 @@ const SCHEMAS = Object.freeze({
   "bit:set-display-role": {
     type: "object",
     properties: {
-      displayId: { type: "integer", minimum: 1 },
+      displayId: { type: "integer" },
       role: { type: "string", enum: ["main", "project", "info", "none"] }
     },
     required: ["displayId", "role"],

@@ -12,6 +12,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCapturePolicy, canCapture, resizeDimensions } from "./capture-policy.mjs";
 import { imageDataUrlToBase64 } from "./vision-request.mjs";
+import { resolveInstalledVisionModel } from "./screen-analysis.mjs";
+import { OllamaClient } from "../models/ollama-client.mjs";
 import { analyzeImageWithTesseract, analyzeImageWithTesseractBoxes } from "./tesseract-ocr.mjs";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -106,11 +108,15 @@ export async function callOllamaVision({ visionModel, prompt, imageBase64, keepA
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    const client = new OllamaClient({
+      fetchImpl: (url, options = {}) => fetch(url, { ...options, signal: controller.signal }),
+    });
+    const installedModel = await resolveInstalledVisionModel(visionModel, client);
     const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model: visionModel,
+        model: installedModel,
         stream: false,
         keep_alive: keepAlive,
         messages: [

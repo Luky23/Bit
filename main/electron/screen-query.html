@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none';">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Consulta de pantalla — Bit</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", sans-serif; background: transparent; color: #e8fbff; }
+    * { box-sizing: border-box; }
+    /* Barras discretas que conservan el desplazamiento y el arrastre. */
+    * { scrollbar-width: thin; scrollbar-color: #355761 transparent; }
+    *::-webkit-scrollbar { width: 6px; height: 6px; }
+    *::-webkit-scrollbar-track { background: transparent; }
+    *::-webkit-scrollbar-thumb { background: #355761; border-radius: 8px; }
+    *::-webkit-scrollbar-thumb:hover { background: #67a6b3; }
+    *::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+    *::-webkit-scrollbar-corner { background: transparent; }
+    @supports selector(::-webkit-scrollbar) { * { scrollbar-width: auto; scrollbar-color: auto; } }
+    html, body { height: 100%; overflow: hidden; }
+    body { margin: 0; padding: 10px; }
+    .window { position: relative; display: flex; height: 100%; min-height: 0; flex-direction: column; gap: 12px; padding: 18px; border: 1px solid #55eaff66; border-radius: 22px; background: linear-gradient(145deg, #12313d99, #07151caa 70%); box-shadow: 0 20px 60px #0008, 0 0 0 1px #6eeeff18 inset, 0 0 34px #00d9ff2b; backdrop-filter: blur(12px) saturate(125%); transform-origin: calc(100% + 58px) 38px;  }
+    .window::before { content: ""; position: absolute; right: -9px; top: 48px; width: 17px; height: 17px; background: #12313db8; border-right: 1px solid #55eaff66; border-top: 1px solid #55eaff66; transform: rotate(45deg); box-shadow: 5px -5px 12px #0005; }
+    .window::after { content: none; }
+    header { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; position: relative; z-index: 1; }
+    .identity { display: flex; align-items: center; gap: 10px; }
+    .core-mark { width: 25px; height: 25px; border-radius: 50%; background: radial-gradient(circle at 35% 28%, #f4ffff, #55eaff 25%, #087187 62%, #06151c 76%); box-shadow: 0 0 16px #55eaffaa; animation: core-breathe 1.25s ease-in-out infinite; }
+    h1 { margin: 0; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+    .hint { margin: 3px 0 0; color: #75aeb8; font-size: 11px; }
+    .close { border: 0; border-radius: 8px; padding: 5px 8px; color: #83aeb4; background: transparent; cursor: pointer; }
+    .close:hover { color: #e8fbff; background: #ffffff0d; }
+    form { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; gap: 10px; }
+    #thread { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; gap: 9px; overflow-y: auto; overflow-x: hidden; overscroll-behavior-y: contain; scrollbar-gutter: stable; padding: 4px 8px 10px 2px; }
+    .bubble { flex-shrink: 0; overflow-wrap: anywhere; max-width: 88%; padding: 9px 11px; border-radius: 13px; font-size: 12px; line-height: 1.4; white-space: pre-wrap; animation: bubble-in .12s ease both; }
+    #thread:focus-visible { outline: 1px solid #72d7e5; outline-offset: 2px; border-radius: 6px; }
+    .bubble.bit { align-self: flex-start; border: 1px solid #55eaff55; color: #c9f7fa; background: #0c222b8c; border-bottom-left-radius: 4px; }
+    .bubble.user { align-self: flex-end; color: #d8fbff; background: #146273a8; border-bottom-right-radius: 4px; }
+    .bubble.pending { color: #80aeb6; }
+    .composer { flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px; padding: 5px; border: 1px solid #55eaff55; border-radius: 13px; background: #06131ab8; }
+    textarea { flex: 1; width: 100%; min-height: 38px; max-height: 86px; resize: none; border: 0; padding: 8px 9px; outline: none; color: #effeff; background: transparent; font: inherit; font-size: 12px; }
+    textarea:focus { box-shadow: 0 0 0 1px #55eaff55 inset; border-radius: 8px; }
+    .row { flex-shrink: 0; display: flex; align-items: center; gap: 5px; }
+    #status { min-height: 15px; color: #6f9da5; font-size: 10px; }
+    button[type="submit"] { border: 0; border-radius: 9px; padding: 9px 11px; color: #031016; background: #55eaff; font-size: 11px; font-weight: 700; cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .55; }
+    @keyframes bubble-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes core-breathe { 50% { transform: scale(1.12); filter: brightness(1.25); } }
+    @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; } }
+  </style>
+</head>
+<body>
+  <main class="window">
+    <header>
+      <div class="identity"><span class="core-mark" aria-hidden="true"></span><div><h1>Bit · Pantalla</h1><p class="hint">Pregúntele al núcleo qué está viendo.</p></div></div>
+    </header>
+    <form id="form">
+      <div id="thread" role="log" aria-label="Conversaci?n sobre la pantalla" tabindex="0" aria-live="polite"><div class="bubble bit">Estoy conectado al núcleo. ¿Qué desea saber sobre la pantalla?</div></div>
+      <div class="composer"><textarea id="prompt" maxlength="8000" autofocus rows="1" placeholder="Escriba su pregunta…" aria-label="Pregunta sobre la pantalla"></textarea><button id="submit" type="submit" aria-label="Enviar pregunta">↗</button></div>
+      <div class="row"><div id="status" role="status" aria-live="polite"></div></div>
+    </form>
+  </main>
+  <script>
+    const prompt = document.getElementById('prompt');
+    const form = document.getElementById('form');
+    const submit = document.getElementById('submit');
+    const status = document.getElementById('status');
+    const thread = document.getElementById('thread');
+    let followLatest = true;
+    const nearBottom = () => thread.scrollHeight - thread.clientHeight - thread.scrollTop <= 48;
+    thread.addEventListener('scroll', () => { followLatest = nearBottom(); }, { passive: true });
+    function scrollToLatest() { requestAnimationFrame(() => { if (followLatest) thread.scrollTop = thread.scrollHeight; }); }
+    function addBubble(text, type, extra = '') { const bubble = document.createElement('div'); bubble.className = `bubble ${type} ${extra}`; bubble.textContent = text; thread.appendChild(bubble); scrollToLatest(); return bubble; }
+    let openingAnimation;
+    async function openAnimation() {
+      closing = false;
+      const panel = document.querySelector('.window');
+      if (!panel) return;
+      openingAnimation?.cancel();
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      // Expandir desde el punto del nucleo, a la derecha de la cabecera.
+      panel.style.willChange = 'transform, opacity';
+      const animation = panel.animate(reduced ? [
+        { opacity: 0 }, { opacity: 1 }
+      ] : [
+        { opacity: 0, transform: 'translateX(18px) scale(.88)' },
+        { opacity: 1, transform: 'translateX(0) scale(1)' }
+      ], { duration: reduced ? 100 : 380, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'both' });
+      openingAnimation = animation;
+      animation.pause();
+      // El proceso principal revela la ventana solo despues de preparar el fotograma inicial.
+      await window.bitRuntime.screenQueryPrepared();
+      if (openingAnimation === animation) animation.play();
+      animation.onfinish = () => {
+        if (openingAnimation !== animation) return;
+        panel.style.opacity = '1';
+        panel.style.transform = 'none';
+        panel.style.willChange = 'auto';
+        animation.cancel();
+        openingAnimation = undefined;
+      };
+    }
+    let closing = false;
+    function closeAnimation() {
+      if (closing) return;
+      closing = true;
+      const panel = document.querySelector('.window');
+      const current = getComputedStyle(panel);
+      const first = {opacity: current.opacity, transform: current.transform};
+      openingAnimation?.cancel();
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const animation = panel.animate([first, {opacity: 0, transform: reduced ? 'none' : 'translateX(18px) scale(.88)'}], {duration: reduced ? 80 : 220, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards'});
+      openingAnimation = animation;
+      animation.onfinish = async () => {
+        try { await window.bitRuntime.screenQueryClosed(); } finally {
+          animation.cancel();
+          if (openingAnimation === animation) openingAnimation = undefined;
+          closing = false;
+        }
+      };
+    }
+    window.bitRuntime.onScreenQueryOpen?.(action => action === 'close' ? closeAnimation() : openAnimation());
+    prompt.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.shiftKey) return;
+      event.preventDefault();
+      form.requestSubmit();
+    });
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const question = prompt.value.trim();
+      if (!question || submit.disabled) return;
+      submit.disabled = true;
+      prompt.disabled = true;
+      status.textContent = 'Capturando la pantalla y consultando a Bit…';
+      followLatest = true;
+      addBubble(question, 'user');
+      const pending = addBubble('Estoy observando la pantalla…', 'bit', 'pending');
+      try {
+        const result = await window.bitRuntime.chat({ message: `En la pantalla actual, ${question}`, history: [] });
+        pending.textContent = result?.text || 'No recibí una respuesta.';
+        pending.classList.remove('pending');
+        status.textContent = 'Consulta completada.';
+      } catch (error) {
+        pending.textContent = `No pude analizar la pantalla: ${error?.message || error}`;
+        pending.classList.remove('pending');
+        status.textContent = 'La consulta no se pudo completar.';
+      } finally {
+        submit.disabled = false;
+        prompt.disabled = false;
+        scrollToLatest();
+        prompt.focus({ preventScroll: true });
+      }
+    });
+  </script>
+</body>
+</html>

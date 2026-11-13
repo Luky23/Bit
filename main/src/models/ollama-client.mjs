@@ -9,6 +9,7 @@ export class OllamaClient {
     this.baseUrl = url;
     this.fetch = fetchImpl;
     this.capabilityCache = new Map();
+    this.modelResolutionCache = new Map();
   }
 
   async show(model) {
@@ -39,6 +40,9 @@ export class OllamaClient {
   }
 
   async resolveModel(requested, fallbackCandidates = []) {
+    const cacheKey = JSON.stringify([requested, fallbackCandidates]);
+    const cached = this.modelResolutionCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.model;
     const [loaded, installed] = await Promise.all([
       this.loaded().catch(() => []),
       this.list().catch(() => []),
@@ -49,11 +53,13 @@ export class OllamaClient {
     const preferred = [requested, ...fallbackCandidates]
       .filter((value) => typeof value === "string" && value.trim())
       .map((value) => value.trim());
-    return preferred.find((name) => loadedNames.includes(name))
+    const model = preferred.find((name) => loadedNames.includes(name))
       ?? loadedNames[0]
       ?? preferred.find((name) => available.has(name))
       ?? installedNames[0]
       ?? null;
+    this.modelResolutionCache.set(cacheKey, { model, expiresAt: Date.now() + 15_000 });
+    return model;
   }
 
   async status(model) {
@@ -103,6 +109,7 @@ export class OllamaClient {
 
   async #json(path, init = {}) {
     const response = await this.fetch(new URL(path, this.baseUrl), {
+      signal: AbortSignal.timeout(5000),
       ...init,
       headers: { "content-type": "application/json", ...(init.headers ?? {}) },
     });

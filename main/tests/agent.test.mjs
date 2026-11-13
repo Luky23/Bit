@@ -4,6 +4,11 @@ import { isScreenQuestion, resolveDirectGreeting, resolveDirectOpenRequest, runA
 
 test("agent: reconoce referencias directas al contenido visible", () => {
   assert.equal(isScreenQuestion("¿Qué ves?"), true);
+  assert.equal(isScreenQuestion("¿Qué vez?"), true);
+  assert.equal(isScreenQuestion("¿Qué vez en la pantalla?"), true);
+  assert.equal(isScreenQuestion("Ayudame con lo que tengo abierto"), true);
+  assert.equal(isScreenQuestion("Explicame esta pagina"), true);
+  assert.equal(isScreenQuestion("Compré un monitor nuevo"), false);
   assert.equal(isScreenQuestion("¿Qué dice este documento?"), true);
   assert.equal(isScreenQuestion("¿Qué muestra esta imagen?"), true);
   assert.equal(isScreenQuestion("¿Qué opinás de mi idea?"), false);
@@ -339,7 +344,7 @@ test("agent: las consultas del clima buscan directamente y no exponen otras herr
     url: "https://api.open-meteo.com/v1/forecast",
     snippet: "Ahora: lluvia, 18°C; sensación 17°C; hoy máxima 22°C.",
   }]);
-  assert.equal(result.text, "En Buenos Aires, Argentina: Ahora: lluvia, 18°C; sensación 17°C; hoy máxima 22°C.");
+  assert.equal(result.text, "En Buenos Aires, Argentina, ahora hay lluvia y la temperatura es de 18°C. La sensación térmica es de 17°C.");
   assert.equal(result.toolCalls, 1);
   assert.equal(result.rounds, 0);
 });
@@ -369,7 +374,7 @@ test("agent: una ubicación de seguimiento conserva la intención meteorológica
     name: "web.search",
     args: { query: "clima actual en Brasília, Brasil" },
   }]);
-  assert.equal(result.text, "En Brasília, Distrito Federal, Brasil: Ahora: parcialmente nublado, 27°C.");
+  assert.equal(result.text, "En Brasília, Distrito Federal, Brasil, ahora está parcialmente nublado y la temperatura es de 27°C.");
 });
 
 test("agent: no inventa una respuesta meteorológica cuando no hay datos", async () => {

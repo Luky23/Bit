@@ -8,12 +8,20 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   getRuntime: () => ipcRenderer.invoke("bit:runtime"),
   listOllamaModels: () => ipcRenderer.invoke("bit:ollama-models"),
   chat: (request) => ipcRenderer.invoke("bit:chat", request),
+  stopChat: () => ipcRenderer.invoke("bit:stop-chat"),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   processDroppedFile: (request) => ipcRenderer.invoke("bit:process-dropped-file", request),
+  forwardDroppedFile: filePath => ipcRenderer.invoke('bit:forward-dropped-file',filePath),
+  onFileDropRequested: listener => {
+    const handler=(_event,data)=>listener(data);
+    ipcRenderer.on('bit:file-drop-requested',handler);
+    return ()=>ipcRenderer.removeListener('bit:file-drop-requested',handler);
+  },
   getConfig: (key) => ipcRenderer.invoke("config:get", key),
   setConfig: (key, value) => ipcRenderer.invoke("config:set", key, value),
   setOverlayExpanded: (expanded) => ipcRenderer.invoke("bit:overlay-set-expanded", expanded === true),
   openMain: () => ipcRenderer.invoke("bit:open-main"),
+  openScreenQuery: () => ipcRenderer.invoke("bit:open-screen-query"),
   toggleMain: () => ipcRenderer.invoke("bit:toggle-main"),
   quitApp: () => ipcRenderer.invoke("bit:quit-app"),
   isMainVisible: () => ipcRenderer.invoke("bit:is-main-visible"),
@@ -76,6 +84,11 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     const handler = () => listener();
     ipcRenderer.on("bit:voice-clear", handler);
     return () => ipcRenderer.removeListener("bit:voice-clear", handler);
+  },
+  onDisplayCard: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on("bit:display-card", handler);
+    return () => ipcRenderer.removeListener("bit:display-card", handler);
   },
   onChatChunk: (listener) => {
     const handler = (_event, data) => listener(data);

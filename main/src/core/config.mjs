@@ -13,6 +13,8 @@ import { validateProjectsRoot } from "../projects/workspace.mjs";
 import { quantizationFromName, readGgufMetadata } from "../models/gguf-metadata.mjs";
 import { automaticModelDirectories, discoverGgufFiles } from "../models/model-discovery.mjs";
 import { isWithin } from "./sandbox.mjs";
+import { OllamaClient } from "../models/ollama-client.mjs";
+import { ModelService } from "../models/model-service.mjs";
 
 const MUSIC_DIR_NAME = "music";
 const MAX_SONG_MB = 30;
@@ -20,6 +22,7 @@ const MAX_SONG_BYTES = MAX_SONG_MB * 1024 * 1024;
 const WINDOWS_RESERVED_NAME_RE = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/iu;
 const DEFAULT_TEXT_MODEL = "qwen2.5-3b-q4_k_m.gguf";
 const MAX_PERSONALITY_PROMPT_LENGTH = 4000;
+const MAX_LAST_SESSION_TEXT = 4000;
 const LOCAL_MODEL_ID = /^[a-z0-9][a-z0-9._:-]{0,127}$/iu;
 
 export function isSafeLocalModelId(value) {
@@ -80,8 +83,13 @@ const STARTUP_DEFAULTS = {
   whisperModelPath: "",
   projectsRoot: "",
   vaultPath: "",
+  continuityEnabled: true,
+  lastSession: null,
+  googleCalendarConnection: { status: "not-configured", readOnly: true },
+  notionConnection: { status: "not-configured", readOnly: true },
 };
 const CONFIG_KEYS = new Set(Object.keys(STARTUP_DEFAULTS));
+CONFIG_KEYS.add('displayLayout');
 
 /**
  * Directorio de configuración: userData/Bit Preview/
@@ -206,6 +214,31 @@ function normalizePersonalityPrompt(value) {
   return { ok: true, value: normalized };
 }
 
+function normalizeLastSession(value) {
+  if (value === null) return { ok: true, value: null };
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "lastSession debe ser un objeto o null" };
+  }
+  const fields = ["project", "goal", "nextStep", "lastUserMessage", "lastAssistantMessage"];
+  const normalized = { savedAt: new Date().toISOString() };
+  for (const field of fields) {
+    if (value[field] === undefined) continue;
+    if (typeof value[field] !== "string" || value[field].length > MAX_LAST_SESSION_TEXT) {
+      return { ok: false, error: `${field} debe ser texto de hasta ${MAX_LAST_SESSION_TEXT} caracteres` };
+    }
+    normalized[field] = value[field].normalize("NFC").trim();
+  }
+  return { ok: true, value: normalized };
+}
+
+function normalizeReadOnlyConnection(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "La conexión debe ser un objeto" };
+  }
+  const status = value.status === "connected" ? "connected" : "not-configured";
+  return { ok: true, value: { status, readOnly: true } };
+}
+
 /**
  * Resuelve un modelo exclusivamente dentro de las carpetas locales de Bit.
  * Nunca acepta una ruta arbitraria enviada por el renderer o por el modelo.
@@ -213,9 +246,21 @@ function normalizePersonalityPrompt(value) {
 export async function resolveLocalModel(requested = "", { projection = false } = {}) {
   const models = await listLocalModels();
   const candidates = models.filter((model) => projection ? model.kind === "projection" : model.kind === "model");
+  if (!candidates.length) {
+    throw new Error(projection
+      ? "No hay una proyección visual .gguf local (mmproj) disponible"
+      : "No hay un modelo GGUF local disponible. Configure un modelo local en Ajustes para conversar.");
+  }
   const wanted = typeof requested === "string" ? requested.trim() : "";
   const match = wanted && candidates.find((model) => model.name === wanted || model.path === wanted);
   if (match) return match;
+  // Las configuraciones antiguas guardaban tags de Ollama (por ejemplo,
+  // qwen2.5:3b). Si existe un GGUF local, ese tag no debe bloquear la migraciÃ³n.
+  if (wanted && !/\.gguf$/iu.test(wanted)) {
+    const defaultModel = candidates.find((model) => model.name.toLowerCase() === DEFAULT_TEXT_MODEL);
+    if (defaultModel) return defaultModel;
+    if (candidates[0]) return candidates[0];
+  }
   if (wanted) throw new Error(`El modelo local seleccionado no está disponible: ${wanted}`);
   if (!projection) {
     const defaultModel = candidates.find((model) => model.name.toLowerCase() === DEFAULT_TEXT_MODEL);
@@ -261,7 +306,7 @@ async function writeConfig(config) {
  * @returns {Promise<{ok: boolean, value?: any, error?: string}>}
  */
 export async function configGet(key) {
-  if (key === "availableModels") return { ok: true, value: await listLocalModels() };
+  if (key === "availableModels") return { ok: true, value: await new ModelService({ ollama: new OllamaClient(), listGguf: listLocalModels }).list() };
   if (key === "availableVoices") return { ok: true, value: await listLocalVoices() };
   if (key === "modelPath") {
     const config = await readConfig();
@@ -287,6 +332,7 @@ export async function configGet(key) {
  */
 export async function configSet(key, value) {
   if (typeof key !== "string" || !CONFIG_KEYS.has(key)) return { ok: false, error: "Clave de configuración no permitida" };
+  if (key === 'displayLayout' && (!value || Array.isArray(value) || typeof value !== 'object' || Object.entries(value).some(([id,role]) => !/^-?\d+$/.test(id) || !['main','project','info','none'].includes(role)))) return { ok: false, error: 'Distribución de pantallas no válida' };
   const config = await readConfig();
 
   // Validaciones específicas
@@ -393,6 +439,17 @@ export async function configSet(key, value) {
       return { ok: false, error: "projectsRoot debe ser una carpeta local absoluta, no una ruta de red" };
     }
     config[key] = value ? resolve(value) : "";
+  } else if (key === "continuityEnabled") {
+    if (typeof value !== "boolean") return { ok: false, error: "continuityEnabled debe ser boolean" };
+    config[key] = value;
+  } else if (key === "lastSession") {
+    const session = normalizeLastSession(value);
+    if (!session.ok) return session;
+    config[key] = session.value;
+  } else if (key === "googleCalendarConnection" || key === "notionConnection") {
+    const connection = normalizeReadOnlyConnection(value);
+    if (!connection.ok) return connection;
+    config[key] = connection.value;
   } else {
     config[key] = value;
   }

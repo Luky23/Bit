@@ -17,14 +17,25 @@ test("overlay: comparte el nÃºcleo hologrÃ¡fico y reacciona al RMS", async (
   assert.doesNotThrow(() => new Function(script));
 });
 
-test("overlay: el clic abre la ventana principal transparente y enfoca el chat", async () => {
+test("overlay: el clic abre la consulta de pantalla por teclado", async () => {
   const [main, overlay] = await Promise.all([
     readFile(new URL("../electron/main.mjs", import.meta.url), "utf8"),
     readFile(new URL("../electron/overlay.html", import.meta.url), "utf8"),
   ]);
-  assert.match(overlay, /function onHudClick\(\) \{\s+void window\.bitRuntime\.openMain\(\)/u);
+  assert.match(overlay, /function onHudClick\(\) \{\s+void window\.bitRuntime\.openScreenQuery\(\)/u);
   assert.match(main, /frame: false/u);
   assert.match(main, /transparent: true/u);
   assert.match(main, /backgroundColor: "#00000000"/u);
   assert.match(main, /bit:focus-chat-input/u);
+});
+
+test("consulta de pantalla: existe una ventana independiente y usa el preload seguro", async () => {
+  const [main, preload] = await Promise.all([
+    readFile(new URL("../electron/main.mjs", import.meta.url), "utf8"),
+    readFile(new URL("../electron/preload.cjs", import.meta.url), "utf8"),
+  ]);
+  assert.match(main, /function openScreenQueryWindow\(\)/u);
+  assert.match(main, /loadFile\(join\(here, "screen-query\.html"\)\)/u);
+  assert.match(main, /ipcMain\.handle\("bit:open-screen-query"/u);
+  assert.match(preload, /openScreenQuery: \(\) => ipcRenderer\.invoke\("bit:open-screen-query"\)/u);
 });
