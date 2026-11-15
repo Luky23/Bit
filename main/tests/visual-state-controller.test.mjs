@@ -26,3 +26,27 @@ test("el controlador mantiene estados internos sin desmontar la interfaz", () =>
   assert.equal(fixture.classes.has("project-active"), false);
   assert.equal(fixture.classes.has("model-active"), false);
 });
+
+test("el orquestador expone estados adaptativos y valida sus transiciones", () => {
+  const fixture = harness();
+  const controller = createVisualStateController({ ...fixture });
+  const context = {
+    project: "FlipDock v3",
+    files: ["models/base.stl"],
+    selectedPath: "models/base.stl",
+    results: { source: "local" },
+  };
+
+  assert.equal(controller.canTransition("file-intake"), true);
+  assert.equal(controller.set("file-intake", { context }).accepted, true);
+  assert.equal(controller.set("file-analysis").accepted, true);
+  assert.equal(controller.set("file-results", { context: { results: { source: "local", count: 1 } } }).accepted, true);
+  assert.deepEqual(controller.getSnapshot().context, {
+    ...context,
+    results: { source: "local", count: 1 },
+  });
+  assert.equal(controller.set("project").accepted, true);
+  assert.equal(controller.set("file-analysis").accepted, false);
+  assert.equal(controller.get(), "project");
+  assert.equal(controller.canTransition("project-3d"), true);
+});

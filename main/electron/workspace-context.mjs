@@ -55,7 +55,9 @@ export function initWorkspaceContext({
     const modelButton = $("file-context-actions")?.querySelector?.('[data-file-action="model3d"]');
     if (modelButton) modelButton.hidden = !MODEL_EXTENSIONS.has(extension(name));
     setHidden(fileContext, false);
-    visualState.set(detailed ? "file_context" : "file_loaded");
+    visualState.set("file-intake", {
+      context: { file: { name, extension: extensionName.toLowerCase(), size: file.size ?? null } },
+    });
     if (autoOpenModel && !detailed && MODEL_EXTENSIONS.has(extension(name))) void openDroppedModel(file);
   }
 
@@ -105,6 +107,7 @@ export function initWorkspaceContext({
     documentRef.body.classList.remove("model-active", "file-model-active");
     standaloneModelActive = false;
     if (documentRef.body.classList.contains("project-active")) visualState.set("project", { project: true, displayMode });
+    else if (visualState.get() === "standalone-3d") visualState.set("idle");
     $("model-status").textContent = "Seleccione un modelo 3D compatible.";
     showModelProperties(null);
   }
@@ -265,7 +268,12 @@ export function initWorkspaceContext({
       setHidden(modelView, false);
       documentRef.body.classList.add("model-active");
       documentRef.body.classList.toggle("file-model-active", standalone);
-      visualState.set(standalone ? "file_context" : "project_3d", { project: !standalone, model: true, displayMode });
+      visualState.set(standalone ? "standalone-3d" : "project-3d", {
+        project: !standalone,
+        model: true,
+        displayMode,
+        context: { selectedPath: path, viewer: { active: true } },
+      });
       const source = sourceOverride || await runtime.loadProjectModel({ project: selectedProject, path });
       if (generation !== modelGeneration) return false;
       if (!modelViewer) {
@@ -320,7 +328,7 @@ export function initWorkspaceContext({
         $("document-content").textContent = textFile.content;
         setHidden(documentView, false);
         documentRef.body.classList.add("document-active");
-        visualState.set(["js", "ts", "tsx", "jsx", "css", "html", "py", "mjs", "cjs", "java", "c", "cpp", "h", "cs", "go", "rs", "sql", "toml", "ini", "sh", "bat", "ps1"].includes(extension(path)) ? "code" : "document", { project: true, document: true, displayMode });
+        visualState.set(["js", "ts", "tsx", "jsx", "css", "html", "py", "mjs", "cjs", "java", "c", "cpp", "h", "cs", "go", "rs", "sql", "toml", "ini", "sh", "bat", "ps1"].includes(extension(path)) ? "code" : "document", { project: true, document: true, displayMode, context: { selectedPath: path } });
         setProjectStatus("DOCUMENTO ABIERTO");
       } catch (error) {
         setProjectStatus("ERROR DE LECTURA");
