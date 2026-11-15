@@ -30,3 +30,35 @@ test("conserva GGUF si Ollama está apagado y explica cuando no hay modelos", as
   service.listGguf = async () => [];
   await assert.rejects(service.resolveModel("qwen2.5:3b"), /Ollama.*iniciado/u);
 });
+
+test("ModelService ejecuta las generaciones bajo el planificador y registra señales de streaming", async () => {
+  const calls = [];
+  const service = new ModelService({
+    ollama: {
+      list: async () => [{ name: "qwen2.5:3b" }],
+      generate: async (_model, _request, options) => {
+        assert.equal(options.managed, true);
+        options.onChunk("token");
+        calls.push(options.signal);
+        return { message: { content: "token" } };
+      },
+    },
+    listGguf: async () => [],
+    performanceManager: {
+      async run(taskType, operation, options) {
+        calls.push({ taskType, priority: options.priority, streaming: typeof options.onProgress === "function" });
+        const controller = new AbortController();
+        return operation({ signal: controller.signal, reportProgress() {} });
+      },
+    },
+  });
+  await service.generate("qwen2.5:3b", {
+    stream: true,
+    messages: [{ role: "user", content: "hola" }],
+    options: { num_predict: 64 },
+  }, { priority: "interactive", onChunk() {} });
+  assert.equal(calls[0].taskType, "model.generate");
+  assert.equal(calls[0].priority, "interactive");
+  assert.equal(calls[0].streaming, true);
+  assert.ok(calls[1] instanceof AbortSignal);
+});

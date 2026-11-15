@@ -20,4 +20,5 @@ logs/
 coverage/
 *.local.json
 _referencia/
+.bit-ui-preview-snapshot/
 .venv/

@@ -45,12 +45,68 @@ test("la llamada visual envía la imagen al modelo instalado y nunca intenta des
   assert.equal(calls[2].body.options.num_predict, 160, 'limita la generación visual en CPU');
 });
 
+test("la inferencia visual tolera latencias de CPU superiores a 30 segundos", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let chatStarted;
+  let bodyStarted;
+  const started = new Promise((resolve) => { chatStarted = resolve; });
+  const bodyReady = new Promise((resolve) => { bodyStarted = resolve; });
+  t.mock.method(globalThis, "fetch", async (url, options = {}) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/tags") return Response.json({ models: [{ name: "visual:3b" }] });
+    if (path === "/api/show") return Response.json({ capabilities: ["vision"] });
+    if (path === "/api/chat") {
+      chatStarted();
+      return Promise.resolve({
+        ok: true,
+        json: () => new Promise(resolve => {
+          bodyStarted();
+          setTimeout(() => resolve({ message: { content: "Veo una imagen." } }), 120_000);
+        }),
+      });
+    }
+    throw new Error(`Ruta inesperada: ${path}`);
+  });
+
+  const pending = callOllamaVision({ visionModel: "visual:3b", prompt: "Describe la imagen", imageBase64: "aGVsbG8=" });
+  await started;
+  await bodyReady;
+  t.mock.timers.tick(120_000);
+  assert.equal(await pending, "Veo una imagen.");
+});
+
 test("sin modelos visuales no envía imágenes a Ollama", async (t) => {
   t.mock.method(globalThis, "fetch", async (url) => {
     assert.equal(new URL(url).pathname, "/api/tags");
     return Response.json({ models: [] });
   });
   await assert.rejects(callOllamaVision({ visionModel: "llava", prompt: "¿Qué ves?", imageBase64: "aGVsbG8=" }), /No hay un modelo visual instalado/u);
+});
+
+test("la inferencia visual se ejecuta en el gestor adaptativo como tarea interactiva", async (t) => {
+  const taskCalls = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    const path = new URL(url).pathname;
+    if (path === "/api/tags") return Response.json({ models: [{ name: "visual:3b" }] });
+    if (path === "/api/show") return Response.json({ capabilities: ["vision"] });
+    if (path === "/api/chat") return Response.json({ message: { content: "Imagen analizada." } });
+    throw new Error(`Ruta inesperada: ${path}`);
+  });
+  const performanceManager = {
+    async run(taskType, operation, options) {
+      taskCalls.push({ taskType, priority: options.priority, complexity: options.complexity });
+      const controller = new AbortController();
+      return operation({ signal: controller.signal, budgets: { connectionMs: 100 } });
+    },
+  };
+  assert.equal(await callOllamaVision({
+    visionModel: "visual:3b",
+    prompt: "Describe la imagen",
+    imageBase64: "aGVsbG8=",
+    performanceManager,
+  }), "Imagen analizada.");
+  assert.equal(taskCalls[0].taskType, "image.process");
+  assert.equal(taskCalls[0].priority, "interactive");
 });
 
 test('detener cancela la petición visual en curso sin esperar al timeout',async t=>{

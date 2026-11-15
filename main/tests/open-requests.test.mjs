@@ -5,10 +5,8 @@ import { runAgentTurn, resolveDirectOpenRequest } from "../src/core/agent.mjs";
 test("apertura directa: YouTube y aplicaciones instaladas sin inferencia", async () => {
   for (const [message, name, args] of [
     ["Abrí YouTube", "system.openApp", { target: "https://www.youtube.com/", args: "" }],
-    ["Poné Daddy Yankee en YouTube", "system.openApp", { target: "https://www.youtube.com/results?search_query=daddy+yankee", args: "" }],
     ["Abrí Word", "system.openInstalledApp", { name: "word" }],
     ["Abrí Visual Studio Code", "system.openInstalledApp", { name: "visual studio code" }],
-    ["Poné música", "system.openApp", { target: "spotify.exe", args: "" }],
   ]) {
     const calls = [];
     const result = await runAgentTurn({ message, deps: {

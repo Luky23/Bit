@@ -15,6 +15,12 @@ import { automaticModelDirectories, discoverGgufFiles } from "../models/model-di
 import { isWithin } from "./sandbox.mjs";
 import { OllamaClient } from "../models/ollama-client.mjs";
 import { ModelService } from "../models/model-service.mjs";
+import {
+  AUTONOMY_LEVELS,
+  DEFAULT_AUTONOMOUS_CATEGORIES,
+  PERMISSION_CATEGORIES,
+  normalizePermissionGrants,
+} from "./permission-policy.mjs";
 
 const MUSIC_DIR_NAME = "music";
 const MAX_SONG_MB = 30;
@@ -85,12 +91,50 @@ const STARTUP_DEFAULTS = {
   projectsRoot: "",
   vaultPath: "",
   continuityEnabled: true,
+  performanceMode: "automatic",
+  maxConcurrentTasks: 0,
+  hologramQuality: "automatic",
+  appearanceMode: "classic",
+  musicPlatform: "youtube",
+  musicSelectionMode: "popular",
+  browserPreference: "chrome.exe",
+  frequentArtists: "",
+  preferredGenres: "",
+  autonomyLevel: "balanced",
+  permissionAutoCategories: [...DEFAULT_AUTONOMOUS_CATEGORIES],
+  rememberDecisions: false,
+  permissionGrants: [],
   lastSession: null,
   googleCalendarConnection: { status: "not-configured", readOnly: true },
   notionConnection: { status: "not-configured", readOnly: true },
 };
 const CONFIG_KEYS = new Set(Object.keys(STARTUP_DEFAULTS));
 CONFIG_KEYS.add('displayLayout');
+
+export function normalizePerformanceSetting(key, value) {
+  if (key === "performanceMode") {
+    return ["automatic", "economy", "balanced", "performance"].includes(value)
+      ? { ok: true, value }
+      : { ok: false, error: "performanceMode debe ser automatic, economy, balanced o performance" };
+  }
+  if (key === "maxConcurrentTasks") {
+    return Number.isInteger(value) && value >= 0 && value <= 8
+      ? { ok: true, value }
+      : { ok: false, error: "maxConcurrentTasks debe ser un entero entre 0 (automático) y 8" };
+  }
+  if (key === "hologramQuality") {
+    return ["automatic", "low", "medium", "high"].includes(value)
+      ? { ok: true, value }
+      : { ok: false, error: "hologramQuality debe ser automatic, low, medium o high" };
+  }
+  return { ok: false, error: "Ajuste de rendimiento desconocido" };
+}
+
+export function normalizeAppearanceMode(value) {
+  return ["classic", "holographic"].includes(value)
+    ? { ok: true, value }
+    : { ok: false, error: "appearanceMode debe ser classic o holographic" };
+}
 
 /**
  * Directorio de configuración: userData/Bit Preview/
@@ -255,7 +299,7 @@ function normalizeLastSession(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { ok: false, error: "lastSession debe ser un objeto o null" };
   }
-  const fields = ["project", "goal", "nextStep", "lastUserMessage", "lastAssistantMessage"];
+  const fields = ["project", "file", "goal", "nextStep", "lastTask", "lastUserMessage", "lastAssistantMessage"];
   const normalized = { savedAt: new Date().toISOString() };
   for (const field of fields) {
     if (value[field] === undefined) continue;
@@ -371,7 +415,7 @@ export async function configGet(key) {
  */
 export async function configSet(key, value) {
   if (typeof key !== "string" || !CONFIG_KEYS.has(key)) return { ok: false, error: "Clave de configuración no permitida" };
-  if (key === 'displayLayout' && (!value || Array.isArray(value) || typeof value !== 'object' || Object.entries(value).some(([id,role]) => !/^-?\d+$/.test(id) || !['main','project','info','none'].includes(role)))) return { ok: false, error: 'Distribución de pantallas no válida' };
+  if (key === 'displayLayout' && (!value || Array.isArray(value) || typeof value !== 'object' || Object.entries(value).some(([id,role]) => !/^-?\d+$/.test(id) || !['main','project','info','hologram','none'].includes(role)))) return { ok: false, error: 'Distribución de pantallas no válida' };
   const config = await readConfig();
 
   // Validaciones específicas
@@ -486,6 +530,49 @@ export async function configSet(key, value) {
   } else if (key === "continuityEnabled") {
     if (typeof value !== "boolean") return { ok: false, error: "continuityEnabled debe ser boolean" };
     config[key] = value;
+  } else if (key === "performanceMode" || key === "maxConcurrentTasks" || key === "hologramQuality") {
+    const setting = normalizePerformanceSetting(key, value);
+    if (!setting.ok) return setting;
+    config[key] = setting.value;
+  } else if (key === "appearanceMode") {
+    const appearance = normalizeAppearanceMode(value);
+    if (!appearance.ok) return appearance;
+    config[key] = appearance.value;
+  } else if (key === "musicPlatform") {
+    if (!["youtube", "spotify"].includes(value)) return { ok: false, error: "musicPlatform debe ser youtube o spotify" };
+    config[key] = value;
+  } else if (key === "musicSelectionMode") {
+    if (!["popular", "recent", "random"].includes(value)) return { ok: false, error: "musicSelectionMode debe ser popular, recent o random" };
+    config[key] = value;
+  } else if (key === "browserPreference") {
+    if (!["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "default-browser"].includes(value)) {
+      return { ok: false, error: "browserPreference debe identificar un navegador compatible" };
+    }
+    config[key] = value;
+  } else if (key === "frequentArtists" || key === "preferredGenres") {
+    if (typeof value !== "string" || value.length > 300 || /[\u0000-\u001f\u007f]/u.test(value)) {
+      return { ok: false, error: `${key} debe ser texto de hasta 300 caracteres` };
+    }
+    config[key] = value.trim();
+  } else if (key === "autonomyLevel") {
+    if (!AUTONOMY_LEVELS.includes(value)) return { ok: false, error: "autonomyLevel no es válido" };
+    config[key] = value;
+  } else if (key === "permissionAutoCategories") {
+    const allowed = Object.entries(PERMISSION_CATEGORIES)
+      .filter(([, definition]) => definition.risk !== "high")
+      .map(([category]) => category);
+    if (!Array.isArray(value) || value.length > allowed.length
+      || value.some((category) => typeof category !== "string" || !allowed.includes(category))) {
+      return { ok: false, error: "permissionAutoCategories solo admite categorías seguras conocidas" };
+    }
+    config[key] = [...new Set(value)];
+  } else if (key === "rememberDecisions") {
+    if (typeof value !== "boolean") return { ok: false, error: "rememberDecisions debe ser boolean" };
+    config[key] = value;
+  } else if (key === "permissionGrants") {
+    const grants = normalizePermissionGrants(value);
+    if (!grants.ok) return grants;
+    config[key] = grants.value;
   } else if (key === "lastSession") {
     const session = normalizeLastSession(value);
     if (!session.ok) return session;

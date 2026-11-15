@@ -59,6 +59,12 @@ test("el preload CommonJS expone el puente de chat por IPC", async () => {
   await exposedBridge.getStartupSong();
   await exposedBridge.getDailySummary("qwen2.5-coder:7b");
   await exposedBridge.speakAndWait("Buen día.");
+  await exposedBridge.openWorkspace();
+  await exposedBridge.closeWorkspace();
+  await exposedBridge.showHome();
+  await exposedBridge.projectSnapshot({ project: "Mark II" });
+  await exposedBridge.setActiveProject("Mark II");
+  await exposedBridge.readProjectFile({ project: "Mark II", path: "readme.md" });
   assert.deepEqual(invocations.slice(2), [
     ["bit:voice-capture-start"],
     ["bit:voice-capture-stop"],
@@ -68,6 +74,12 @@ test("el preload CommonJS expone el puente de chat por IPC", async () => {
     ["boot:getSong"],
     ["boot:getDailySummary", "qwen2.5-coder:7b"],
     ["bit:speak-and-wait", "Buen día."],
+    ["bit:open-workspace"],
+    ["bit:close-workspace"],
+    ["bit:show-home"],
+    ["bit:project-panel", { project: "Mark II" }],
+    ["bit:project-panel-select-project", "Mark II"],
+    ["bit:project-panel-read-file", { project: "Mark II", path: "readme.md" }],
   ]);
   let transcript = "";
   const unsubscribeTranscript = exposedBridge.onVoiceTranscript((text) => { transcript = text; });
@@ -81,6 +93,20 @@ test("el preload CommonJS expone el puente de chat por IPC", async () => {
   assert.equal(cleared, true);
   unsubscribe();
   assert.equal(listeners.has("bit:voice-clear"), false);
+
+  let projectSelection = "";
+  const unsubscribeProject = exposedBridge.onProjectSelection(project => { projectSelection = project; });
+  listeners.get("bit:project-selection")({}, "Mark II");
+  assert.equal(projectSelection, "Mark II");
+  unsubscribeProject();
+  assert.equal(listeners.has("bit:project-selection"), false);
+
+  let projectFile = null;
+  const unsubscribeProjectFile = exposedBridge.onProjectFileOpen(request => { projectFile = request; });
+  listeners.get("bit:project-file-open")({}, { project: "Mark II", path: "docs/readme.md" });
+  assert.deepEqual(projectFile, { project: "Mark II", path: "docs/readme.md" });
+  unsubscribeProjectFile();
+  assert.equal(listeners.has("bit:project-file-open"), false);
 });
 
 test("las ventanas de Bit cargan puentes CommonJS con privilegio mínimo", async () => {
@@ -207,7 +233,7 @@ test("todo canal invocado desde el preload tiene su handler en main", async () =
   const mainSource = await readFile(mainUrl, "utf8");
   const preloadSource = await readFile(preloadUrl, "utf8");
 
-  const handled = new Set([...mainSource.matchAll(/ipcMain\.handle\("([^"]+)"/gu)].map((match) => match[1]));
+  const handled = new Set([...mainSource.matchAll(/ipcMain\.handle\((["'])([^"']+)\1/gu)].map((match) => match[2]));
   const invoked = [...new Set([...preloadSource.matchAll(/ipcRenderer\.invoke\("([^"]+)"/gu)].map((match) => match[1]))];
 
   const missing = invoked.filter((channel) => !handled.has(channel));
@@ -217,10 +243,13 @@ test("todo canal invocado desde el preload tiene su handler en main", async () =
 });
 
 test("todo evento bit:* suscrito en el preload tiene emisor en main", async () => {
-  const mainSource = await readFile(mainUrl, "utf8");
+  const [mainSource, displayManagerSource] = await Promise.all([
+    readFile(mainUrl, "utf8"),
+    readFile(new URL("../electron/display-manager.mjs", import.meta.url), "utf8"),
+  ]);
   const preloadSource = await readFile(preloadUrl, "utf8");
 
-  const sent = new Set([...mainSource.matchAll(/\.send\("([^"]+)"/gu)].map((match) => match[1]));
+  const sent = new Set([...`${mainSource}\n${displayManagerSource}`.matchAll(/\.send\((["'])([^"']+)\1/gu)].map((match) => match[2]));
   const subscribed = [...new Set([...preloadSource.matchAll(/ipcRenderer\.on\("([^"]+)"/gu)].map((match) => match[1]))]
     .filter((channel) => channel.startsWith("bit:"));
 

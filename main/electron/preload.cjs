@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   privacy: "local-only",
   voice: "Piper local",
   getRuntime: () => ipcRenderer.invoke("bit:runtime"),
+  getPerformanceStatus: () => ipcRenderer.invoke("bit:performance-status"),
   listOllamaModels: () => ipcRenderer.invoke("bit:ollama-models"),
   chat: (request) => ipcRenderer.invoke("bit:chat", request),
   stopChat: () => ipcRenderer.invoke("bit:stop-chat"),
@@ -28,6 +29,7 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   },
   getConfig: (key) => ipcRenderer.invoke("config:get", key),
   setConfig: (key, value) => ipcRenderer.invoke("config:set", key, value),
+  getActionHistory: () => ipcRenderer.invoke("permissions:get-history"),
   pickStartupSong: () => ipcRenderer.invoke("config:pickSong"),
   removeStartupSong: () => ipcRenderer.invoke("config:removeSong"),
   getStartupSong: () => ipcRenderer.invoke("boot:getSong"),
@@ -115,6 +117,35 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   hudClicked: () => ipcRenderer.send("hud-clicked"),
   getConnectedDisplays: () => ipcRenderer.invoke("bit:get-connected-displays"),
   setDisplayRole: (displayId, role) => ipcRenderer.invoke("bit:set-display-role", displayId, role),
+  openWorkspace: () => ipcRenderer.invoke("bit:open-workspace"),
+  closeWorkspace: () => ipcRenderer.invoke("bit:close-workspace"),
+  showHome: () => ipcRenderer.invoke("bit:show-home"),
+  projectSnapshot: (request = {}) => ipcRenderer.invoke("bit:project-panel", request),
+  setActiveProject: (project) => ipcRenderer.invoke("bit:project-panel-select-project", project),
+  readProjectFile: (request) => ipcRenderer.invoke("bit:project-panel-read-file", request),
+  loadProjectModel: (request) => ipcRenderer.invoke("bit:project-panel-load-model", request),
+  loadDroppedModel: (request) => ipcRenderer.invoke("bit:load-dropped-model", request),
+  onProjectActivity: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on("bit:project-activity", handler);
+    return () => ipcRenderer.removeListener("bit:project-activity", handler);
+  },
+  onProjectSelection: (listener) => {
+    const handler = (_event, project) => listener(project);
+    ipcRenderer.on("bit:project-selection", handler);
+    return () => ipcRenderer.removeListener("bit:project-selection", handler);
+  },
+  onProjectFileOpen: (listener) => {
+    const handler = (_event, request) => listener(request);
+    ipcRenderer.on("bit:project-file-open", handler);
+    return () => ipcRenderer.removeListener("bit:project-file-open", handler);
+  },
+  onViewerCommand: (listener) => {
+    const handler = (_event, request) => listener(request);
+    ipcRenderer.on("bit:workspace-viewer-command", handler);
+    return () => ipcRenderer.removeListener("bit:workspace-viewer-command", handler);
+  },
+  sendViewerCommandResult: (result) => ipcRenderer.send("bit:workspace-viewer-result", result),
   updateDisplayLayout: () => ipcRenderer.invoke("bit:update-display-layout"),
   onDisplayChange: (listener) => {
     const handler = (_event, displays) => listener(displays);
@@ -125,6 +156,11 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     const handler = (_event, role) => listener(role);
     ipcRenderer.on("bit:display-role-assigned", handler);
     return () => ipcRenderer.removeListener("bit:display-role-assigned", handler);
+  },
+  onWorkspaceTransition: (listener) => {
+    const handler = (_event, transition) => listener(transition);
+    ipcRenderer.on("bit:workspace-transition", handler);
+    return () => ipcRenderer.removeListener("bit:workspace-transition", handler);
   },
   onWebcamCaptureRequest: (listener) => {
     const handler = (_event, data) => listener(data);

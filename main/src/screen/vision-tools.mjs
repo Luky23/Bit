@@ -18,7 +18,7 @@ import { analyzeImageWithTesseract, analyzeImageWithTesseractBoxes } from "./tes
 import { FIRST_PERSON_VOICE } from "../models/prompt.mjs";
 
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
-const VISION_TIMEOUT_MS = 30_000;
+const VISION_TIMEOUT_MS = 180_000;
 const DEFAULT_MAX_SIDE = 1024; // Lado máximo reducido para mínimo consumo de RAM/VRAM
 const JPEG_QUALITY = 75;
 const OLLAMA_BASE_URL = "http://127.0.0.1:11434";
@@ -100,66 +100,97 @@ function extractBase64(dataUrl) {
  * @param {number} options.timeoutMs - Tiempo de espera en ms
  * @returns {Promise<string>} Texto de respuesta del modelo visual
  */
-export async function callOllamaVision({ visionModel, prompt, imageBase64, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS, signal }) {
+export async function callOllamaVision({
+  visionModel,
+  prompt,
+  imageBase64,
+  keepAlive = 0,
+  timeoutMs = VISION_TIMEOUT_MS,
+  signal,
+  performanceManager,
+}) {
   signal?.throwIfAborted();
+  if (/\.gguf$/iu.test(String(visionModel ?? ""))) {
+    throw new Error(`El modelo mmproj/GGUF "${visionModel}" requiere una API multimodal compatible; Ollama debe tener instalado un modelo visual.`);
+  }
   const captureStart = Date.now();
   const imageB64 = extractBase64(imageBase64);
   if (!imageB64) throw new Error("La imagen de visión no es válida");
 
-  const controller = new AbortController();
-  const cancel = () => controller.abort(signal.reason);
-  signal?.addEventListener('abort', cancel, { once: true });
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const operation = async ({ signal: operationSignal, budgets }) => {
+    const controller = new AbortController();
+    const cancel = () => controller.abort(operationSignal.reason);
+    if (operationSignal?.aborted) cancel();
+    else operationSignal?.addEventListener("abort", cancel, { once: true });
+    const totalTimer = performanceManager
+      ? null
+      : setTimeout(() => controller.abort(Object.assign(new Error(`El modelo visual agotó el tiempo límite (${timeoutMs} ms)`), {
+        code: "VISION_TIMEOUT",
+      })), timeoutMs);
+    const connectionMs = budgets?.connectionMs ?? 15_000;
 
-  try {
-    const client = new OllamaClient({
-      fetchImpl: (url, options = {}) => fetch(url, { ...options, signal: controller.signal }),
-    });
-    const installedModel = await resolveInstalledVisionModel(visionModel, client);
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        model: installedModel,
-        stream: false,
-        keep_alive: keepAlive,
-        options: { num_predict: 160, temperature: 0.1 },
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-            images: [imageB64],
-          },
-        ],
-      }),
-      signal: controller.signal,
-    });
+    try {
+      const fetchWithConnectionBudget = async (url, options = {}) => {
+        const timer = setTimeout(() => controller.abort(Object.assign(
+          new Error("Ollama no estableció la conexión visual local dentro del presupuesto adaptativo."),
+          { code: "ADAPTIVE_CONNECTION_TIMEOUT" },
+        )), connectionMs);
+        try {
+          return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      const client = new OllamaClient({ fetchImpl: fetchWithConnectionBudget });
+      const installedModel = await resolveInstalledVisionModel(visionModel, client);
+      const response = await fetchWithConnectionBudget(`${OLLAMA_BASE_URL}/api/chat`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: installedModel,
+          stream: false,
+          keep_alive: keepAlive,
+          options: { num_predict: 160, temperature: 0.1 },
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+              images: [imageB64],
+            },
+          ],
+        }),
+      });
 
-    const inferenceMs = Date.now() - captureStart;
+      const inferenceMs = Date.now() - captureStart;
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Ollama respondió ${response.status}${errorText ? `: ${errorText}` : ""}`);
+      }
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      throw new Error(`Ollama respondió ${response.status}${errorText ? `: ${errorText}` : ""}`);
+      const data = await response.json();
+      const content = data?.message?.content?.trim() || "";
+      console.log(`[Perf] Captura OCR: ${captureStart} ms | Inferencia: ${inferenceMs} ms | VRAM Liberada: OK (keep_alive=${keepAlive})`);
+      if (!content) throw new Error("Ollama no devolvió contenido de visión");
+      return content;
+    } catch (error) {
+      if (operationSignal?.aborted) throw operationSignal.reason || error;
+      if (controller.signal.aborted && controller.signal.reason?.code) throw controller.signal.reason;
+      if (error?.name === "AbortError") throw new Error(`El modelo visual agotó el tiempo límite (${timeoutMs} ms)`);
+      throw error;
+    } finally {
+      clearTimeout(totalTimer);
+      operationSignal?.removeEventListener("abort", cancel);
     }
+  };
 
-    const data = await response.json();
-    const content = data?.message?.content?.trim() || "";
-
-    // Telemetría de rendimiento (HUD consola local)
-    console.log(`[Perf] Captura OCR: ${captureStart} ms | Inferencia: ${inferenceMs} ms | VRAM Liberada: OK (keep_alive=${keepAlive})`);
-
-    if (!content) throw new Error("Ollama no devolvió contenido de visión");
-    return content;
-  } catch (error) {
-    if (signal?.aborted) throw signal.reason || error;
-    if (error.name === "AbortError") {
-      throw new Error(`El modelo visual agotó el tiempo límite (${timeoutMs} ms)`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeoutId);
-    signal?.removeEventListener('abort', cancel);
+  if (!performanceManager) {
+    return operation({ signal, budgets: { connectionMs: 15_000, totalMs: timeoutMs } });
   }
+  return performanceManager.run("image.process", operation, {
+    signal,
+    priority: "interactive",
+    complexity: Math.max(1, Buffer.byteLength(imageB64, "ascii") / (1024 * 1024)),
+  });
 }
 
 /**
@@ -245,7 +276,7 @@ export async function captureScreenBase64({ maxSide = DEFAULT_MAX_SIDE, debugPat
  * @param {number} options.keepAlive - keep_alive para Ollama (default 0 = descarga inmediata de VRAM)
  * @returns {Promise<string>} Respuesta del modelo visual
  */
-export async function analyzeScreenWithVision({ prompt, visionModel = "", maxSide = DEFAULT_MAX_SIDE, debugPath = "", visualAnalyzer, fallbackAnalyzer, compressImage = true, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS }) {
+export async function analyzeScreenWithVision({ prompt, visionModel = "", maxSide = DEFAULT_MAX_SIDE, debugPath = "", visualAnalyzer, fallbackAnalyzer, compressImage = true, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS, signal, performanceManager }) {
   const captureStart = Date.now();
   const { imageBase64 } = await captureScreenBase64({ maxSide, debugPath });
 
@@ -280,6 +311,8 @@ export async function analyzeScreenWithVision({ prompt, visionModel = "", maxSid
       fallbackAnalyzer,
       keepAlive,
       timeoutMs,
+      signal,
+      performanceManager,
     });
   } catch (error) {
     if (ocrText) return `No pude completar el análisis visual local (${error instanceof Error ? error.message : String(error)}). Texto reconocido en pantalla: ${ocrText}`;
@@ -287,7 +320,7 @@ export async function analyzeScreenWithVision({ prompt, visionModel = "", maxSid
   }
 }
 
-export async function analyzeImageWithVision({ prompt, visionModel = "", imageBase64, ocrText = "", visualAnalyzer, fallbackAnalyzer, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS, signal }) {
+export async function analyzeImageWithVision({ prompt, visionModel = "", imageBase64, ocrText = "", visualAnalyzer, fallbackAnalyzer, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS, signal, performanceManager }) {
   signal?.throwIfAborted();
   if (typeof prompt !== "string" || !prompt.trim()) throw new Error("La pregunta de pantalla no puede estar vacía");
   if (
@@ -328,7 +361,7 @@ export async function analyzeImageWithVision({ prompt, visionModel = "", imageBa
 
   // Si no hay visualAnalyzer inyectado, llamar directamente a Ollama con keep_alive: 0
   try {
-    const result = await callOllamaVision({ visionModel, prompt: enrichedPrompt, imageBase64, keepAlive, timeoutMs, signal });
+    const result = await callOllamaVision({ visionModel, prompt: enrichedPrompt, imageBase64, keepAlive, timeoutMs, signal, performanceManager });
     const inferenceMs = Date.now() - captureStart;
     console.log(`[Perf] Captura OCR: ${captureStart} ms | Inferencia: ${inferenceMs} ms | VRAM Liberada: OK (keep_alive=${keepAlive})`);
     return cleanVisionAnalysis(result);
@@ -371,7 +404,7 @@ function cleanVisionAnalysis(text) {
  * Flujo híbrido: captura ligera → OCR → compresión → Ollama visión (keep_alive:0)
  * → trazado de coordenadas si es solicitud de ubicación/señalado.
  */
-export async function captureAndAnalyze({ prompt, visionModel = "", maxSide = DEFAULT_MAX_SIDE, debugPath = "", imageBase64 = "", imageWidth, imageHeight, visualAnalyzer, fallbackAnalyzer, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS }) {
+export async function captureAndAnalyze({ prompt, visionModel = "", maxSide = DEFAULT_MAX_SIDE, debugPath = "", imageBase64 = "", imageWidth, imageHeight, visualAnalyzer, fallbackAnalyzer, keepAlive = 0, timeoutMs = VISION_TIMEOUT_MS, signal, performanceManager }) {
   const snapshot = imageBase64 ? { imageBase64 } : await captureScreenBase64({ maxSide, debugPath });
   let ocrText = "";
   try { ocrText = await analyzeImageWithTesseract({ imageBase64: snapshot.imageBase64 }).catch(() => ""); }
@@ -386,7 +419,7 @@ export async function captureAndAnalyze({ prompt, visionModel = "", maxSide = DE
     console.warn("[vision] No se pudo comprimir para análisis híbrido:", error instanceof Error ? error.message : String(error));
   }
 
-  const analysis = await analyzeImageWithVision({ prompt, visionModel, imageBase64: visionImageBase64, ocrText, visualAnalyzer, fallbackAnalyzer, keepAlive, timeoutMs });
+  const analysis = await analyzeImageWithVision({ prompt, visionModel, imageBase64: visionImageBase64, ocrText, visualAnalyzer, fallbackAnalyzer, keepAlive, timeoutMs, signal, performanceManager });
 
   let grounding = { found: false };
   try {

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { executeBrowserAction, resolveBrowserSearchRequest } from "../src/core/browser-actions.mjs";
+import { executeBrowserAction, resolveBrowserSearchRequest, validateBrowserPage } from "../src/core/browser-actions.mjs";
 import { runAgentTurn } from "../src/core/agent.mjs";
 
 function fixture(approved = true) {
@@ -20,6 +20,13 @@ test("navegador: pedido explícito no vuelve a pedir autorización", async () =>
   assert.equal(f.confirmations.length, 0);
   assert.deepEqual(f.opens, [{ url: request.args, browser: "chrome.exe" }]);
   assert.equal(f.logs.at(-1).status, "completed");
+});
+
+test("navegador: acepta un enlace directo y acotado de pista de Spotify", () => {
+  const track = "https://open.spotify.com/track/0123456789ABCDEFGHIJKL";
+  assert.equal(validateBrowserPage(track), track);
+  assert.equal(validateBrowserPage(`${track}?si=share-token`), track);
+  assert.throws(() => validateBrowserPage(`${track}?redirect=javascript%3Aalert(1)`), /Dirección de búsqueda de Spotify no válida/u);
 });
 
 test("navegador: una propuesta distinta necesita permiso para esa acción", async () => {

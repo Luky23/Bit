@@ -55,3 +55,26 @@ test("Ollama: resuelve el modelo cargado real y conserva el detalle del error HT
   );
   assert.deepEqual(requests, ["/api/ps", "/api/tags", "/api/chat"]);
 });
+
+test("Ollama: usa el presupuesto adaptativo de conexión y aborta una conexión local bloqueada", async () => {
+  const budgetRequests = [];
+  const client = new OllamaClient({
+    performanceManager: {
+      async getBudgets(taskType) {
+        budgetRequests.push(taskType);
+        return { connectionMs: 20, totalMs: 200 };
+      },
+      async run(_taskType, operation) {
+        const controller = new AbortController();
+        return operation({ signal: controller.signal, reportProgress() {}, budgets: { connectionMs: 20, totalMs: 200 } });
+      },
+    },
+    fetchImpl: async (_url, { signal }) => new Promise((_, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    }),
+  });
+  await assert.rejects(client.generate("qwen2.5:3b", { stream: false, messages: [] }), error => (
+    error.code === "ADAPTIVE_CONNECTION_TIMEOUT"
+  ));
+  assert.deepEqual(budgetRequests, ["connection.local"]);
+});

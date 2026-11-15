@@ -1,6 +1,6 @@
 /**
- * App Execution Module - Abre aplicaciones nativas con consentimiento explícito
- * Zero-Trust: validación estricta, whitelist y confirmación para toda apertura o ejecución
+ * App Execution Module - valida y ejecuta objetivos mediante la política central
+ * de permisos; los destinos no confiables o de riesgo alto nunca se autoautorizan.
  */
 
 import pkg from "electron";
@@ -8,6 +8,7 @@ const { shell, dialog } = pkg;
 import { spawn } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { enforceSandbox } from "../core/sandbox.mjs";
+import { requiresExecutionAuthorization } from "../core/permission-policy.mjs";
 
 /**
  * Lista blanca de ejecutables permitidos (nombres base, sin ruta)
@@ -158,30 +159,15 @@ export async function resolveSandboxedFile({ root, target }) {
 }
 
 /**
- * Decide si una operación validada requiere confirmación nativa.
- *
- * Regla 3: se pregunta solo ante algo peligroso o que modifica el equipo.
- *  - Abrir una aplicación permitida es reversible y segura -> NO PREGUNTA.
- *  - Abrir un protocolo de configuración del sistema -> PREGUNTA.
- *  - Abrir un documento local o una URL de loopback es una operación segura de
- *    solo lectura -> NO PREGUNTA.
- *
- * Ante la duda (sin argumentos o tipo desconocido) se pregunta.
+ * Consulta la política central para decidir si una operación validada requiere confirmación.
  *
  * @param {{type?: string}} [targetInfo] Resultado de `validateExecutionTarget`
  * @returns {boolean}
  */
-export function requiresExecutionAuthorization(targetInfo) {
-  if (!targetInfo || typeof targetInfo !== "object") return true;
-  const type = targetInfo.type;
-  if (type === "protocol") return true;
-  if (type === "executable") return typeof targetInfo.args === "string" && targetInfo.args.trim().length > 0;
-  if (type === "file" || type === "url") return false;
-  return true;
-}
+export { requiresExecutionAuthorization };
 
 /**
- * Ejecuta un objetivo local validado y solicita confirmación para acciones sensibles
+ * Ejecuta un objetivo local validado y solicita confirmación cuando la política lo exige
  * Para ejecutables usa spawn (desacoplado) en lugar de execFile para no matar la app al pasar el timeout.
  * @param {Object} options
  * @param {string} options.target - Comando, app, URL o ruta
@@ -189,7 +175,7 @@ export function requiresExecutionAuthorization(targetInfo) {
  * @param {BrowserWindow} mainWindow - Ventana principal para el dialog
  * @returns {Promise<{ok: boolean, result?: string, error?: string, cancelled?: boolean}>}
  */
-export async function executeWithConfirmation({ target, args = "", mainWindow, spawnImpl = spawn }) {
+export async function executeWithConfirmation({ target, args = "", mainWindow, spawnImpl = spawn, authorize, directUser = true }) {
   const validation = validateExecutionTarget(target);
   if (!validation.ok) {
     return { ok: false, error: validation.reason };
@@ -201,7 +187,27 @@ export async function executeWithConfirmation({ target, args = "", mainWindow, s
     }
   }
 
-  if (requiresExecutionAuthorization({ ...validation, args })) {
+  const permissionCategory = validation.type === "protocol"
+    ? "system.settings"
+    : validation.type === "url"
+      ? "browser.open"
+      : validation.type === "file"
+        ? "file.read"
+        : args.trim()
+          ? "system.execute"
+          : "app.open";
+  if (authorize) {
+    const allowed = await authorize({
+      category: permissionCategory,
+      action: "system.open",
+      directUser,
+      scopeAuthorized: true,
+      reversible: validation.type === "file" || (validation.type === "executable" && !args.trim()),
+      modifiesState: validation.type === "executable" || validation.type === "protocol",
+      resource: validation.type === "executable" ? target : "",
+    });
+    if (allowed !== true) return { ok: false, cancelled: true };
+  } else if (requiresExecutionAuthorization({ ...validation, args }, { directUser })) {
     const displayArgs = args ? ` con argumentos: ${args}` : "";
     const result = await dialog.showMessageBox(mainWindow, {
       type: "warning",

@@ -9,7 +9,7 @@ import { ObsidianVault } from "../obsidian/vault.mjs";
 /**
  * Herramientas de Obsidian para memoria persistente
  * Solo lectura: search, read
- * Escritura (requiere confirmación): saveMemory
+ * Escritura: saveMemory pasa por la política central de permisos
  */
 
 const obsidianIndexerCache = new Map(); // vaultPath -> ObsidianIndexer
@@ -123,12 +123,12 @@ export const obsidianReadTool = {
 
 /**
  * Tool: obsidian.saveMemory
- * Guarda una memoria/idea/preferencia en la bóveda (requiere confirmación del usuario)
- * Esta herramienta llama al IPC bit:obsidian-save que muestra el dialog nativo
+ * Guarda una memoria/idea/preferencia en la bóveda mediante la política central
+ * La escritura real se delega al proceso main, que aplica la política central.
  */
 export const obsidianSaveMemoryTool = {
   name: "obsidian.saveMemory",
-  description: "Guarda información importante en la bóveda de Obsidian como memoria persistente. Úsala cuando el usuario mencione preferencias, configuraciones, ideas de proyectos, decisiones importantes, o cualquier cosa que debas recordar para el futuro. El sistema pedirá confirmación al usuario antes de guardar.",
+  description: "Guarda información en la bóveda local de Obsidian cuando el usuario lo solicite directamente. La política central evalúa alcance y reversibilidad y pide confirmación cuando sea necesaria.",
   category: "memory",
   readOnly: false,
   lightweight: false,
@@ -143,7 +143,7 @@ export const obsidianSaveMemoryTool = {
     additionalProperties: false
   },
   handler: async ({ vaultPath, title, content }) => {
-    // Esta herramienta se ejecuta vía IPC en el proceso main, que muestra el diálogo nativo
+    // Esta herramienta se ejecuta vía IPC en el proceso main, que aplica la política central
     // El handler aquí es un placeholder - la ejecución real ocurre en main.mjs via IPC
     throw new Error("Esta herramienta debe ejecutarse vía IPC bit:obsidian-save");
   }

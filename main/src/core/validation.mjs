@@ -176,6 +176,41 @@ const SCHEMAS = Object.freeze({
     required: [],
     additionalProperties: false
   },
+  "bit:workspace-open-project": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 }
+    },
+    required: ["project"],
+    additionalProperties: false
+  },
+  "bit:workspace-resume-project": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:workspace-open-project-file": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 }
+    },
+    required: ["path"],
+    additionalProperties: false
+  },
+  "bit:workspace-show-home": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:workspace-close-project-view": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
   "bit:workspace-create-project": {
     type: "object",
     properties: {
@@ -200,6 +235,22 @@ const SCHEMAS = Object.freeze({
       path: { type: "string", minLength: 1, maxLength: 500 }
     },
     required: ["project", "path"],
+    additionalProperties: false
+  },
+  "bit:workspace-control3d-viewer": {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["load", "view", "rotate", "select", "hide", "show", "explode", "assemble", "reset", "mode"] },
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 1, maxLength: 500 },
+      view: { type: "string", enum: ["front", "rear", "top", "bottom", "left", "right", "side", "iso"] },
+      degrees: { type: "number", minimum: -3600, maximum: 3600 },
+      axis: { type: "string", enum: ["x", "y", "z"] },
+      component: { type: "string", minLength: 1, maxLength: 200 },
+      amount: { type: "number", minimum: 0, maximum: 100 },
+      mode: { type: "string", enum: ["solid", "wireframe", "holo"] },
+    },
+    required: ["action"],
     additionalProperties: false
   },
   "bit:workspace-create-file": {
@@ -302,6 +353,31 @@ const SCHEMAS = Object.freeze({
     type: "object",
     properties: { name: { type: "string", minLength: 1, maxLength: 160 } },
     required: ["name"],
+    additionalProperties: false
+  },
+  "bit:media-play_music": {
+    type: "object",
+    properties: {
+      artist: { type: "string", maxLength: 160 },
+      track: { type: "string", maxLength: 160 },
+      album: { type: "string", maxLength: 160 },
+      genre: { type: "string", maxLength: 160 },
+      playlist: { type: "string", maxLength: 160 },
+      excludeTrack: { type: "string", maxLength: 240 },
+      platform: { type: "string", enum: ["spotify", "youtube"] },
+      selectionMode: { type: "string", enum: ["popular", "recent", "random"] },
+      query: { type: "string", minLength: 1, maxLength: 300 },
+    },
+    required: ["platform", "query"],
+    additionalProperties: false
+  },
+  "bit:media-control-playback": {
+    type: "object",
+    properties: {
+      action: { type: "string", enum: ["play", "pause", "next", "previous", "volume-up", "volume-down", "mute"] },
+      platform: { type: "string", enum: ["spotify", "youtube"] },
+    },
+    required: ["action", "platform"],
     additionalProperties: false
   },
   "bit:system-list-devices": {
@@ -460,7 +536,7 @@ const SCHEMAS = Object.freeze({
     type: "object",
     properties: {
       displayId: { type: "integer" },
-      role: { type: "string", enum: ["main", "project", "info", "none"] }
+      role: { type: "string", enum: ["main", "project", "info", "hologram", "none"] }
     },
     required: ["displayId", "role"],
     additionalProperties: false

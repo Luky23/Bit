@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSafeLocalModelId, isSafeSongName, normalizeUserName } from "../src/core/config.mjs";
+import { isSafeLocalModelId, isSafeSongName, normalizeAppearanceMode, normalizePerformanceSetting, normalizeUserName } from "../src/core/config.mjs";
 
 test("config: acepta tags locales de Ollama y bloquea rutas", () => {
   assert.equal(isSafeLocalModelId("qwen2.5:3b"), true);
@@ -19,6 +19,21 @@ test("config: rechaza nombres inválidos", () => {
   assert.equal(normalizeUserName("Lucía\nHola").ok, false);
   assert.equal(normalizeUserName("A".repeat(41)).ok, false);
   assert.equal(normalizeUserName(42).ok, false);
+});
+
+test("config: valida los límites del modo adaptativo y calidad holográfica", () => {
+  assert.deepEqual(normalizePerformanceSetting("performanceMode", "automatic"), { ok: true, value: "automatic" });
+  assert.deepEqual(normalizePerformanceSetting("maxConcurrentTasks", 0), { ok: true, value: 0 });
+  assert.equal(normalizePerformanceSetting("maxConcurrentTasks", 9).ok, false);
+  assert.equal(normalizePerformanceSetting("maxConcurrentTasks", 1.5).ok, false);
+  assert.deepEqual(normalizePerformanceSetting("hologramQuality", "low"), { ok: true, value: "low" });
+  assert.equal(normalizePerformanceSetting("hologramQuality", "ultra").ok, false);
+});
+
+test("config: la apariencia solo admite clásico o holográfico", () => {
+  assert.deepEqual(normalizeAppearanceMode("classic"), { ok: true, value: "classic" });
+  assert.deepEqual(normalizeAppearanceMode("holographic"), { ok: true, value: "holographic" });
+  assert.equal(normalizeAppearanceMode("other").ok, false);
 });
 
 test("config: permite nombres locales de audio con caracteres Unicode", () => {

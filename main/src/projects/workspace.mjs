@@ -3,6 +3,7 @@ import { constants } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 const MAX_FILE_BYTES = 1024 * 1024;
+const MAX_MODEL_BYTES = 64 * 1024 * 1024;
 const MAX_LIST_ITEMS = 500;
 const PROJECT_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$/u;
 const BACKUP_NAME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}\.\d{3}Z(?:-\d+)?\.bak$/u;
@@ -111,6 +112,32 @@ async function ensureSafePath(root, projectPath, filePath, { createParents = fal
     await assertDirectory(current, { create: createParents });
   }
   return { target, normalized };
+}
+
+function resolveModelAssetPath(modelPath, uri) {
+  if (typeof uri !== "string" || !uri || uri.startsWith("/") || uri.includes("?") || uri.includes("#")) {
+    throw new Error("El glTF referencia una ruta de buffer no válida");
+  }
+  let decoded;
+  try {
+    decoded = decodeURIComponent(uri);
+  } catch {
+    throw new Error("El glTF referencia una ruta de buffer mal codificada");
+  }
+  if (/^[a-z][a-z\d+.-]*:/iu.test(decoded) || decoded.startsWith("/") || decoded.startsWith("\\")) {
+    throw new Error("Solo se admiten buffers locales dentro del proyecto");
+  }
+  const parts = modelPath.split("/").slice(0, -1);
+  for (const part of decoded.replaceAll("\\", "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      if (!parts.length) throw new Error("El glTF intenta acceder fuera del proyecto");
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  return normalizeRelativePath(parts.join("/"));
 }
 
 async function ensureBackupPath(root, project, filePath) {
@@ -230,6 +257,78 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
         if (info.isSymbolicLink() || !info.isFile()) throw new Error("El elemento solicitado no es un archivo regular");
         if (info.size > MAX_FILE_BYTES) throw new Error(`El archivo supera el límite de ${MAX_FILE_BYTES} bytes`);
         return { project, path: normalized, content: await readUtf8File(target) };
+      });
+    },
+
+    async getFileMetadata({ project, path }) {
+      return audited("get-file-metadata", { project, path }, async () => {
+        const canonicalRoot = await resolveWorkspaceRoot(root);
+        const projectPath = await ensureProject(canonicalRoot, project);
+        const { target, normalized } = await ensureSafePath(canonicalRoot, projectPath, path);
+        const info = await lstat(target);
+        if (info.isSymbolicLink() || !info.isFile()) throw new Error("El elemento solicitado no es un archivo regular");
+        return {
+          project,
+          path: normalized,
+          size: info.size,
+          modifiedAt: info.mtime.toISOString(),
+        };
+      });
+    },
+
+    async readModel({ project, path }) {
+      return audited("read-model", { project, path }, async () => {
+        const canonicalRoot = await resolveWorkspaceRoot(root);
+        const projectPath = await ensureProject(canonicalRoot, project);
+        const { target, normalized } = await ensureSafePath(canonicalRoot, projectPath, path);
+        const info = await lstat(target);
+        if (info.isSymbolicLink() || !info.isFile()) throw new Error("El modelo solicitado no es un archivo regular");
+        const extension = normalized.split(".").pop().toLowerCase();
+        if (!["stl", "3mf", "obj", "glb", "gltf"].includes(extension)) throw new Error("Solo se admiten archivos STL, 3MF, OBJ, GLB y glTF");
+        if (info.size > MAX_MODEL_BYTES) throw new Error(`El archivo 3D supera el límite de ${MAX_MODEL_BYTES} bytes`);
+        const data = await readFile(target);
+        if (data.length > MAX_MODEL_BYTES) throw new Error(`El archivo 3D supera el límite de ${MAX_MODEL_BYTES} bytes`);
+        const assets = {};
+        if (extension === "gltf") {
+          let document;
+          try {
+            document = JSON.parse(data.toString("utf8"));
+          } catch {
+            throw new Error("El archivo glTF no contiene JSON válido");
+          }
+          if (!document || typeof document !== "object" || Array.isArray(document) || (document.buffers !== undefined && !Array.isArray(document.buffers))) {
+            throw new Error("El glTF no contiene una lista de buffers válida");
+          }
+          let totalAssetBytes = data.length;
+          const loadedAssets = new Set();
+          for (const buffer of document.buffers || []) {
+            if (!buffer || typeof buffer !== "object" || (buffer.uri !== undefined && typeof buffer.uri !== "string")) {
+              throw new Error("El glTF contiene una definición de buffer no válida");
+            }
+            if (!buffer.uri || buffer.uri.startsWith("data:")) continue;
+            if (loadedAssets.has(buffer.uri)) continue;
+            const assetPath = resolveModelAssetPath(normalized, buffer.uri);
+            const { target: assetTarget, normalized: safeAssetPath } = await ensureSafePath(canonicalRoot, projectPath, assetPath);
+            const assetInfo = await lstat(assetTarget);
+            if (assetInfo.isSymbolicLink() || !assetInfo.isFile()) {
+              throw new Error(`El buffer glTF no es un archivo regular: ${safeAssetPath}`);
+            }
+            if (assetInfo.size > MAX_MODEL_BYTES || totalAssetBytes + assetInfo.size > MAX_MODEL_BYTES) {
+              throw new Error(`Los archivos del modelo superan el límite conjunto de ${MAX_MODEL_BYTES} bytes`);
+            }
+            const assetData = await readFile(assetTarget);
+            if (assetData.length !== assetInfo.size) throw new Error(`El buffer glTF cambió mientras se leía: ${safeAssetPath}`);
+            Object.defineProperty(assets, buffer.uri, {
+              value: assetData,
+              enumerable: true,
+              configurable: true,
+              writable: true,
+            });
+            loadedAssets.add(buffer.uri);
+            totalAssetBytes += assetData.length;
+          }
+        }
+        return { project, path: normalized, data, assets };
       });
     },
 

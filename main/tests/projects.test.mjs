@@ -33,6 +33,9 @@ test("workspace: crea proyectos y archivos de texto solo dentro de la carpeta el
     content: "Diseño inicial",
   });
   assert.equal(await readFile(join(root, "Mark II", "src", "design.md"), "utf8"), "Diseño inicial");
+  const metadata = await workspace.getFileMetadata({ project: "Mark II", path: "src/design.md" });
+  assert.equal(metadata.size, Buffer.byteLength("Diseño inicial"));
+  assert.equal(Number.isNaN(Date.parse(metadata.modifiedAt)), false);
 });
 
 test("workspace: guarda una copia antes de cada modificación y respalda la versión actual al restaurar", async (t) => {
@@ -66,10 +69,49 @@ test("workspace: bloquea traversal, sobrescritura y archivos binarios", async (t
   await workspace.createProject({ project: "Mark II" });
   await assert.rejects(workspace.createFile({ project: "Mark II", path: "../outside.txt", content: "x" }), /ruta|proyecto/i);
   await assert.rejects(workspace.createProject({ project: ".." }), /nombre de proyecto/i);
+  await assert.rejects(workspace.getFileMetadata({ project: "Mark II", path: "../outside.txt" }), /ruta|proyecto|fuera/u);
   await workspace.createFile({ project: "Mark II", path: "notes.txt", content: "original" });
   await assert.rejects(workspace.createFile({ project: "Mark II", path: "notes.txt", content: "reemplazo" }), /EEXIST/u);
   await assert.rejects(workspace.updateFile({ project: "Mark II", path: "notes.txt", content: "\0binario" }), /UTF-8/u);
   assert.equal((await workspace.readFile({ project: "Mark II", path: "notes.txt" })).content, "original");
+});
+
+test("workspace: lee modelos 3D y sus buffers glTF solo desde rutas locales seguras", async (t) => {
+  const { root, workspace } = await makeWorkspace(t);
+  await workspace.createProject({ project: "Mark II" });
+  const projectRoot = join(root, "Mark II");
+  await mkdir(join(projectRoot, "models"), { recursive: true });
+  await mkdir(join(projectRoot, "buffers"), { recursive: true });
+  const binary = Buffer.alloc(36);
+  binary.writeFloatLE(1, 12);
+  binary.writeFloatLE(1, 20);
+  const document = {
+    asset: { version: "2.0" },
+    buffers: [{ uri: "../buffers/mesh.bin", byteLength: binary.length }],
+  };
+  await writeFile(join(projectRoot, "models", "scene.gltf"), JSON.stringify(document));
+  await writeFile(join(projectRoot, "buffers", "mesh.bin"), binary);
+
+  const loaded = await workspace.readModel({ project: "Mark II", path: "models/scene.gltf" });
+  assert.equal(loaded.data.toString("utf8"), JSON.stringify(document));
+  assert.deepEqual([...loaded.assets["../buffers/mesh.bin"]], [...binary]);
+  await assert.rejects(
+    workspace.readModel({ project: "Mark II", path: "models/../../outside.gltf" }),
+    /relativa|proyecto|fuera/u,
+  );
+  await writeFile(join(projectRoot, "models", "escape.gltf"), JSON.stringify({
+    asset: { version: "2.0" },
+    buffers: [{ uri: "../../outside.bin", byteLength: 1 }],
+  }));
+  await writeFile(join(projectRoot, "models", "scene.txt"), "not a model");
+  await assert.rejects(
+    workspace.readModel({ project: "Mark II", path: "models/escape.gltf" }),
+    /fuera del proyecto/u,
+  );
+  await assert.rejects(
+    workspace.readModel({ project: "Mark II", path: "models/scene.txt" }),
+    /Solo se admiten/u,
+  );
 });
 
 test("workspace: rechaza ubicaciones dentro de un repositorio Git", async (t) => {
@@ -83,7 +125,12 @@ test("workspace: rechaza ubicaciones dentro de un repositorio Git", async (t) =>
 
 test("workspace tools: valida argumentos y solo ofrece escrituras para tareas pesadas sin imágenes", async () => {
   assert.equal(routeRequest("Crea el proyecto Mark II").role, "heavy");
+  assert.equal(routeRequest("BIT, mostrame la vista superior").role, "heavy");
+  assert.equal(routeRequest("BIT, girá la pieza 90 grados").role, "heavy");
   assert.equal(toolSchemaName("workspace.createFile"), "bit:workspace-create-file");
+  const viewerTool = toolSchemaName("workspace.control3dViewer");
+  assert.equal(validateToolInput(viewerTool, { action: "view", view: "top" }).ok, true);
+  assert.equal(validateToolInput(viewerTool, { action: "view", view: "diagonal" }).ok, false);
   assert.equal(validateToolInput("bit:workspace-create-file", {
     project: "Mark II",
     path: "src/main.ts",
@@ -108,6 +155,7 @@ test("workspace tools: valida argumentos y solo ofrece escrituras para tareas pe
     deps,
   });
   assert.ok(capturedRequest.tools.some((tool) => tool.function.name === "workspace.createProject"));
+  assert.ok(capturedRequest.tools.some((tool) => tool.function.name === "workspace.control3dViewer"));
 
   await runAgentTurn({
     message: "Crea el proyecto Mark II usando esta captura",
@@ -116,7 +164,7 @@ test("workspace tools: valida argumentos y solo ofrece escrituras para tareas pe
     deps,
   });
   assert.ok(!capturedRequest.tools.some((tool) =>
-    ["workspace.createProject", "workspace.createFile", "workspace.updateFile", "workspace.restoreBackup"]
+    ["workspace.createProject", "workspace.createFile", "workspace.updateFile", "workspace.restoreBackup", "workspace.control3dViewer"]
       .includes(tool.function.name)
   ));
 });

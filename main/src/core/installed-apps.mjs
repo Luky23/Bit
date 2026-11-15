@@ -7,11 +7,11 @@ const inside = (root, path) => { const part = relative(root, path); return part 
 const BLOCKED = /^(?:cmd|powershell|pwsh|bash|sh|wscript|cscript|mshta|rundll32|regsvr32|regedit|msiexec|python(?:w|\d*)?|node|npm|npx|winget|choco|pip|shutdown|taskkill|conhost|wt)\.exe$/iu;
 
 /** Catálogo local acotado. Nunca ejecuta texto del modelo ni busca en todo el disco. */
-export function createInstalledApps({ roots, targetRoots, blockedRoots = [], readShortcut, openPath, confirm, audit, now = Date.now }) {
+export function createInstalledApps({ roots, targetRoots, blockedRoots = [], knownTargets = {}, readShortcut, openPath, confirm, audit, now = Date.now }) {
   let cached;
   let refreshedAt = 0;
-  async function catalog() {
-    if (cached && now() - refreshedAt < 30000) return cached;
+  async function catalog(forceRefresh = false) {
+    if (!forceRefresh && cached && now() - refreshedAt < 30000) return cached;
     const entries = [];
     let visited = 0;
     async function walk(dir, root, depth = 0) {
@@ -31,9 +31,13 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], rea
   async function find(query) {
     const key = normalize(query);
     if (!key || key.length > 160) return [];
-    const entries = await catalog();
-    const exact = entries.filter((entry) => normalize(entry.name) === key);
-    return exact.length ? exact : entries.filter((entry) => (` ${normalize(entry.name)} `).includes(` ${key} `));
+    const select = (entries) => {
+      const exact = entries.filter((entry) => normalize(entry.name) === key);
+      return exact.length ? exact : entries.filter((entry) => (` ${normalize(entry.name)} `).includes(` ${key} `));
+    };
+    let matches = select(await catalog());
+    if (!matches.length) matches = select(await catalog(true));
+    return matches;
   }
   async function inspect(entry) {
     const root = await realpath(entry.root);
@@ -48,26 +52,54 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], rea
     if (!(await stat(target)).isFile()) throw new Error("La aplicación ya no existe");
     return { shortcut, target, args: details.args || "", cwd: details.cwd || "" };
   }
+  async function inspectKnownTarget(path, expectedName) {
+    if (typeof path !== "string" || !isAbsolute(path) || basename(path).toLowerCase() !== expectedName.toLowerCase()) return null;
+    try {
+      const target = await realpath(path);
+      const resolvedRoots = await Promise.all(targetRoots.filter(Boolean).map((root) => realpath(root).catch(() => null)));
+      const forbidden = await Promise.all(blockedRoots.filter(Boolean).map((root) => realpath(root).catch(() => null)));
+      if (!resolvedRoots.some((root) => root && inside(root, target))
+        || forbidden.some((root) => root && (root === target || inside(root, target)))
+        || BLOCKED.test(basename(target))
+        || !(await stat(target)).isFile()) return null;
+      return target;
+    } catch {
+      return null;
+    }
+  }
+  async function findAppTarget(name, expectedExecutable) {
+    const key = normalize(name);
+    const paths = knownTargets[key] || [];
+    for (const path of paths) {
+      const target = await inspectKnownTarget(path, expectedExecutable || basename(path));
+      if (target) return target;
+    }
+    const matches = await find(name);
+    if (matches.length === 1) {
+      const details = await inspect(matches[0]);
+      if (!expectedExecutable || basename(details.target).toLowerCase() === expectedExecutable.toLowerCase()) return details.target;
+      throw new Error("El acceso directo no apunta al ejecutable esperado");
+    }
+    return null;
+  }
   return Object.freeze({
     async browserTarget(browser) {
       if (!Object.hasOwn(BROWSER_APPS, browser)) throw new Error("Navegador no permitido");
-      const matches = await find(BROWSER_APPS[browser]);
-      if (!matches.length) return browser; // Fallback al nombre fijo en PATH; nunca a texto del modelo.
-      const destinations = new Set();
-      for (const entry of matches) {
-        const details = await inspect(entry);
-        if (basename(details.target).toLowerCase() !== browser) throw new Error("El acceso directo no apunta al navegador solicitado");
-        destinations.add(details.target);
-      }
-      if (destinations.size !== 1) throw new Error("Hay varias instalaciones del navegador. Indique cuál desea usar.");
-      return [...destinations][0];
+      return await findAppTarget(BROWSER_APPS[browser], browser) || browser;
+    },
+    async findBrowserTarget(browser) {
+      if (!Object.hasOwn(BROWSER_APPS, browser)) throw new Error("Navegador no permitido");
+      return findAppTarget(BROWSER_APPS[browser], browser);
+    },
+    async findKnownAppTarget(name, expectedExecutable) {
+      return findAppTarget(name, expectedExecutable);
     },
     async search(query) {
       const results = (await find(query)).slice(0, 20).map(({ name }) => ({ name }));
       await audit({ action: "system.searchApps", query, count: results.length, status: "completed" });
       return { results };
     },
-    async open(name, { signal } = {}) {
+    async open(name, { signal, directUser = false } = {}) {
       try {
         signal?.throwIfAborted();
         const matches = await find(name);
@@ -79,7 +111,7 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], rea
         const entry = matches[0];
         const details = await inspect(entry);
         // Aplicaciones fuera de la lista conocida: aprobación nativa por esta apertura.
-        if (!await confirm({ name: entry.name, ...details })) {
+        if (!await confirm({ name: entry.name, ...details, directUser })) {
           await audit({ action: "system.openInstalledApp", name, status: "cancelled" });
           return { ok: false, cancelled: true };
         }
@@ -91,6 +123,27 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], rea
         if (error) throw new Error(error);
         await audit({ action: "system.openInstalledApp", name, target: details.target, status: "completed" });
         return { ok: true, name: entry.name };
+      } catch (error) {
+        await audit({ action: "system.openInstalledApp", name, status: "failed" });
+        return { ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+    async openKnownApp(name, expectedExecutable, { signal, directUser = false } = {}) {
+      try {
+        signal?.throwIfAborted();
+        const target = await findAppTarget(name, expectedExecutable);
+        if (!target) return { ok: false, error: `No encontré una instalación verificada de ${name}.` };
+        if (!await confirm({ name, target, shortcut: target, args: "", cwd: "", directUser })) {
+          await audit({ action: "system.openInstalledApp", name, status: "cancelled" });
+          return { ok: false, cancelled: true };
+        }
+        const current = await findAppTarget(name, expectedExecutable);
+        if (current !== target) throw new Error("La ubicación de la aplicación cambió durante la autorización");
+        signal?.throwIfAborted();
+        const error = await openPath(target);
+        if (error) throw new Error(error);
+        await audit({ action: "system.openInstalledApp", name, target, status: "completed" });
+        return { ok: true, name, target };
       } catch (error) {
         await audit({ action: "system.openInstalledApp", name, status: "failed" });
         return { ok: false, error: error instanceof Error ? error.message : String(error) };

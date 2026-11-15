@@ -1,9 +1,10 @@
 /** Catálogo local compartido por Ajustes y todos los consumidores del chat. */
 export class ModelService {
-  constructor({ ollama, llama, listGguf }) {
+  constructor({ ollama, llama, listGguf, performanceManager }) {
     this.ollama = ollama;
     this.llama = llama;
     this.listGguf = listGguf;
+    this.performanceManager = performanceManager;
   }
 
   async list() {
@@ -37,6 +38,33 @@ export class ModelService {
 
   async generate(model, request, options) {
     const resolved = await this.resolveModel(model);
-    return this.client(resolved).generate(resolved, request, options);
+    const client = this.client(resolved);
+    if (!this.performanceManager) return client.generate(resolved, request, options);
+
+    const { priority = "conversation", ...clientOptions } = options ?? {};
+    const messages = Array.isArray(request?.messages) ? request.messages : [];
+    const promptSize = messages.reduce((total, message) => (
+      total + (typeof message?.content === "string" ? message.content.length : 0)
+    ), 0);
+    const requestedTokens = Number.isFinite(request?.options?.num_predict) ? request.options.num_predict : 256;
+    const complexity = Math.max(1, promptSize / 4000 + requestedTokens / 256);
+    const streaming = request?.stream === true && typeof clientOptions.onChunk === "function";
+
+    return this.performanceManager.run("model.generate", ({ signal, reportProgress }) => client.generate(resolved, request, {
+      ...clientOptions,
+      signal,
+      managed: true,
+      onChunk: typeof clientOptions.onChunk === "function"
+        ? (chunk) => {
+          reportProgress();
+          clientOptions.onChunk(chunk);
+        }
+        : undefined,
+    }), {
+      signal: clientOptions.signal,
+      priority,
+      complexity,
+      onProgress: streaming ? () => {} : undefined,
+    });
   }
 }

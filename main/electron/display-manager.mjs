@@ -2,13 +2,13 @@
  * display-manager.mjs — Gestión Dinámica Multimonitor para Bit
  *
  * Detecta cambios de pantalla, asigna roles a cada monitor (Principal /
- * Proyecto / Telemetría / Ninguna) y gestiona las ventanas secundarias
- * (proyecto e información) con estética HUD frameless/transparente.
+ * Proyecto / Telemetría / Holograma / Ninguna) y gestiona sus ventanas.
  *
  * Roles válidos:
  *   - "main"   : Ventana Principal (Núcleo 3D + Chat + Tarjetas)
  *   - "project": Workspace del Proyecto (Archivos + Diffs + estado tiempo real)
- *   - "info"   : Telemetría & Grafo de Obsidian (CPU/RAM/VRAM/Logs)
+ *   - "info"   : Project Intelligence (resumen y actividad del proyecto)
+ *   - "hologram": Overlay transparente a pantalla completa
  *   - "none"   : Desactivar pantalla / Ocultar
  *
  * Las preferencias de rol se persisten en config.json bajo la clave
@@ -16,7 +16,8 @@
  */
 
 import pkg from "electron";
-const { BrowserWindow, screen } = pkg;
+const { BrowserWindow, ipcMain, screen } = pkg;
+import { randomUUID } from "node:crypto";
 import { resolveDisplayRoles } from '../src/core/display-layout.mjs';
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -26,16 +27,22 @@ const here = fileURLToPath(new URL(".", import.meta.url));
 const APP_ICON = join(here, "assets", "bit-orb.png");
 
 const DISPLAY_LAYOUT_KEY = "displayLayout";
-const VALID_ROLES = new Set(["main", "project", "info", "none"]);
+const VALID_ROLES = new Set(["main", "project", "info", "hologram", "none"]);
 
 /* ── Estado interno ─────────────────────────────────────────────── */
 
 let mainWindowRef = null;
+let overlayWindowRef = null;
+let getOverlayDefaultBounds = null;
+let onOverlayLayoutChange = null;
 let projectWindow = null;
 let infoWindow = null;
 let roleChangeListeners = [];
 let userRoles = new Map(); // displayId (number) -> role (string)
 let initialized = false;
+let singleDisplayWorkspaceMode = false;
+let singleDisplayWorkspaceTransition = false;
+let workspaceViewsVisible = false;
 
 /* ── Utilidades de pantalla ─────────────────────────────────────── */
 
@@ -51,28 +58,8 @@ function getDisplays() {
  * Calcula roles por defecto según la cantidad de monitores y su
  * posición física horizontal.
  */
-function computeDefaultRoles(displays) {
-  const roles = new Map();
-  const count = displays.length;
-  if (count === 0) return roles;
-
-  if (count === 1) {
-    // 1 monitor: Modo Compacto → todo en la única pantalla
-    roles.set(displays[0].id, "main");
-  } else if (count === 2) {
-    // 2 monitores: Principal + Proyecto
-    roles.set(displays[0].id, "main");
-    roles.set(displays[1].id, "project");
-  } else {
-    // 3+ monitores: Proyecto (izq) + Principal (centro) + Info (der)
-    roles.set(displays[0].id, "project"); // Monitor izquierdo
-    roles.set(displays[1].id, "main");    // Monitor central
-    roles.set(displays[2].id, "info");    // Monitor derecho
-    for (let i = 3; i < count; i++) {
-      roles.set(displays[i].id, "none");  // Monitores extra: desactivados
-    }
-  }
-  return roles;
+function computeDefaultRoles(displays, primaryDisplayId = screen.getPrimaryDisplay().id) {
+  return resolveDisplayRoles(displays, new Map(), primaryDisplayId);
 }
 
 /**
@@ -80,7 +67,7 @@ function computeDefaultRoles(displays) {
  * existe, si no el rol por defecto según la disposición actual.
  */
 function resolveRole(displayId, displays) {
-  return resolveDisplayRoles(displays, userRoles).get(displayId) ?? 'none';
+  return resolveDisplayRoles(displays, userRoles, screen.getPrimaryDisplay().id).get(displayId) ?? 'none';
 }
 
 /* ── Persistencia ───────────────────────────────────────────────── */
@@ -112,7 +99,7 @@ async function saveUserRoles() {
  * Crea una ventana secundaria frameless y transparente centrada en los
  * bounds del display indicado. Estética de cristal esmerilado / HUD.
  */
-function createSecondaryWindowOnDisplay(displayBounds, role) {
+function createSecondaryWindowOnDisplay(displayBounds, role, query = {}) {
   const { x, y, width, height } = displayBounds;
   const winWidth = width;
   const winHeight = height;
@@ -145,7 +132,7 @@ function createSecondaryWindowOnDisplay(displayBounds, role) {
     },
   });
 
-  win.loadFile(join(here, 'display-panel.html'), { query: { role } });
+  win.loadFile(join(here, 'display-panel.html'), { query: { role, ...query } });
 
   win.once("ready-to-show", () => {
     if (win.isDestroyed()) return;
@@ -155,7 +142,12 @@ function createSecondaryWindowOnDisplay(displayBounds, role) {
   });
 
   win.on("closed", () => {
-    if (win === projectWindow) projectWindow = null;
+    if (win === projectWindow) {
+      projectWindow = null;
+      if (mainWindowRef && !mainWindowRef.isDestroyed()) {
+        mainWindowRef.webContents.send("bit:workspace-transition", { phase: "return" });
+      }
+    }
     if (win === infoWindow) infoWindow = null;
   });
 
@@ -165,15 +157,43 @@ function createSecondaryWindowOnDisplay(displayBounds, role) {
 /**
  * Crea (o reutiliza) la ventana del Panel de Proyecto en el display dado.
  */
-export function createProjectWindow(displayBounds) {
+export function createProjectWindow(displayBounds, { transition = false } = {}) {
   if (projectWindow && !projectWindow.isDestroyed()) {
     projectWindow.setBounds(displayBounds, true);
+    if (transition) projectWindow.webContents.send("bit:workspace-transition", { phase: "enter" });
     projectWindow.show();
     projectWindow.webContents.send("bit:display-role-assigned", "project");
     return projectWindow;
   }
-  projectWindow = createSecondaryWindowOnDisplay(displayBounds, "project");
+  projectWindow = createSecondaryWindowOnDisplay(displayBounds, "project", transition ? { transition: "enter" } : {});
   return projectWindow;
+}
+
+/** Muestra el Workspace y lo enfoca; en una sola pantalla alterna con Bit. */
+export function showProjectWorkspace(displayBounds, { transition = false } = {}) {
+  const entering = !workspaceViewsVisible;
+  workspaceViewsVisible = true;
+  singleDisplayWorkspaceMode = getDisplays().length === 1;
+  const win = createProjectWindow(displayBounds, { transition: transition && entering });
+  const infoDisplay = getDisplays().find(display => resolveRole(display.id, getDisplays()) === "info");
+  if (infoDisplay) createInfoWindow(infoDisplay.workArea);
+  if (win.isVisible()) {
+    win.focus();
+  } else {
+    win.once("ready-to-show", () => {
+      if (!win.isDestroyed()) win.focus();
+    });
+  }
+  return win;
+}
+
+export function hideProjectWorkspace() {
+  workspaceViewsVisible = false;
+  for (const win of [projectWindow, infoWindow]) {
+    if (!win || win.isDestroyed()) continue;
+    win.webContents.send("bit:workspace-transition", { phase: "exit" });
+    win.hide();
+  }
 }
 
 /**
@@ -209,6 +229,10 @@ function closeWindow(ref) {
  */
 export async function updateDisplayLayout() {
   const displays = getDisplays();
+  if (displays.length !== 1) {
+    singleDisplayWorkspaceMode = false;
+    singleDisplayWorkspaceTransition = false;
+  }
 
   // Resolver rol para cada pantalla
   const assignments = new Map(); // displayId -> role
@@ -247,7 +271,8 @@ export async function updateDisplayLayout() {
   // ── Ventana del Proyecto ──
   const projectDisplay = displayByRole.get("project");
   if (projectDisplay) {
-    createProjectWindow(projectDisplay.workArea);
+    if (workspaceViewsVisible) createProjectWindow(projectDisplay.workArea);
+    else projectWindow?.hide();
   } else {
     projectWindow = closeWindow(projectWindow);
   }
@@ -255,12 +280,29 @@ export async function updateDisplayLayout() {
   // ── Ventana de Información ──
   const infoDisplay = displayByRole.get("info");
   if (infoDisplay) {
-    createInfoWindow(infoDisplay.workArea);
+    if (workspaceViewsVisible) createInfoWindow(infoDisplay.workArea);
+    else infoWindow?.hide();
   } else {
     infoWindow = closeWindow(infoWindow);
   }
 
+  // El holograma usa la ventana overlay transparente y click-through existente.
+  const hologramDisplay = displayByRole.get("hologram");
+  if (overlayWindowRef && !overlayWindowRef.isDestroyed()) {
+    if (hologramDisplay) {
+      overlayWindowRef.setBounds(hologramDisplay.bounds, true);
+      overlayWindowRef.setAlwaysOnTop(true, "floating");
+      overlayWindowRef.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      overlayWindowRef.setIgnoreMouseEvents(true, { forward: true });
+      if (!overlayWindowRef.isVisible()) overlayWindowRef.showInactive();
+    } else {
+      overlayWindowRef.setIgnoreMouseEvents(false);
+      if (getOverlayDefaultBounds) overlayWindowRef.setBounds(getOverlayDefaultBounds(), true);
+    }
+  }
+
   notifyRoleChange(displays);
+  try { onOverlayLayoutChange?.(); } catch { /* no-op */ }
 
   // Notificar a la interfaz sobre el cambio de disposición
   if (mainWindowRef && !mainWindowRef.isDestroyed()) {
@@ -270,48 +312,6 @@ export async function updateDisplayLayout() {
   }
 
   return { ok: true, displays: getConnectedDisplays() };
-}
-
-/**
- * Forzar reposición de paneles abiertos a la pantalla principal activa
- * cuando un monitor se desconecta (sin cerrar la aplicación).
- */
-function regroupToPrimary() {
-  const primary = screen.getPrimaryDisplay();
-  const displays = getDisplays();
-
-  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-    const { x, y, width, height } = primary.bounds;
-    const mwWidth = Math.min(980, width);
-    const mwHeight = Math.min(720, height);
-    mainWindowRef.setBounds({
-      x: x + Math.max(0, Math.floor((width - mwWidth) / 2)),
-      y: y + Math.max(0, Math.floor((height - mwHeight) / 2)),
-      width: mwWidth,
-      height: mwHeight,
-    }, true);
-    if (!mainWindowRef.isVisible()) mainWindowRef.show();
-    mainWindowRef.webContents.send("bit:display-role-assigned", "main");
-  }
-
-  if (projectWindow && !projectWindow.isDestroyed()) {
-    projectWindow.setBounds(primary.bounds, true);
-    projectWindow.show();
-    projectWindow.webContents.send("bit:display-role-assigned", "project");
-  }
-  if (infoWindow && !infoWindow.isDestroyed()) {
-    infoWindow.setBounds(primary.bounds, true);
-    infoWindow.show();
-    infoWindow.webContents.send("bit:display-role-assigned", "info");
-  }
-
-  notifyRoleChange(displays);
-
-  if (mainWindowRef && !mainWindowRef.isDestroyed()) {
-    try {
-      mainWindowRef.webContents.send("bit:display-change", getConnectedDisplays());
-    } catch { /* no-op */ }
-  }
 }
 
 /* ── API pública ────────────────────────────────────────────────── */
@@ -343,6 +343,11 @@ export function getConnectedDisplays() {
   }));
 }
 
+export function hasHologramDisplay() {
+  const displays = getDisplays();
+  return displays.some(display => resolveRole(display.id, displays) === "hologram");
+}
+
 /**
  * Asigna un rol a un monitor, lo persiste en config.json y notifica.
  */
@@ -352,7 +357,7 @@ export async function setDisplayRole(displayId, role) {
   }
   const displays = getDisplays();
   if (!displays.some(d=>d.id===Number(displayId))) throw new Error('La pantalla ya no está conectada');
-  const assignments = resolveDisplayRoles(displays,userRoles);
+  const assignments = resolveDisplayRoles(displays, userRoles, screen.getPrimaryDisplay().id);
   const previous = assignments.get(Number(displayId));
   const occupied = displays.find(d=>d.id!==Number(displayId)&&assignments.get(d.id)===role&&role!=='none');
   if(previous==='main' && role!=='main' && !occupied) throw new Error('Asigne primero la pantalla principal a otro monitor');
@@ -389,10 +394,13 @@ function notifyRoleChange(displays) {
  * @param {Object} options
  * @param {BrowserWindow} options.mainWindow - Referencia a la ventana principal
  */
-export function initDisplayManager({ mainWindow } = {}) {
+export function initDisplayManager({ mainWindow, overlayWindow, getOverlayDefaultBounds: getDefaultBounds, onOverlayLayoutChange: onOverlayChange } = {}) {
   if (initialized) return;
   initialized = true;
   mainWindowRef = mainWindow;
+  overlayWindowRef = overlayWindow;
+  getOverlayDefaultBounds = getDefaultBounds;
+  onOverlayLayoutChange = onOverlayChange;
 
   const loaded = loadUserRoles();
 
@@ -405,7 +413,8 @@ export function initDisplayManager({ mainWindow } = {}) {
 
   screen.on("display-removed", (event, oldDisplay) => {
     console.log(`[display-manager] Pantalla removida: id=${oldDisplay.id}`);
-    // Agrupar paneles abiertos en la pantalla principal activa
+    // Recalcular los roles con la topología restante y cerrar vistas que ya
+    // no tienen monitor asignado, evitando apilar paneles en una pantalla.
     void updateDisplayLayout();
   });
 
@@ -424,17 +433,101 @@ export function isDisplayPanel(sender) {
   return [projectWindow, infoWindow].some(win=>win&&!win.isDestroyed()&&win.webContents===sender);
 }
 
+export function requestWorkspaceViewerCommand(command) {
+  const win = projectWindow && !projectWindow.isDestroyed()
+    ? projectWindow
+    : mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
+  if (!win) {
+    return Promise.reject(new Error("No hay una ventana Workspace disponible para controlar el visor 3D"));
+  }
+  const id = randomUUID();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let timeout;
+    const cleanup = () => {
+      clearTimeout(timeout);
+      ipcMain.removeListener("bit:workspace-viewer-result", onResult);
+      win.removeListener("closed", onClosed);
+      win.webContents.removeListener("did-finish-load", send);
+    };
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const onResult = (event, response) => {
+      if (event.sender !== win.webContents || response?.id !== id) return;
+      if (typeof response.error === "string" && response.error) finish(new Error(response.error));
+      else finish(null, response.result);
+    };
+    const onClosed = () => finish(new Error("La ventana Workspace se cerró antes de completar la acción 3D"));
+    const send = () => {
+      if (win.isDestroyed()) return onClosed();
+      clearTimeout(timeout);
+      timeout = setTimeout(() => finish(new Error("El Workspace no respondió a la acción 3D en 30 segundos")), 30_000);
+      try {
+        win.webContents.send("bit:workspace-viewer-command", { id, command });
+      } catch (error) {
+        finish(error);
+      }
+    };
+
+    timeout = setTimeout(() => finish(new Error("El Workspace no terminó de iniciar para ejecutar la acción 3D")), 30_000);
+    ipcMain.on("bit:workspace-viewer-result", onResult);
+    win.once("closed", onClosed);
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+    else send();
+  });
+}
+
 export function notifyProjectPanels() {
-  for(const win of [projectWindow,infoWindow]) {
+  for(const win of [projectWindow,infoWindow,mainWindowRef]) {
     if(win&&!win.isDestroyed()) win.webContents.send('bit:project-activity');
+  }
+}
+
+export function notifyProjectSelection(project) {
+  for (const win of [projectWindow, infoWindow, mainWindowRef]) {
+    if (win && !win.isDestroyed()) win.webContents.send("bit:project-selection", project);
+  }
+}
+
+export function notifyProjectFileOpen(project, path) {
+  const request = { project, path };
+  for (const win of [projectWindow, mainWindowRef]) {
+    if (!win || win.isDestroyed()) continue;
+    const send = () => {
+      if (!win.isDestroyed()) win.webContents.send("bit:project-file-open", request);
+    };
+    if (win.webContents.isLoading()) win.webContents.once("did-finish-load", send);
+    else send();
   }
 }
 
 /** Mantiene las ventanas secundarias alineadas con la visibilidad de Bit. */
 export function setSecondaryWindowsVisible(visible) {
+  if (singleDisplayWorkspaceMode && singleDisplayWorkspaceTransition && getDisplays().length === 1) return;
+  if (singleDisplayWorkspaceMode && getDisplays().length === 1) {
+    for (const win of [projectWindow, infoWindow]) {
+      if (!win || win.isDestroyed()) continue;
+      if (visible || !workspaceViewsVisible) win.hide();
+      else if (win === projectWindow) win.show();
+      else win.hide();
+    }
+    return;
+  }
   for (const win of [projectWindow, infoWindow]) {
     if (!win || win.isDestroyed()) continue;
-    if (visible) win.show();
+    if (visible && workspaceViewsVisible) win.show();
     else win.hide();
+  }
+}
+
+export function setSingleDisplayWorkspaceTransition(active, phase) {
+  singleDisplayWorkspaceTransition = active === true;
+  if (phase === "exit" && projectWindow && !projectWindow.isDestroyed()) {
+    projectWindow.webContents.send("bit:workspace-transition", { phase });
   }
 }

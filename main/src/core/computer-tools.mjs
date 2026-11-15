@@ -33,14 +33,14 @@ export const systemCaptureScreenTool = {
 
 /**
  * Tool: system.openApp
- * Abre aplicaciones, archivos, URLs con confirmación del usuario
+ * Abre aplicaciones, archivos y URLs mediante la política central de permisos
  */
 export const systemOpenAppTool = {
   name: "system.openApp",
-  description: "Abre aplicaciones nativas, archivos, URLs o protocolos del sistema. Requiere confirmación explícita del usuario mediante diálogo nativo. Úsala cuando el usuario pida abrir algo: programas (calc.exe, notepad.exe, code.exe), URLs (https://...), archivos (.txt, .pdf, .md), o protocolos Windows (ms-settings:, ms-photos:). El sistema validará el target contra una whitelist y pedirá aprobación antes de ejecutar.",
+  description: "Abre aplicaciones, documentos, URLs o protocolos validados. La política central ejecuta pedidos directos de bajo riesgo sin diálogo; acciones indirectas, no autorizadas o de alto riesgo requieren confirmación nativa.",
   category: "system",
   readOnly: false,
-  lightweight: false, // Requiere confirmación nativa + ejecución
+  lightweight: false,
   parameters: {
     type: "object",
     properties: {

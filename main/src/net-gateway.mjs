@@ -185,11 +185,15 @@ export function parseSearchResults(xml) {
     const title = xmlField(item, "title");
     const url = xmlField(item, "link");
     const snippet = xmlField(item, "description");
+    const publishedAtValue = xmlField(item, "pubDate");
     if (!title || !isPublicSearchSourceUrl(url)) continue;
     const canonicalUrl = new URL(url).href;
     if (seenUrls.has(canonicalUrl)) continue;
     seenUrls.add(canonicalUrl);
-    results.push({ title: title.slice(0, 300), url: canonicalUrl, snippet: snippet.slice(0, 600) });
+    const result = { title: title.slice(0, 300), url: canonicalUrl, snippet: snippet.slice(0, 600) };
+    const publishedAt = Date.parse(publishedAtValue);
+    if (publishedAtValue && Number.isFinite(publishedAt)) result.publishedAt = new Date(publishedAt).toISOString();
+    results.push(result);
     if (results.length >= MAX_RESULTS) break;
   }
   return results.sort((a, b) => Number(isOfficialSourceUrl(b.url)) - Number(isOfficialSourceUrl(a.url)));

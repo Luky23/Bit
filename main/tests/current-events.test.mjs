@@ -38,6 +38,15 @@ test('la búsqueda conserva fuentes públicas nuevas sin declararlas oficiales n
   assert.equal(new URL(sorted[0].url).hostname, 'www.nasa.gov');
 });
 
+test('el parser conserva fechas RSS válidas y descarta fechas inválidas', () => {
+  const results = parseSearchResults(`<rss><channel>
+    <item><title>Video reciente</title><link>https://www.youtube.com/watch?v=AbCdEf12345</link><description>Official song</description><pubDate>Sat, 14 Nov 2026 12:00:00 GMT</pubDate></item>
+    <item><title>Sin fecha válida</title><link>https://www.youtube.com/watch?v=AbCdEf12346</link><description>Official song</description><pubDate>not a date</pubDate></item>
+  </channel></rss>`);
+  assert.equal(results[0].publishedAt, "2026-11-14T12:00:00.000Z");
+  assert.equal("publishedAt" in results[1], false);
+});
+
 test('la pregunta de ASUS llega a búsqueda y al modelo con fuentes aunque el fabricante no esté enumerado', async () => {
   let searches = 0;
   const result = await runAgentTurn({

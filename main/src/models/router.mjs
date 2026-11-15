@@ -1,11 +1,12 @@
-const HEAVY = /\b(c[oó]digo|programa|programar|funci[oó]n|caracter[ií]stica|agregar|agrega|a[nñ]adir|a[nñ]ade|mejorar|mejora|p[aá]gina|web|documento|planilla|presentaci[oó]n|proyecto|proyectos|archivo|archivos|respaldo|respaldos|restaurar|crear|escribir|modificar|editar|actualizar|plan de varios|pensalo mejor|razon[aá])\b/i;
+const HEAVY = /\b(c[oó]digo|programa|programar|funci[oó]n|caracter[ií]stica|agregar|agrega|a[nñ]adir|a[nñ]ade|mejorar|mejora|p[aá]gina|web|documento|planilla|presentaci[oó]n|proyecto|proyectos|archivo|archivos|modelo|visor|holograma|vista superior|vista frontal|vista lateral|isom[eé]trica|explosionad[oa]|ensamblar|componente|pieza|rotar|gir(?:ar|a|á)|wireframe|respaldo|respaldos|restaurar|crear|escribir|modificar|editar|actualizar|plan de varios|pensalo mejor|razon[aá])\b/i;
+const THREE_D = /(?:^|[^\p{L}\p{N}_])(?:modelo|visor|holograma|vista|explosionad[oa]|ensamblar|componente|pieza|rotar|gir(?:ar|a|á)|wireframe)(?=$|[^\p{L}\p{N}_])/iu;
 const VISION = /\b(pantalla|screen|se[ñn]ala|señalar|ves|ver esto|captura)\b/i;
 const LIGHT = /\b(hola|buenos d[ií]as|buenas tardes|buenas noches|charla|voz|resumen|recordatorio|record[aá]me)\b/i;
 
 export function routeRequest(text, options = {}) {
   const input = typeof text === "string" ? text.trim() : "";
   if (VISION.test(input) && options.visionModel) return { role: "vision", model: options.visionModel, reason: "pantalla" };
-  if (HEAVY.test(input)) return { role: "heavy", model: options.model, reason: "tarea pesada" };
+  if (HEAVY.test(input) || THREE_D.test(input)) return { role: "heavy", model: options.model, reason: "tarea pesada" };
   if (LIGHT.test(input) || input.length < 80) return { role: "fast", model: options.fastModel, reason: "interacción liviana" };
   return { role: "fast", model: options.fastModel, reason: "predeterminado seguro" };
 }
