@@ -141,6 +141,11 @@ function resolveModelAssetPath(modelPath, uri) {
 }
 
 async function ensureBackupPath(root, project, filePath) {
+  if (typeof root !== "string" || !isAbsolute(root) || root.startsWith("\\\\") || root.startsWith("//")) {
+    throw new Error("La ubicación de respaldos debe ser una carpeta local absoluta");
+  }
+  await mkdir(root, { recursive: true });
+  root = await resolveWorkspaceRoot(root);
   const normalized = normalizeRelativePath(filePath);
   const parts = normalized.split("/");
   const backupRoot = resolve(root, ".bit-backups");
@@ -180,7 +185,7 @@ async function copyVersion(source, directory, now) {
   throw new Error("No se pudo asignar un nombre único al respaldo");
 }
 
-export function createProjectWorkspace({ root, auditPath, now = () => new Date() } = {}) {
+export function createProjectWorkspace({ root, backupRoot = "", auditPath, now = () => new Date() } = {}) {
   async function audited(action, details, operation) {
     const base = { action: `workspace.${action}`, ...details };
     await writeWorkspaceAudit(auditPath, { ...base, status: "started" }, now);
@@ -211,14 +216,16 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
       });
     },
 
-    async createProject({ project }) {
+    async createProject({ project, storageMode = "local-isolated" }) {
       return audited("create-project", { project }, async () => {
         const canonicalRoot = await resolveWorkspaceRoot(root);
         const projectPath = resolve(canonicalRoot, project);
         assertProjectName(project);
         if (!isWithin(canonicalRoot, projectPath) || projectPath === canonicalRoot) throw new Error("Ruta de proyecto fuera del espacio local");
+        if (!["local-isolated", "central-local-backup"].includes(storageMode)) throw new Error("Modo de almacenamiento no válido");
         await mkdir(projectPath);
-        return { project, created: true };
+        await writeFile(join(projectPath, ".bit-storage.json"), JSON.stringify({ storageMode }, null, 2), { encoding: "utf8", flag: "wx" });
+        return { project, created: true, storageMode };
       });
     },
 
@@ -234,7 +241,7 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
         const files = [];
         async function walk(directory, prefix) {
           for (const entry of await readdir(directory, { withFileTypes: true })) {
-            if (entry.name === ".bit-backups") continue;
+            if (entry.name === ".bit-backups" || entry.name === ".bit-storage.json") continue;
             const childPath = join(directory, entry.name);
             if (entry.isSymbolicLink()) throw new Error(`Se bloqueó un enlace simbólico: ${entry.name}`);
             const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
@@ -353,7 +360,7 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
         if (info.isSymbolicLink() || !info.isFile()) throw new Error("Solo se pueden modificar archivos regulares existentes");
         if (info.size > MAX_FILE_BYTES) throw new Error(`El archivo original supera el límite de ${MAX_FILE_BYTES} bytes`);
         await readUtf8File(target);
-        const backupDirectory = await ensureBackupPath(canonicalRoot, project, normalized);
+        const backupDirectory = await ensureBackupPath(backupRoot || canonicalRoot, project, normalized);
         const backupId = await copyVersion(target, backupDirectory, now);
         await writeFile(target, content, "utf8");
         return { project, path: normalized, updated: true, backupId };
@@ -365,7 +372,7 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
         const canonicalRoot = await resolveWorkspaceRoot(root);
         const projectPath = await ensureProject(canonicalRoot, project);
         const normalized = path === undefined ? "" : normalizeRelativePath(path);
-        const backupsRoot = resolve(canonicalRoot, ".bit-backups", project);
+        const backupsRoot = resolve(backupRoot || canonicalRoot, ".bit-backups", project);
         try {
           await assertDirectory(backupsRoot);
         } catch (error) {
@@ -407,7 +414,7 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
         const canonicalRoot = await resolveWorkspaceRoot(root);
         const projectPath = await ensureProject(canonicalRoot, project);
         const { target, normalized } = await ensureSafePath(canonicalRoot, projectPath, path);
-        const backupDirectory = await ensureBackupPath(canonicalRoot, project, normalized);
+        const backupDirectory = await ensureBackupPath(backupRoot || canonicalRoot, project, normalized);
         const backupPath = join(backupDirectory, backupId);
         const backupInfo = await lstat(backupPath);
         if (backupInfo.isSymbolicLink() || !backupInfo.isFile()) throw new Error("No se encontró el respaldo solicitado");
@@ -424,7 +431,7 @@ export function createProjectWorkspace({ root, auditPath, now = () => new Date()
           if (currentInfo.isSymbolicLink() || !currentInfo.isFile()) throw new Error("Solo se puede restaurar sobre un archivo regular");
           if (currentInfo.size > MAX_FILE_BYTES) throw new Error(`El archivo actual supera el límite de ${MAX_FILE_BYTES} bytes`);
           await readUtf8File(target);
-          const currentBackupDirectory = await ensureBackupPath(canonicalRoot, project, normalized);
+          const currentBackupDirectory = await ensureBackupPath(backupRoot || canonicalRoot, project, normalized);
           currentBackupId = await copyVersion(target, currentBackupDirectory, now);
         }
         await writeFile(target, backupContent, "utf8");

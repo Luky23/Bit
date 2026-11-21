@@ -27,9 +27,32 @@ test("navegación reconoce apertura, inicio y lista sin depender del modelo", ()
   assert.deepEqual(resolveWorkspaceNavigationIntent("Mostrame mis proyectos", { projects }), { type: "listProjects" });
   assert.deepEqual(resolveWorkspaceNavigationIntent("BIT, mostrámela pantalla principal"), { type: "showHome" });
   assert.equal(mayBeWorkspaceNavigationRequest("Mostramela pantalla principal"), true);
+  assert.deepEqual(resolveWorkspaceNavigationIntent("BIT, mostrá el núcleo"), { type: "showHome" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Salí del proyecto"), { type: "showHome" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Cerrá este proyecto"), { type: "closeProject" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Cerrá el visor"), { type: "closeViewer" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Volvé al proyecto anterior"), { type: "back" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Mostrame el visor 3D"), { type: "showViewer" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Abrí otro proyecto sin cerrar este", { projects }), { type: "chooseProject", projects });
+});
+
+test("cambia directamente entre proyectos conocidos sin cerrar el anterior", () => {
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Cambiá a Orbit", { projects }), {
+    type: "openProject",
+    project: "Orbit",
+  });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Abrí FlipDock", { projects }), {
+    type: "openProject",
+    project: "FlipDock",
+  });
 });
 
 test("crear exige una instrucción directa y conserva el nombre escrito", () => {
+  assert.deepEqual(resolveWorkspaceNavigationIntent("quiero empezar un proyecto"), { type: "startProject" });
+  assert.deepEqual(resolveWorkspaceNavigationIntent("Orbit", { pendingNewProject: true }), {
+    type: "createProject",
+    project: "Orbit",
+  });
   assert.deepEqual(resolveWorkspaceNavigationIntent("BIT, quiero empezar un proyecto nuevo llamado Orbit"), {
     type: "createProject",
     project: "Orbit",

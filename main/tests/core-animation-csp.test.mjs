@@ -4,8 +4,11 @@ import { readFile } from 'node:fs/promises';
 
 test('el nucleo principal permanece visible e inicia su animacion', async () => {
   const html = await readFile(new URL('../electron/index.html', import.meta.url), 'utf8');
-  assert.doesNotMatch(html, /\.orb-area[^{}]*\{[^{}]*display\s*:\s*none\s*!important/);
-  assert.match(html, /window\.startBitCore\(\$\('orb-canvas'\),\s*\(\)\s*=>\s*\(\{state:currentState\}\)\)/);
+  assert.match(html, /body\.file-model-active \.orb-area\{display:none!important\}/u);
+  assert.match(html, /startMainCore=\(\)=>\{if\(stopMainCore\)return;stopMainCore=window\.startBitCore\(\$\('orb-canvas'/u);
+  assert.match(html, /coreHandoffComplete=false[\s\S]*if\(coreHandoffComplete\)return;coreHandoffComplete=true/u);
+  assert.match(html, /window\.addEventListener\('bit:startup-ready',handoffToMainCore,\{once:true\}\)/u);
+  assert.doesNotMatch(html, /bit:startup-phase[\s\S]*handoffToMainCore/u);
 });
 
 test('el nucleo flotante permite cargar su animacion local y bloquea la red', async () => {
@@ -18,4 +21,9 @@ test('el nucleo flotante permite cargar su animacion local y bloquea la red', as
   assert.match(html, /<script src="core-animation.js"><\/script>/);
   const animation = await readFile(new URL('../electron/core-animation.js', import.meta.url), 'utf8');
   assert.match(animation, /window.startBitCore/);
+  assert.match(animation, /canvas\.id === 'orb-mini-canvas' \? 44/u);
+  assert.match(animation, /canvas\.id === 'startup-core-canvas' \|\| canvas\.id === 'orb-canvas'/u);
+  assert.match(animation, /__bitPrimaryCoreState/u);
+  assert.match(animation, /extent=Math\.min\(width,height\)\*\.40/u);
+  assert.match(animation, /new ResizeObserver\(resize\)/u);
 });

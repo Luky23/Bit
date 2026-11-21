@@ -7,7 +7,7 @@ import {
 } from "../src/core/permission-policy.mjs";
 
 test("permisos: una petición directa de bajo riesgo se ejecuta sin confirmación", () => {
-  for (const category of ["app.open", "browser.open", "music.play", "web.search", "file.read"]) {
+  for (const category of ["app.open", "browser.open", "music.play", "web.search", "file.read", "workspace.create"]) {
     const result = evaluatePermission({
       category,
       directUser: true,
@@ -18,6 +18,17 @@ test("permisos: una petición directa de bajo riesgo se ejecuta sin confirmació
     assert.equal(result.decision, "allow", category);
     assert.equal(result.risk, "low", category);
   }
+});
+
+test("permisos: crear un proyecto nuevo no se confunde con modificar uno existente", () => {
+  const result = evaluatePermission({
+    category: "workspace.create",
+    directUser: true,
+    scopeAuthorized: true,
+    modifiesState: true,
+  }, { autonomyLevel: "conservative" });
+  assert.equal(result.decision, "allow");
+  assert.equal(result.risk, "low");
 });
 
 test("permisos: una sugerencia del modelo no obtiene permiso de bajo riesgo por sí sola", () => {

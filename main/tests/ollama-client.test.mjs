@@ -12,6 +12,7 @@ test("Ollama: reensambla la respuesta en streaming sin abrir otra conexión", as
   const client = new OllamaClient({
     fetchImpl: async (url, options) => {
       requests.push({ url: String(url), options });
+      if (new URL(url).pathname === "/api/version") return Response.json({ version: "local" });
       return new Response(new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode('{"message":{"content":"Hola"}}\n'));
@@ -24,7 +25,7 @@ test("Ollama: reensambla la respuesta en streaming sin abrir otra conexión", as
   const chunks = [];
   const result = await client.generate("qwen2.5:3b", { stream: true, messages: [] }, { onChunk: (text) => chunks.push(text) });
 
-  assert.equal(requests[0].url, "http://127.0.0.1:11434/api/chat");
+  assert.deepEqual(requests.map(entry => new URL(entry.url).pathname), ["/api/version", "/api/chat"]);
   assert.deepEqual(chunks, ["Hola", ", Luca"]);
   assert.equal(result.message.content, "Hola, Luca");
 });
@@ -41,6 +42,7 @@ test("Ollama: resuelve el modelo cargado real y conserva el detalle del error HT
       if (path === "/api/tags") {
         return Response.json({ models: [{ name: "qwen2.5:3b" }] });
       }
+      if (path === "/api/version") return Response.json({ version: "local" });
       return new Response(JSON.stringify({ error: "model 'inexistente:latest' not found" }), {
         status: 500,
         headers: { "content-type": "application/json" },
@@ -53,7 +55,7 @@ test("Ollama: resuelve el modelo cargado real y conserva el detalle del error HT
     client.generate("inexistente:latest", { stream: false, messages: [] }),
     /Ollama \/api\/chat respondio 500: model 'inexistente:latest' not found/u,
   );
-  assert.deepEqual(requests, ["/api/ps", "/api/tags", "/api/chat"]);
+  assert.deepEqual(requests, ["/api/ps", "/api/tags", "/api/version", "/api/chat"]);
 });
 
 test("Ollama: usa el presupuesto adaptativo de conexión y aborta una conexión local bloqueada", async () => {
@@ -76,5 +78,26 @@ test("Ollama: usa el presupuesto adaptativo de conexión y aborta una conexión 
   await assert.rejects(client.generate("qwen2.5:3b", { stream: false, messages: [] }), error => (
     error.code === "ADAPTIVE_CONNECTION_TIMEOUT"
   ));
-  assert.deepEqual(budgetRequests, ["connection.local"]);
+  assert.deepEqual(budgetRequests, ["connection.local", "model.generate"]);
+});
+
+test("Ollama: una carga del modelo más lenta que la conexión local puede terminar", async () => {
+  const requests = [];
+  const client = new OllamaClient({
+    performanceManager: {
+      async getBudgets() { return { connectionMs: 10, modelLoadMs: 100, totalMs: 200 }; },
+    },
+    fetchImpl: async (url, { signal }) => {
+      requests.push(new URL(url).pathname);
+      if (new URL(url).pathname === "/api/version") return Response.json({ version: "local" });
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, 30);
+        signal.addEventListener("abort", () => { clearTimeout(timer); reject(signal.reason); }, { once: true });
+      });
+      return Response.json({ message: { content: "Listo" } });
+    },
+  });
+  const result = await client.generate("qwen2.5:3b", { stream: false, messages: [] }, { managed: true });
+  assert.equal(result.message.content, "Listo");
+  assert.deepEqual(requests, ["/api/version", "/api/chat"]);
 });

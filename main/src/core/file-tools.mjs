@@ -10,12 +10,64 @@
  */
 
 import { constants } from "node:fs";
-import { copyFile, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, isAbsolute, join, relative, sep } from "node:path";
+import { copyFile, lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import { canonicalSandboxRoot, enforceSandbox } from "./sandbox.mjs";
 
 export const MAX_FILE_BYTES = 1024 * 1024;
 export const MAX_DROPPED_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_DROPPED_MODEL_BYTES = 64 * 1024 * 1024;
+export const MAX_DROPPED_PREVIEW_BYTES = 16 * 1024 * 1024;
+const DROPPED_MODEL_EXTENSIONS = new Set([".stl", ".3mf", ".obj", ".glb", ".gltf"]);
+
+/** Lee un modelo elegido mediante arrastre con el mismo límite que el visor. */
+export async function readDroppedModel(filePath) {
+  if (typeof filePath !== "string" || !isAbsolute(filePath)) throw new Error("La ruta del modelo debe ser absoluta");
+  const extension = extname(filePath).toLowerCase();
+  if (!DROPPED_MODEL_EXTENSIONS.has(extension)) throw new Error("El archivo no es STL, 3MF, OBJ, GLB o glTF");
+  const info = await lstat(filePath);
+  if (!info.isFile()) throw new Error("La ruta soltada no corresponde a un archivo regular");
+  if (info.size > MAX_DROPPED_MODEL_BYTES) throw new Error(`El archivo 3D supera el límite de ${MAX_DROPPED_MODEL_BYTES} bytes`);
+  const data = await readFile(filePath);
+  if (data.length > MAX_DROPPED_MODEL_BYTES) throw new Error(`El archivo 3D supera el límite de ${MAX_DROPPED_MODEL_BYTES} bytes`);
+  const assets = {};
+  if (extension === ".gltf") {
+    let document;
+    try { document = JSON.parse(data.toString("utf8")); }
+    catch { throw new Error("El archivo glTF no contiene JSON válido"); }
+    if (!document || typeof document !== "object" || Array.isArray(document) || (document.buffers !== undefined && !Array.isArray(document.buffers))) {
+      throw new Error("El glTF no contiene una lista de buffers válida");
+    }
+    const directory = await realpath(dirname(filePath));
+    let totalBytes = data.length;
+    for (const buffer of document.buffers || []) {
+      if (!buffer || typeof buffer !== "object" || (buffer.uri !== undefined && typeof buffer.uri !== "string")) throw new Error("El glTF contiene un buffer no válido");
+      const uri = buffer.uri;
+      if (!uri || uri.startsWith("data:") || Object.hasOwn(assets, uri)) continue;
+      let decoded;
+      try { decoded = decodeURIComponent(uri); }
+      catch { throw new Error("El glTF referencia una ruta de buffer mal codificada"); }
+      if (!decoded || decoded.includes("?") || decoded.includes("#") || decoded.includes("\0") || /^[a-z][a-z\d+.-]*:/iu.test(decoded) || isAbsolute(decoded) || decoded.startsWith("\\")) {
+        throw new Error("El glTF referencia un buffer local no válido");
+      }
+      const assetPath = resolve(directory, decoded);
+      const relativePath = relative(directory, assetPath);
+      if (!relativePath || relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) throw new Error("El buffer glTF sale de la carpeta del modelo");
+      const assetInfo = await lstat(assetPath);
+      if (!assetInfo.isFile()) throw new Error("El buffer glTF no es un archivo regular");
+      if (totalBytes + assetInfo.size > MAX_DROPPED_MODEL_BYTES) throw new Error(`Los archivos del modelo superan el límite conjunto de ${MAX_DROPPED_MODEL_BYTES} bytes`);
+      const canonicalAsset = await realpath(assetPath);
+      const canonicalRelative = relative(directory, canonicalAsset);
+      if (!canonicalRelative || canonicalRelative === ".." || canonicalRelative.startsWith(`..${sep}`) || isAbsolute(canonicalRelative)) throw new Error("El buffer glTF sale de la carpeta del modelo");
+      const assetData = await readFile(assetPath);
+      if (assetData.length !== assetInfo.size) throw new Error("El buffer glTF cambió mientras se leía");
+      Object.defineProperty(assets, uri, { value: assetData, enumerable: true });
+      totalBytes += assetData.length;
+    }
+  }
+  return { name: basename(filePath), path: filePath, data, assets };
+}
 
 /** Extensiones de código y texto que Bit puede crear y leer dentro del sandbox. */
 export const WRITABLE_EXTENSIONS = new Set([
@@ -37,6 +89,13 @@ const DROPPED_DOCUMENT_EXTENSIONS = new Set([
 ]);
 const DROPPED_IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"]);
 const DROPPED_AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".m4a", ".ogg", ".flac"]);
+const DROPPED_VIDEO_EXTENSIONS = new Set([".mp4", ".webm", ".mkv", ".mov"]);
+const DROPPED_PREVIEW_MIME = Object.freeze({
+  ".pdf": "application/pdf",
+  ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".bmp": "image/bmp",
+  ".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".flac": "audio/flac",
+  ".mp4": "video/mp4", ".webm": "video/webm", ".mkv": "video/x-matroska", ".mov": "video/quicktime",
+});
 
 /**
  * Lee un archivo elegido explícitamente mediante drag & drop. El contenido se
@@ -65,6 +124,67 @@ export async function readDroppedFile(filePath) {
   if (DROPPED_DOCUMENT_EXTENSIONS.has(extension)) return { ...base, kind: "document", content: null, notice: "Este formato requiere extracción especializada no disponible sin dependencias adicionales." };
   if (DROPPED_AUDIO_EXTENSIONS.has(extension)) return { ...base, kind: "audio", content: null, notice: "Audio adjuntado; la transcripción de archivos aún no está disponible." };
   return { ...base, kind: "binary", content: null, notice: "Archivo binario adjuntado sin extracción de contenido." };
+}
+
+/** Construye una vista previa local sin crear ni abrir un proyecto. */
+export async function previewDroppedFile(filePath) {
+  if (typeof filePath !== "string" || !isAbsolute(filePath)) throw new Error("La ruta del archivo debe ser absoluta");
+  const info = await stat(filePath);
+  if (!info.isFile()) throw new Error("La ruta soltada no corresponde a un archivo");
+  if (info.size > MAX_DROPPED_PREVIEW_BYTES) throw new Error(`El archivo supera el límite de vista previa de ${MAX_DROPPED_PREVIEW_BYTES} bytes`);
+  const extension = extname(filePath).toLowerCase();
+  const base = { name: basename(filePath), path: filePath, extension, bytes: info.size };
+  if (DROPPED_MODEL_EXTENSIONS.has(extension)) {
+    return { ...base, kind: "model3d", content: null, notice: "Modelo 3D detectado; se abrirá en el visor 3D." };
+  }
+  if (DROPPED_TEXT_EXTENSIONS.has(extension)) {
+    if (info.size > MAX_FILE_BYTES) return { ...base, kind: "text", content: null, notice: "Texto demasiado grande para mostrar completo; puede procesarse por partes." };
+    const data = await readFile(filePath);
+    if (data.includes(0)) return { ...base, kind: "binary", content: null, notice: "Archivo binario; se muestra su información sin ejecutar contenido." };
+    return { ...base, kind: "text", content: data.toString("utf8"), notice: "Vista previa de texto local." };
+  }
+  if (extension === ".pdf") {
+    const data = await readFile(filePath);
+    let content = null;
+    let pageCount = null;
+    try {
+      const extracted = await extractPdfData(data);
+      content = extracted.content;
+      pageCount = extracted.pageCount;
+    } catch {
+      // El visor PDF sigue disponible aunque el extractor local no pueda leer
+      // un documento dañado o una variante no compatible.
+      pageCount = inferPdfPageCount(data);
+    }
+    return {
+      ...base,
+      kind: "pdf",
+      content,
+      pageCount,
+      mime: DROPPED_PREVIEW_MIME[extension],
+      // El visor PDF de Chromium carga de forma fiable una ruta file:// local;
+      // la data URL queda como respaldo para runtimes que no acepten file URL.
+      // Fit conserva la hoja completa dentro del visor de Bit. El centrado y
+      // el recorte de la barra nativa se resuelven en la superficie visual,
+      // para que la página no quede ampliada ni cortada verticalmente.
+      fileUrl: `${pathToFileURL(filePath).href}#page=1&view=fit&toolbar=0&navpanes=0&statusbar=0&scrollbar=0`,
+      dataUrl: `data:${DROPPED_PREVIEW_MIME[extension]};base64,${data.toString("base64")}`,
+      notice: content ? "Vista previa y texto extraídos localmente." : "Vista previa PDF local disponible.",
+    };
+  }
+  if (DROPPED_PREVIEW_MIME[extension]) {
+    const data = await readFile(filePath);
+    return { ...base, kind: DROPPED_IMAGE_EXTENSIONS.has(extension) ? "image" : DROPPED_AUDIO_EXTENSIONS.has(extension) ? "audio" : DROPPED_VIDEO_EXTENSIONS.has(extension) ? "video" : "pdf", mime: DROPPED_PREVIEW_MIME[extension], dataUrl: `data:${DROPPED_PREVIEW_MIME[extension]};base64,${data.toString("base64")}`, notice: "Vista previa local disponible." };
+  }
+  if (DROPPED_DOCUMENT_EXTENSIONS.has(extension)) {
+    try {
+      const extracted = await readFileContent({ filePath, allowedRoots: [dirname(filePath)] });
+      return { ...base, kind: "document", content: extracted.content, truncated: extracted.truncated, notice: "Vista previa de documento extraída localmente." };
+    } catch (error) {
+      return { ...base, kind: "document", content: null, notice: `Documento detectado. No se pudo extraer el texto localmente: ${error.message}` };
+    }
+  }
+  return { ...base, kind: "binary", content: null, notice: "Formato reconocido como archivo local; se muestra su información sin ejecutar contenido." };
 }
 
 const BACKUP_DIR = ".bit-backups";
@@ -462,10 +582,7 @@ async function authorizedFilePath(filePath, allowedRoots) {
 
 async function extractOfficeText(filePath, extension, buffer) {
   if (extension === ".pdf") {
-    const module = await import("pdf-parse");
-    const parse = module.default || module.pdf || module;
-    if (typeof parse !== "function") throw new Error("pdf-parse no expone un parser compatible");
-    return String((await parse(buffer)).text || "");
+    return (await extractPdfData(buffer)).content;
   }
   if (extension === ".docx") {
     const module = await import("mammoth");
@@ -494,6 +611,24 @@ async function extractOfficeText(filePath, extension, buffer) {
   return buffer.toString("utf8");
 }
 
+async function extractPdfData(buffer) {
+  const module = await import("pdf-parse");
+  const parse = module.default || module.pdf || module;
+  if (typeof parse !== "function") throw new Error("pdf-parse no expone un parser compatible");
+  const parsed = await parse(buffer);
+  return {
+    content: String(parsed.text || ""),
+    pageCount: Number.isInteger(parsed.numpages) && parsed.numpages > 0 ? parsed.numpages : null,
+  };
+}
+
+function inferPdfPageCount(buffer) {
+  const source = Buffer.from(buffer).toString("latin1");
+  const match = source.match(/\/Type\s*\/Pages[\s\S]{0,1024}?\/Count\s+(\d+)/u);
+  const count = Number(match?.[1]);
+  return Number.isInteger(count) && count > 0 ? count : null;
+}
+
 /** Extrae contenido local de documentos y lo limita priorizando searchTerm. */
 export async function readFileContent({ filePath, searchTerm = "", allowedRoots = [] } = {}) {
   const safePath = await authorizedFilePath(filePath, allowedRoots);
@@ -506,3 +641,45 @@ export async function readFileContent({ filePath, searchTerm = "", allowedRoots 
 }
 
 export const universalFileReader = readFileContent;
+
+function stlFacet(a, b, c) {
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const length = Math.hypot(nx, ny, nz) || 1;
+  return `facet normal ${nx / length} ${ny / length} ${nz / length}\n outer loop\n  vertex ${a.join(" ")}\n  vertex ${b.join(" ")}\n  vertex ${c.join(" ")}\n endloop\nendfacet`;
+}
+
+/** Genera STL ASCII determinista sin ejecutar scripts ni cargar dependencias nativas. */
+export function createParametricStl({ shape, x, y, z, diameter, segments = 48 } = {}) {
+  const height = Number(z);
+  if (!Number.isFinite(height) || height <= 0) throw new Error("z debe ser mayor que cero");
+  const triangles = [];
+  let dimensions;
+  let volume;
+  if (shape === "box") {
+    const width = Number(x), depth = Number(y);
+    if (![width, depth].every(value => Number.isFinite(value) && value > 0)) throw new Error("Una caja requiere x e y mayores que cero");
+    const hx = width / 2, hd = depth / 2;
+    const v = [[-hx,0,-hd],[hx,0,-hd],[hx,0,hd],[-hx,0,hd],[-hx,height,-hd],[hx,height,-hd],[hx,height,hd],[-hx,height,hd]];
+    for (const [a,b,c,d] of [[0,3,2,1],[4,5,6,7],[0,1,5,4],[1,2,6,5],[2,3,7,6],[3,0,4,7]]) triangles.push([v[a],v[b],v[c]],[v[a],v[c],v[d]]);
+    dimensions = { x: width, y: height, z: depth, unit: "mm" };
+    volume = width * depth * height;
+  } else if (shape === "cylinder") {
+    const size = Number(diameter), count = Math.max(12, Math.min(128, Math.trunc(segments)));
+    if (!Number.isFinite(size) || size <= 0) throw new Error("Un cilindro requiere diameter mayor que cero");
+    const radius = size / 2, bottom = [0,0,0], top = [0,height,0];
+    for (let index = 0; index < count; index += 1) {
+      const a = index * Math.PI * 2 / count, b = (index + 1) * Math.PI * 2 / count;
+      const p0=[Math.cos(a)*radius,0,Math.sin(a)*radius], p1=[Math.cos(b)*radius,0,Math.sin(b)*radius];
+      const q0=[p0[0],height,p0[2]], q1=[p1[0],height,p1[2]];
+      triangles.push([bottom,p1,p0],[top,q0,q1],[p0,p1,q1],[p0,q1,q0]);
+    }
+    dimensions = { x: size, y: height, z: size, unit: "mm" };
+    volume = Math.PI * radius * radius * height;
+  } else throw new Error("Forma 3D no permitida");
+  return {
+    content: `solid bit_parametric\n${triangles.map(points => stlFacet(...points)).join("\n")}\nendsolid bit_parametric\n`,
+    metadata: { shape, dimensions, volumeMm3: volume, triangleCount: triangles.length },
+  };
+}

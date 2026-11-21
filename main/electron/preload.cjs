@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   stopChat: () => ipcRenderer.invoke("bit:stop-chat"),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   processDroppedFile: (request) => ipcRenderer.invoke("bit:process-dropped-file", request),
+  previewDroppedImage: (filePath) => ipcRenderer.invoke("bit:preview-dropped-image", { filePath }),
+  previewDroppedFile: (filePath) => ipcRenderer.invoke("bit:preview-dropped-file", { filePath }),
   forwardDroppedFile: filePath => ipcRenderer.invoke('bit:forward-dropped-file',filePath),
   onFileDropRequested: listener => {
     const handler=(_event,data)=>listener(data);
@@ -67,6 +69,13 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   stopSpeaking: () => ipcRenderer.invoke("bit:stop-speaking"),
   startVoiceCapture: () => ipcRenderer.invoke("bit:voice-capture-start"),
   stopVoiceCapture: () => ipcRenderer.invoke("bit:voice-capture-stop"),
+  startWorkshopSession: (request) => ipcRenderer.invoke("bit:workshop-start", request),
+  stopWorkshopSession: (request) => ipcRenderer.invoke("bit:workshop-stop", request),
+  markWorkshopEvent: (request) => ipcRenderer.invoke("bit:workshop-mark", request),
+  recordWorkshopReading: (request) => ipcRenderer.invoke("bit:workshop-reading", request),
+  getWorkshopSnapshot: (request) => ipcRenderer.invoke("bit:workshop-snapshot", request),
+  updateDiagnosticComponent: (request) => ipcRenderer.invoke("bit:diagnostic-update", request),
+  getDiagnosticSnapshot: (request) => ipcRenderer.invoke("bit:diagnostic-snapshot", request),
   pickWhisperModel: () => ipcRenderer.invoke("config:pickWhisperModel"),
   onVoiceTranscript: (listener) => {
     const handler = (_event, text) => listener(text);
@@ -108,6 +117,12 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     ipcRenderer.on("bit:emergency-stop", handler);
     return () => ipcRenderer.removeListener("bit:emergency-stop", handler);
   },
+  openFile: (filePath) => ipcRenderer.invoke("bit:system-open-file", { filePath }),
+  onFileCreated: (listener) => {
+    const handler = (_event, data) => listener(data);
+    ipcRenderer.on("bit:file-created", handler);
+    return () => ipcRenderer.removeListener("bit:file-created", handler);
+  },
   auditObsidianVault: (vaultPath) => ipcRenderer.invoke("bit:obsidian-audit", { vaultPath }),
   saveToObsidian: (vaultPath, title, content) => ipcRenderer.invoke("bit:obsidian-save", { vaultPath, title, content }),
   downloadAsset: (url, destPath, expectedHash, assetName) => ipcRenderer.invoke("bit:download-asset", { url, destPath, expectedHash, assetName }),
@@ -120,11 +135,14 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   openWorkspace: () => ipcRenderer.invoke("bit:open-workspace"),
   closeWorkspace: () => ipcRenderer.invoke("bit:close-workspace"),
   showHome: () => ipcRenderer.invoke("bit:show-home"),
+  backContext: () => ipcRenderer.invoke("bit:context-back"),
+  closeActiveProject: () => ipcRenderer.invoke("bit:close-active-project"),
   projectSnapshot: (request = {}) => ipcRenderer.invoke("bit:project-panel", request),
   setActiveProject: (project) => ipcRenderer.invoke("bit:project-panel-select-project", project),
   readProjectFile: (request) => ipcRenderer.invoke("bit:project-panel-read-file", request),
   loadProjectModel: (request) => ipcRenderer.invoke("bit:project-panel-load-model", request),
   loadDroppedModel: (request) => ipcRenderer.invoke("bit:load-dropped-model", request),
+  openDroppedModel: (filePath) => ipcRenderer.invoke("bit:open-dropped-model", filePath),
   onProjectActivity: (listener) => {
     const handler = () => listener();
     ipcRenderer.on("bit:project-activity", handler);
@@ -161,6 +179,18 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     const handler = (_event, transition) => listener(transition);
     ipcRenderer.on("bit:workspace-transition", handler);
     return () => ipcRenderer.removeListener("bit:workspace-transition", handler);
+  },
+  onWorkspaceLayout: (listener) => {
+    const handler = (_event, layout) => listener(layout);
+    ipcRenderer.on("bit:workspace-layout", handler);
+    return () => ipcRenderer.removeListener("bit:workspace-layout", handler);
+  },
+  getUiState: () => ipcRenderer.invoke("bit:get-ui-state"),
+  dispatchUiAction: (action) => ipcRenderer.invoke("bit:ui-action", action),
+  onUiState: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("bit:ui-state", handler);
+    return () => ipcRenderer.removeListener("bit:ui-state", handler);
   },
   onWebcamCaptureRequest: (listener) => {
     const handler = (_event, data) => listener(data);

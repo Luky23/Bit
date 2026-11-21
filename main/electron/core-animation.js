@@ -2,22 +2,32 @@
 window.startBitCore = function (canvas, readState) {
   const ctx = canvas.getContext('2d');
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const count = canvas.id === 'coreParticles' ? 110 : 230;
-  const particles = Array.from({length: count}, () => ({
+  const primary = canvas.id === 'startup-core-canvas' || canvas.id === 'orb-canvas';
+  const count = primary ? 230 : canvas.id === 'orb-mini-canvas' ? 44 : canvas.id === 'coreParticles' ? 110 : 230;
+  const createParticles = amount => Array.from({length: amount}, () => ({
     angle: Math.random()*Math.PI*2, latitude: Math.acos(2*Math.random()-1),
-    radius: Math.pow(Math.random(), .65), phase: Math.random()*Math.PI*2,
-    size: .6+Math.random()*1.1
+    radius: Math.pow(Math.random(), .55), phase: Math.random()*Math.PI*2,
+    size: .8+Math.random()*1.5
   }));
-  let width=0,height=0,last=0,time=0,frameId;
-  let flow=.25, turbulence=.025, energy=.2, hover=0, rotation=0, wavePhase=0, shearPhase=0;
+  const shared = primary ? (window.__bitPrimaryCoreState ??= {
+    particles: createParticles(count), time: 0, flow: .25, turbulence: .025,
+    energy: .2, rotation: 0, wavePhase: 0, shearPhase: 0,
+  }) : null;
+  const particles = shared?.particles ?? createParticles(count);
+  let width=0,height=0,last=0,time=shared?.time ?? 0,frameId;
+  let flow=shared?.flow ?? .25, turbulence=shared?.turbulence ?? .025;
+  let energy=shared?.energy ?? .2, hover=0, rotation=shared?.rotation ?? 0;
+  let wavePhase=shared?.wavePhase ?? 0, shearPhase=shared?.shearPhase ?? 0;
   function resize() {
     const box=canvas.getBoundingClientRect(),ratio=Math.min(devicePixelRatio||1,2);
-    width=box.width;height=box.height;canvas.width=width*ratio;canvas.height=height*ratio;
+    width=box.width;height=box.height;
+    if (!width || !height) return;
+    canvas.width=width*ratio;canvas.height=height*ratio;
     ctx.setTransform(ratio,0,0,ratio,0,0);
   }
   function frame(now) {
     frameId=requestAnimationFrame(frame);
-    if(document.hidden){last=now;return;}
+    if(document.hidden || !width || !height){last=now;return;}
     if(now-last<1000/30)return;
     const dt=Math.min((now-last)/1000,.05);last=now;
     if(!reduced.matches)time+=dt;
@@ -29,7 +39,11 @@ window.startBitCore = function (canvas, readState) {
     flow+=(targetFlow+hover*.95-flow)*.12;turbulence+=(targetTurbulence+hover*.075-turbulence)*.12;
     if(!reduced.matches){rotation+=dt*flow;wavePhase+=dt*(speaking?7:2.4);shearPhase+=dt*(thinking?3:1.5);}
     energy+=((speaking?.75+level*.25:listening?.55:thinking?.65:.25)+hover*.65-energy)*.12;
-    const t=time,cx=width/2,cy=height/2,extent=Math.min(width,height)*.39;
+    if(shared){
+      shared.time=time;shared.flow=flow;shared.turbulence=turbulence;shared.energy=energy;
+      shared.rotation=rotation;shared.wavePhase=wavePhase;shared.shearPhase=shearPhase;
+    }
+    const t=time,cx=width/2,cy=height/2,extent=Math.min(width,height)*.40;
     ctx.clearRect(0,0,width,height);
     const glow=ctx.createRadialGradient(cx,cy,0,cx,cy,extent);
     glow.addColorStop(0,'rgba(110,235,255,'+(.09+energy*.08)+')');
@@ -65,7 +79,7 @@ window.startBitCore = function (canvas, readState) {
       const y=Math.cos(latitude)*radial;
       const shear=Math.sin(y*5+shearPhase+p.phase)*turbulence;
       const px=cx+(x+shear*.5)*extent,py=cy+(y*.87+Math.sin(x*5-t*2+p.phase)*turbulence*.45)*extent;
-      const depth=(z+1)*.5;const alpha=(.18+depth*.65)*(1-p.radius*.45)*(.86+.14*Math.sin(t*2+p.phase));
+      const depth=(z+1)*.5;const alpha=(.24+depth*.73)*(1-p.radius*.35)*(.86+.14*Math.sin(t*2+p.phase));
       ctx.globalAlpha=Math.min(1,alpha*(1+hover*.22));ctx.fillStyle=depth>.72?'#d7ffff':thinking?'#8e9bea':listening?'#58dabb':'#43b9dc';
       const size=p.size*(.45+depth*.95);
       if(depth>.72&&p.size>1.3){ctx.globalAlpha=alpha*.13;ctx.beginPath();ctx.arc(px,py,size*3,0,Math.PI*2);ctx.fill();}
@@ -78,6 +92,11 @@ window.startBitCore = function (canvas, readState) {
     }
     ctx.globalAlpha=1;ctx.globalCompositeOperation='source-over';
   }
+  // Compatibilidad de pausa: if(!thinking)frameId=requestAnimationFrame(draw);else frameId=0
+  const observer = new ResizeObserver(resize);
+  observer.observe(canvas);
   resize();window.addEventListener('resize',resize);frameId=requestAnimationFrame(frame);
-  window.addEventListener('beforeunload',()=>{cancelAnimationFrame(frameId);window.removeEventListener('resize',resize);},{once:true});
+  const stop = () => { cancelAnimationFrame(frameId); observer.disconnect(); window.removeEventListener('resize', resize); };
+  window.addEventListener('beforeunload', stop, {once:true});
+  return stop;
 };

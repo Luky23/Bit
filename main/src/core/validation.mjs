@@ -66,7 +66,8 @@ const SCHEMAS = Object.freeze({
     type: "object",
     properties: {
       filePath: { type: "string", minLength: 3, maxLength: 1024 },
-      action: { type: "string", pattern: "^(summarize|edit|vision|vault|attach)$" }
+      action: { type: "string", pattern: "^(summarize|edit|vision|vault|attach|ask)$" },
+      question: { type: "string", minLength: 1, maxLength: 4000 }
     },
     required: ["filePath", "action"],
     additionalProperties: false
@@ -211,10 +212,93 @@ const SCHEMAS = Object.freeze({
     required: [],
     additionalProperties: false
   },
+  "bit:workspace-set-layout": {
+    type: "object",
+    properties: { preset: { type: "string", pattern: "^(home|project|project_3d|document)$" } },
+    required: ["preset"],
+    additionalProperties: false
+  },
+  "bit:ui-open-panel": {
+    type: "object",
+    properties: { panel: { type: "string", enum: ["project", "files", "context", "core", "conversation", "summary", "tasks", "activity", "viewer3d", "model", "properties", "document", "command"] } },
+    required: ["panel"],
+    additionalProperties: false
+  },
+  "bit:ui-close-panel": {
+    type: "object",
+    properties: { panel: { type: "string", enum: ["project", "files", "context", "core", "conversation", "summary", "tasks", "activity", "viewer3d", "model", "properties", "document", "command"] } },
+    required: ["panel"],
+    additionalProperties: false
+  },
+  "bit:ui-focus-panel": {
+    type: "object",
+    properties: { panel: { type: "string", enum: ["project", "files", "context", "core", "conversation", "summary", "tasks", "activity", "viewer3d", "model", "properties", "document", "command"] } },
+    required: ["panel"],
+    additionalProperties: false
+  },
+  "bit:ui-resize-panel": {
+    type: "object",
+    properties: {
+      panel: { type: "string", enum: ["project", "files", "context", "core", "conversation", "summary", "tasks", "activity", "viewer3d", "model", "properties", "document", "command"] },
+      width: { type: "integer", minimum: 180, maximum: 1600 },
+      height: { type: "integer", minimum: 120, maximum: 1200 },
+    },
+    required: ["panel"],
+    additionalProperties: false
+  },
+  "bit:ui-create-workspace": {
+    type: "object",
+    properties: { id: { type: "string", maxLength: 80 }, name: { type: "string", minLength: 1, maxLength: 120 } },
+    required: ["name"],
+    additionalProperties: false
+  },
+  "bit:ui-set-layout": {
+    type: "object",
+    properties: { preset: { type: "string", enum: ["home", "project", "project_3d", "document", "custom"] }, layout: { type: "object" } },
+    required: [],
+    additionalProperties: false
+  },
+  "bit:ui-preview-file": {
+    type: "object",
+    properties: { path: { type: "string", minLength: 3, maxLength: 2000 }, name: { type: "string", maxLength: 255 }, kind: { type: "string", maxLength: 40 } },
+    required: ["path"],
+    additionalProperties: false
+  },
+  "bit:ui-open3d-viewer": {
+    type: "object",
+    properties: { path: { type: "string", minLength: 3, maxLength: 2000 }, name: { type: "string", maxLength: 255 } },
+    required: ["path"],
+    additionalProperties: false
+  },
+  "bit:ui-move-panel-to-display": {
+    type: "object",
+    properties: { panel: { type: "string", enum: ["project", "files", "context", "core", "conversation", "summary", "tasks", "activity", "viewer3d", "model", "properties", "document", "command"] }, displayId: { type: "integer" } },
+    required: ["panel", "displayId"],
+    additionalProperties: false
+  },
+  "bit:ui-go-back": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
+  "bit:ui-restore-workspace": {
+    type: "object",
+    properties: { snapshot: { type: "object" } },
+    required: ["snapshot"],
+    additionalProperties: false
+  },
+  "bit:ui-return-home": {
+    type: "object",
+    properties: {},
+    required: [],
+    additionalProperties: false
+  },
   "bit:workspace-create-project": {
     type: "object",
     properties: {
-      project: { type: "string", minLength: 1, maxLength: 80 }
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      storageMode: { type: "string", pattern: "^(local-isolated|central-local-backup)$" }
     },
     required: ["project"],
     additionalProperties: false
@@ -261,6 +345,21 @@ const SCHEMAS = Object.freeze({
       content: { type: "string", maxLength: 1000000 }
     },
     required: ["project", "path", "content"],
+    additionalProperties: false
+  },
+  "bit:workspace-generate-3-d": {
+    type: "object",
+    properties: {
+      project: { type: "string", minLength: 1, maxLength: 80 },
+      path: { type: "string", minLength: 5, maxLength: 500 },
+      shape: { type: "string", enum: ["box", "cylinder"] },
+      x: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+      y: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+      z: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+      diameter: { type: "number", exclusiveMinimum: 0, maximum: 10000 },
+      segments: { type: "integer", minimum: 12, maximum: 128 }
+    },
+    required: ["project", "path", "shape", "z"],
     additionalProperties: false
   },
   "bit:workspace-update-file": {
@@ -341,6 +440,12 @@ const SCHEMAS = Object.freeze({
       args: { type: "string", maxLength: 1000, default: "" }
     },
     required: ["target"],
+    additionalProperties: false
+  },
+  "bit:system-open-file": {
+    type: "object",
+    properties: { filePath: { type: "string", minLength: 1, maxLength: 2000 } },
+    required: ["filePath"],
     additionalProperties: false
   },
   "bit:system-search-apps": {

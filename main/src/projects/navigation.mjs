@@ -31,14 +31,23 @@ export function resolveWorkspaceNavigationIntent(message, {
   lastSession = null,
   activeProject = "",
   pendingProject = "",
+  pendingNewProject = false,
 } = {}) {
   const text = normalizeText(message);
   if (!text) return null;
 
   if (matchesAny(text, [
-    /^(?:bit )?(?:volve al inicio|volves al inicio|mostrame la pantalla principal|mostra la pantalla principal|mostramela pantalla principal|mostra(?:me)? la principal|cerra la vista del proyecto|cerrar la vista del proyecto|volver al inicio|mostrar pantalla principal|inicio)$/u,
+    /^(?:bit )?(?:volve al inicio|volves al inicio|mostrame la pantalla principal|mostra la pantalla principal|mostramela pantalla principal|mostra(?:me)? la principal|mostra(?:me)? el nucleo|sali del proyecto|cerra la vista del proyecto|cerrar la vista del proyecto|volver al inicio|mostrar pantalla principal|inicio)$/u,
     /^(?:bit )?(?:volv[eé] a bit|volver a bit|mostrame bit)$/u,
   ])) return { type: "showHome" };
+
+  if (/^(?:bit )?cerra (?:este |el )?proyecto$/u.test(text)) return { type: "closeProject" };
+  if (/^(?:bit )?(?:cerra|cerrar|sali de|salir de) (?:el )?visor(?: 3d)?$/u.test(text)) return { type: "closeViewer" };
+  if (/^(?:bit )?(?:volve|volver) (?:al )?(?:contexto|proyecto|vista) anterior$/u.test(text)) return { type: "back" };
+  if (/^(?:bit )?(?:mostra(?:me)?|abri|abrir) (?:el )?visor 3d$/u.test(text)) return { type: "showViewer" };
+  if (/^(?:bit )?(?:abri|abrir) otro proyecto sin cerrar (?:este|el actual)$/u.test(text)) {
+    return { type: "chooseProject", projects: [...projects] };
+  }
 
   if (matchesAny(text, [
     /^(?:bit )?(?:lista|listar|mostrame|mostrar|cuales son|que proyectos tengo|elegir otro)\s*(?:mis)? proyectos?$/u,
@@ -50,11 +59,24 @@ export function resolveWorkspaceNavigationIntent(message, {
     if (selectedProject) return { type: "openProject", project: selectedProject };
   }
 
+  const directKnownProject = extractProject(text, projects);
+  if (directKnownProject && /^(?:bit )?(?:(?:abri|abre|abrir|abrime)|(?:cambia|cambiate) a)\b/u.test(text)) {
+    return { type: "openProject", project: directKnownProject };
+  }
+
   const createMatch = String(message).trim().match(
     /^(?:(?:bit)[,:\s]+)?(?:(?:por favor)[,\s]+)?(?:(?:quiero|necesito)\s+)?(?:empezar|empecemos|iniciar|iniciemos|crear|cre[aá]me|cre[aá])\s+(?:un\s+)?(?:nuevo\s+)?proyecto(?:\s+nuevo)?(?:\s+(?:llamado|denominado|de nombre|que\s+se\s+llame))?\s+(.+?)\s*[.!?]*$/iu,
   );
   if (createMatch) {
     const project = cleanCapture(createMatch[1]);
+    if (project) return { type: "createProject", project };
+  }
+
+  if (/^(?:bit )?(?:(?:quiero|necesito) )?(?:empezar|iniciar|crear|empecemos|iniciemos) (?:un )?(?:nuevo )?proyecto(?: nuevo)?$/u.test(text)) {
+    return { type: "startProject" };
+  }
+  if (pendingNewProject && !mayBeWorkspaceNavigationRequest(message) && !/^(?:no|cancelar|olvidalo)$/u.test(text)) {
+    const project = cleanCapture(message).replace(/^(?:nombre|llamalo|llámalo)\s*:?\s*/iu, "");
     if (project) return { type: "createProject", project };
   }
 
@@ -111,7 +133,7 @@ export function mayBeWorkspaceNavigationRequest(message) {
     /\b(?:lista|listar|mostrame|mostrar|que proyectos tengo|elegir otro)\b.*\bproyectos?\b/u,
     /\b(?:crear|crea|creame|empezar|iniciar)\b.*\bproyecto\b/u,
     /\b(?:abrir|abre|abrime|abri|activa|retoma)\b.*\b(?:proyecto|archivo)\b/u,
-    /\b(?:inicio|pantalla principal|mostramela pantalla principal|la principal|sigamos|continuemos|continuar trabajando|seguir trabajando|retomar|reanudar|cerrar la vista|cerra la vista|volver a bit|volve al inicio)\b/u,
+    /\b(?:inicio|nucleo|pantalla principal|mostramela pantalla principal|la principal|sigamos|continuemos|continuar trabajando|seguir trabajando|retomar|reanudar|cerrar la vista|cerra la vista|cerrar el proyecto|cerra este proyecto|cerrar el visor|cerra el visor|proyecto anterior|volver a bit|volve al inicio)\b/u,
     /^(?:si|dale|vamos)$/u,
   ]);
 }

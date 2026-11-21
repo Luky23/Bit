@@ -7,11 +7,24 @@ import {
   MAX_FILE_BYTES,
   WRITABLE_EXTENSIONS,
   createFile,
+  createParametricStl,
   isSafeToOpenExternally,
   modifyFile,
+  previewDroppedFile,
   readTextFile,
   searchFiles,
 } from "../src/core/file-tools.mjs";
+
+test("genera sólidos STL paramétricos con dimensiones y volumen exactos", () => {
+  const box = createParametricStl({ shape: "box", x: 20, y: 10, z: 5 });
+  assert.deepEqual(box.metadata.dimensions, { x: 20, y: 5, z: 10, unit: "mm" });
+  assert.equal(box.metadata.volumeMm3, 1000);
+  assert.equal(box.metadata.triangleCount, 12);
+  assert.match(box.content, /^solid bit_parametric/u);
+  const cylinder = createParametricStl({ shape: "cylinder", diameter: 10, z: 20, segments: 24 });
+  assert.equal(cylinder.metadata.triangleCount, 96);
+  assert.ok(Math.abs(cylinder.metadata.volumeMm3 - Math.PI * 500) < 1e-9);
+});
 
 async function withRoot(run) {
   const root = await mkdtemp(join(tmpdir(), "bit-filetools-"));
@@ -30,6 +43,30 @@ test("createFile escribe un archivo .js dentro del sandbox", () =>
     assert.ok(result.absolutePath.endsWith("saludo.js"));
     assert.equal(await readFile(result.absolutePath, "utf8"), "console.log('hola');\n");
     assert.equal(result.bytes, Buffer.byteLength("console.log('hola');\n", "utf8"));
+  }));
+
+test("previewDroppedFile devuelve una vista previa local para texto y PDF", () =>
+  withRoot(async (root) => {
+    const textPath = join(root, "nota.txt");
+    const pdfPath = join(root, "ficha.pdf");
+    await writeFile(textPath, "Bit puede mostrar este texto.", "utf8");
+    await writeFile(pdfPath, Buffer.from("%PDF-1.4\n", "ascii"));
+    const text = await previewDroppedFile(textPath);
+    assert.equal(text.kind, "text");
+    assert.equal(text.content, "Bit puede mostrar este texto.");
+    const pdf = await previewDroppedFile(pdfPath);
+    assert.equal(pdf.kind, "pdf");
+    assert.match(pdf.fileUrl, /^file:.*view=fit.*toolbar=0/u);
+    assert.match(pdf.dataUrl, /^data:application\/pdf;base64,/u);
+  }));
+
+test("previewDroppedFile identifica los modelos 3D, incluido 3MF", () =>
+  withRoot(async (root) => {
+    const modelPath = join(root, "Pieza chica 195mm.3MF");
+    await writeFile(modelPath, Buffer.from("3MF"));
+    const model = await previewDroppedFile(modelPath);
+    assert.equal(model.kind, "model3d");
+    assert.match(model.notice, /visor 3D/u);
   }));
 
 test("createFile crea las carpetas padre que falten", () =>

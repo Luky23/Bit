@@ -173,11 +173,20 @@ export function runBootSequence(options = {}) {
   return bootSequencePromise;
 }
 
+async function waitForVisualStartup() {
+  const sequence = window.bitStartupSequence;
+  if (typeof sequence?.ready !== "function") return;
+  await sequence.ready();
+}
+
 /**
  * Ejecuta la secuencia de inicio.
  * Debe llamarse una sola vez por arranque de la app desde index.html.
  */
 async function runBootSequenceOnce({ model = "qwen2.5:3b", voiceEnabled } = {}) {
+  if (bootCancelled) return;
+
+  await waitForVisualStartup();
   if (bootCancelled) return;
 
   const config = await window.bitRuntime.getConfig?.();
@@ -272,14 +281,7 @@ async function runBootSequenceOnce({ model = "qwen2.5:3b", voiceEnabled } = {}) 
 
     const summaryText = result.noteCount === 0 ? "" : result.summary;
     if (dailySummary) dailySummary.textContent = summaryText;
-    if (shouldSpeak && summaryText) {
-      try {
-        await speakBootText(summaryText);
-      } catch (error) {
-        voiceError = voiceError ? `${voiceError}; ${error.message}` : error.message;
-        console.error("[boot] No se pudo pronunciar el resumen:", error);
-      }
-    }
+    // El resumen queda visible en la interfaz, pero no se lee para evitar bloquear el saludo y reducir carga de CPU.
   } catch (error) {
     console.error("[boot] No se pudo preparar el resumen del día:", error);
     if (dailySummary) dailySummary.textContent = `${greeting} No se pudo preparar el resumen: ${error.message}`;

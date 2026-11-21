@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import vm from "node:vm";
 import { JsonlFramer, encodeVoiceMessage, parseVoiceLine } from "../src/voice/protocol.mjs";
 import { prepareSpeechText, SpeechQueue, splitSentences } from "../src/voice/speech.mjs";
 import { isAllowedAudioFile, validateVoiceSettings } from "../src/voice/settings.mjs";
@@ -172,6 +174,17 @@ test("main resuelve un sidecar Piper empaquetado y conserva fallback de desarrol
   assert.match(source, /python: join\(sidecarDir, "\.venv", "Scripts", "python\.exe"\)/);
   assert.match(source, /sidecar: join\(sidecarDir, "sidecar\.py"\)/);
   assert.match(source, /spawn\(paths\.executable \|\| paths\.python, args/);
+  const voicePathsSource = source.slice(source.indexOf("function voicePaths()"), source.indexOf("function sendToSidecar("));
+  const paths = vm.runInNewContext(`${voicePathsSource}\nvoicePaths()`, {
+    app: { isPackaged: false, getPath: () => "C:\\Users\\Luca" },
+    process: { env: { LOCALAPPDATA: "C:\\Users\\Luca\\AppData\\Local" } },
+    here: "C:\\Bit\\main\\electron",
+    join,
+    existsSync: path => path.endsWith("python.exe"),
+  });
+  assert.equal(paths.available, true);
+  assert.equal(paths.executable, "", "el ejecutable ausente no debe impedir el fallback a Python");
+  assert.match(paths.python, /python\.exe$/u);
 });
 
 test("Piper es opcional al iniciar y admite una voz ONNX sin JSON lateral", async () => {
@@ -206,6 +219,26 @@ test("STT solo abre el modelo local seleccionado y no descarga modelos por nombr
   assert.match(source, /parser\.add_argument\("--model", required=False/);
   assert.match(source, /if tts is None:\s+send_error\("Voz Piper no configurada/);
   assert.match(source, /with tempfile\.NamedTemporaryFile\(suffix="\.wav", delete=False\) as tmp:\s+tmp_path = Path\(tmp\.name\)\s+with wave\.open\(str\(tmp_path\), "wb"\)/);
+});
+
+test("el botón de dictado mantiene presionado para grabar y suelta para transcribir", async () => {
+  const source = await readFile(new URL("../electron/index.html", import.meta.url), "utf8");
+  const transcriptHandler = source.slice(
+    source.indexOf("const cleanupVoiceTranscript="),
+    source.indexOf("const cleanupVoiceError=")
+  );
+
+  assert.match(source, /id="voice-capture"[^>]*aria-label="Mantener para hablar"/u);
+  assert.match(source, /voiceCaptureButton\.addEventListener\(['"]pointerdown['"],\s*startVoiceCapture\)/u);
+  assert.match(source, /voiceCaptureButton\.addEventListener\(['"]pointerup['"],\s*stopVoiceCapture\)/u);
+  assert.match(source, /voiceCaptureButton\.addEventListener\(['"]pointercancel['"],\s*stopVoiceCapture\)/u);
+  assert.match(source, /event\.ctrlKey&&event\.altKey&&event\.shiftKey&&event\.code===['"]KeyM['"]/u);
+  assert.match(source, /event\.code==='PageUp'&&!event\.ctrlKey&&!event\.altKey&&!event\.shiftKey/u);
+  assert.match(source, /document\.addEventListener\(['"]keydown['"],handleVoiceShortcutDown\)/u);
+  assert.match(source, /document\.addEventListener\(['"]keyup['"],handleVoiceShortcutUp\)/u);
+  assert.match(transcriptHandler, /\$\('chat-form'\)\.requestSubmit\(\)/u);
+  assert.doesNotMatch(source, /continuousButton\.addEventListener|void startContinuousVoice/u);
+  assert.doesNotMatch(source, /MIC CONTINUO|Micrófono continuo|Escuchando «Bit»/u);
 });
 
 test("el instalador de voz no descarga modelos al ejecutarse", async () => {

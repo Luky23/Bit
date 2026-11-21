@@ -3,6 +3,24 @@
   const role = new URLSearchParams(location.search).get('role') || 'project';
   const viewerToolbar = document.querySelector('.viewer-toolbar');
   const projectCard = document.querySelector('.project-card');
+  const browserPanel = document.getElementById('browser');
+  const textPreview = document.getElementById('text-preview');
+  if (browserPanel && typeof document.createElement === 'function' && !document.getElementById('workspace-chat')) {
+    const chat = document.createElement('section');
+    chat.id = 'workspace-chat';
+    chat.className = 'workspace-chat';
+    chat.setAttribute('aria-label', 'Conversación contextual con Bit');
+    chat.innerHTML = '<h2>CONVERSACIÓN CON BIT</h2><div class="chat-orb" aria-hidden="true"></div><p>El contexto del proyecto y del modelo permanece disponible aquí.</p><button type="button">ANALIZAR MODELO</button><button type="button">SUGERIR MEJORAS</button>';
+    browserPanel.append(chat);
+  }
+  if (textPreview && typeof document.createElement === 'function' && !document.getElementById('project-core')) {
+    const core = document.createElement('div');
+    core.id = 'project-core';
+    core.className = 'project-core';
+    core.setAttribute('aria-label', 'Núcleo y conversación de Bit');
+    core.innerHTML = '<div class="project-core-inner"><div class="project-core-orb" aria-hidden="true"></div><h2>Bit está listo para trabajar</h2><p>Seleccione un archivo o escriba un comando para continuar con el proyecto.</p></div>';
+    textPreview.prepend(core);
+  }
   if (projectCard && typeof projectCard.append === 'function' && typeof document.createElement === 'function') {
     const fileMetadata = document.createElement('div');
     fileMetadata.className = 'file-metadata';
@@ -48,11 +66,12 @@
   }
   if (initialTransition === 'enter') setWorkspaceTransition('enter');
   let selectedPath = '';
+  let droppedModelPath = '';
   let generation = 0;
   let currentProject = '';
   const statuses = { working: 'En curso', completed: 'Completado', failed: 'Falló' };
   const isProjectIntelligence = role === 'info';
-  const modelExtensions = new Set(['stl', 'obj', 'glb', 'gltf']);
+  const modelExtensions = new Set(['stl', '3mf', 'obj', 'glb', 'gltf']);
   let modelViewer = null;
   let modelViewerModules = window.bitModelViewer || null;
   let loadedModelKey = '';
@@ -139,7 +158,7 @@
     $('workspace-state').textContent = 'EN ESPERA';
   }
 
-  async function loadModel(project, path, key, generationForLoad) {
+  async function loadModel(project, path, key, generationForLoad, dropped = false) {
     try {
       $('model-status').textContent = `Cargando y validando ${path}…`;
       $('workspace-state').textContent = 'CARGANDO';
@@ -150,13 +169,15 @@
       }
       modelViewerModules = await modelModulesReady;
       if (generationForLoad !== modelGeneration) return;
-      if (typeof window.projectPanel.loadModel !== 'function') {
+      if (typeof (dropped ? window.projectPanel.loadDroppedModel : window.projectPanel.loadModel) !== 'function') {
         throw new Error('El proceso principal no ofrece lectura segura de modelos 3D.');
       }
       if (!modelViewer) modelViewer = modelViewerModules.createModelViewer($('model-viewer'), $('browser'));
-      const source = await window.projectPanel.loadModel({ project, path });
+      const source = await (dropped
+        ? window.projectPanel.loadDroppedModel({ filePath: path })
+        : window.projectPanel.loadModel({ project, path }));
       if (generationForLoad !== modelGeneration) return;
-      const model = modelViewerModules.parse3DModel({
+      const model = await modelViewerModules.parse3DModel({
         name: path,
         data: source.data,
         assets: source.assets,
@@ -248,20 +269,21 @@
         ? `Versiones: ${data.versions.map(version => version.backupId).join(', ')}`
         : 'Sin versiones guardadas.';
       const projectName = project || data.activeProject || '';
-      const modelSelected = Boolean(selectedPath && isModelPath(selectedPath));
+      const modelSelected = Boolean(droppedModelPath || (selectedPath && isModelPath(selectedPath)));
       let modelLoadPromise = null;
       $('text-preview').hidden = modelSelected;
       $('model-viewer').hidden = !modelSelected;
       const closeModelButton = $('model-close');
       if (closeModelButton) closeModelButton.hidden = !modelSelected;
       if (modelSelected) {
-        $('file-name').textContent = selectedPath;
-        const key = `${projectName}\0${selectedPath}`;
+        const modelPath = droppedModelPath || selectedPath;
+        $('file-name').textContent = modelPath;
+        const key = droppedModelPath ? `drop\0${modelPath}` : `${projectName}\0${modelPath}`;
         if (key !== loadedModelKey && key !== pendingModelKey) {
           closeModel();
           const currentModelGeneration = modelGeneration;
           pendingModelKey = key;
-          modelLoadPromise = loadModel(projectName, selectedPath, key, currentModelGeneration);
+          modelLoadPromise = loadModel(projectName, modelPath, key, currentModelGeneration, Boolean(droppedModelPath));
         }
       } else {
         if (loadedModelKey || pendingModelKey || modelViewer) closeModel();
@@ -286,12 +308,22 @@
 
   async function executeViewerCommand(request) {
     const { action } = request;
+    if (action === 'load-dropped') {
+      const path = request.filePath;
+      if (typeof path !== 'string' || !isModelPath(path)) throw new Error('Suelte un archivo STL, 3MF, OBJ, GLB o glTF.');
+      droppedModelPath = path;
+      selectedPath = '';
+      const data = await refresh({ waitForModel: true });
+      if (!data || !loadedModelKey) throw new Error('No se pudo confirmar la carga del modelo.');
+      return { ok: true, action, path, components: $('model-components').children.length };
+    }
     if (action === 'load') {
+      droppedModelPath = '';
       if (!currentProject && !request.project) await refresh();
       const project = request.project || currentProject;
       const path = request.path || selectedPath;
       if (!project) throw new Error('No hay un proyecto activo; seleccione uno en el Workspace.');
-      if (!path || !isModelPath(path)) throw new Error('Seleccione en el explorador un archivo STL, OBJ, GLB o glTF.');
+      if (!path || !isModelPath(path)) throw new Error('Seleccione en el explorador un archivo STL, 3MF, OBJ, GLB o glTF.');
       $('projects').value = project;
       selectedPath = path;
       const data = await refresh({ waitForModel: true });
@@ -340,13 +372,14 @@
     return;
   }
   $('projects').onchange = () => {
+    droppedModelPath = '';
     selectedPath = '';
     const project = $('projects').value;
     void window.projectPanel.setActiveProject(project).then(() => refresh()).catch(error => {
       $('notice').textContent = error.message;
     });
   };
-  $('model-close')?.addEventListener('click', () => { selectedPath = ''; void refresh(); });
+  $('model-close')?.addEventListener('click', () => { selectedPath = ''; droppedModelPath = ''; void refresh(); });
   $('refresh').onclick = () => void refresh();
   $('settings').onclick = () => {
     void window.projectPanel.showHome().catch(error => {
@@ -361,11 +394,31 @@
   });
   const cleanupProjectFileOpen = window.projectPanel.onProjectFileOpen?.(request => {
     if (!request?.project || !request?.path) return;
+    droppedModelPath = '';
     $('projects').value = request.project;
     selectedPath = request.path;
     void refresh({ waitForModel: isModelPath(request.path) });
   });
   const cleanupWorkspaceTransition = window.projectPanel.onWorkspaceTransition?.(({ phase }) => setWorkspaceTransition(phase));
+  if (!isProjectIntelligence) {
+    for (const type of ['dragenter', 'dragover']) window.addEventListener(type, event => {
+      if (!event.dataTransfer?.types?.includes('Files')) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+      $('notice').textContent = 'Suelte un modelo STL, 3MF, OBJ, GLB o glTF para abrirlo en el visor.';
+    }, true);
+    window.addEventListener('drop', async event => {
+      event.preventDefault();
+      const file = event.dataTransfer?.files?.[0];
+      if (!file) return;
+      try {
+        const filePath = window.projectPanel.getPathForFile(file);
+        await executeViewerCommand({ action: 'load-dropped', filePath });
+      } catch (error) {
+        $('notice').textContent = `No se pudo abrir el modelo 3D: ${error.message}`;
+      }
+    }, true);
+  }
   const cleanupViewerCommands = window.projectPanel.onViewerCommand(async ({ id, command }) => {
     try {
       const result = await executeViewerCommand(command);
@@ -380,6 +433,43 @@
   const cleanupChatChunks = window.projectPanel.onChatChunk(text => {
     if (activeCommand && typeof text === 'string') $('command-feedback').textContent += text;
   });
+  const workshopPanel = document.createElement('section');
+  workshopPanel.className = 'panel workshop-panel';
+  workshopPanel.innerHTML = '<div class="panel-head"><span>ENSAYO LOCAL</span><small id="workshop-status">SIN SESIÓN</small></div><div class="workshop-controls"><button id="workshop-start" type="button">INICIAR</button><button id="workshop-mark" type="button" disabled>MARCAR</button><button id="workshop-stop" type="button" disabled>FINALIZAR</button><button id="workshop-gesture" type="button">ACTIVAR GESTOS</button></div><p id="workshop-feedback" class="notice" role="status">Sin dispositivo conectado. Las variables solo aparecen cuando una fuente autorizada las entrega.</p><div id="workshop-readings" class="activity"></div>';
+  const hudRoot = document.querySelector('.hud');
+  if (hudRoot && typeof hudRoot.insertBefore === 'function') hudRoot.insertBefore(workshopPanel, $('workspace-command-form'));
+  const workshopStatus = $('workshop-status');
+  const workshopFeedback = $('workshop-feedback');
+  const renderWorkshop = snapshot => {
+    const active = snapshot?.session?.status === 'active';
+    workshopStatus.textContent = active ? 'ACTIVA' : snapshot?.session?.status === 'finished' ? 'FINALIZADA' : 'SIN SESIÓN';
+    $('workshop-start').disabled = active;
+    $('workshop-mark').disabled = !active;
+    $('workshop-stop').disabled = !active;
+    const readings = Object.entries(snapshot?.readings || {});
+    $('workshop-readings').replaceChildren(...readings.map(([key, reading]) => {
+      const row = document.createElement('p');
+      row.textContent = `${key}: ${reading.value} ${reading.unit} · ${reading.origin} · ${reading.status === 'stale' ? 'DATO VENCIDO' : 'ACTUAL'}`;
+      return row;
+    }));
+  };
+  const workshopRequest = request => typeof window.projectPanel.getWorkshopSnapshot === 'function'
+    ? window.projectPanel.getWorkshopSnapshot({ project: request?.project || currentProject })
+    : Promise.resolve(null);
+  $('workshop-start').onclick = async () => { try { renderWorkshop(await window.projectPanel.startWorkshopSession({ project: currentProject })); workshopFeedback.textContent = 'Ensayo iniciado. Sin dispositivo conectado.'; } catch (error) { workshopFeedback.textContent = `No se pudo iniciar: ${error.message}`; } };
+  $('workshop-mark').onclick = async () => { try { renderWorkshop(await window.projectPanel.markWorkshopEvent({ project: currentProject, label: 'Marca manual' })); workshopFeedback.textContent = 'Marca temporal guardada como evento ingresado por el usuario.'; } catch (error) { workshopFeedback.textContent = `No se pudo marcar: ${error.message}`; } };
+  $('workshop-stop').onclick = async () => { try { renderWorkshop(await window.projectPanel.stopWorkshopSession({ project: currentProject })); workshopFeedback.textContent = 'Ensayo finalizado. No se inventaron mediciones.'; } catch (error) { workshopFeedback.textContent = `No se pudo finalizar: ${error.message}`; } };
+  let gestureStream = null;
+  $('workshop-gesture').onclick = async () => {
+    const button = $('workshop-gesture');
+    if (gestureStream) { gestureStream.getTracks().forEach(track => track.stop()); gestureStream = null; button.textContent = 'ACTIVAR GESTOS'; workshopFeedback.textContent = 'Cámara suspendida; el control por mouse sigue disponible.'; return; }
+    try {
+      gestureStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      button.textContent = 'SUSPENDER CÁMARA';
+      workshopFeedback.textContent = 'Cámara activa. Detector de manos no instalado; se mantiene el control por mouse y no se aplican gestos.';
+    } catch (error) { workshopFeedback.textContent = `Cámara no disponible: ${error.message}`; }
+  };
+  void workshopRequest({ project: currentProject }).then(renderWorkshop).catch(() => {});
   $('workspace-command-form').addEventListener('submit', async event => {
     event.preventDefault();
     const message = $('workspace-command').value.trim();

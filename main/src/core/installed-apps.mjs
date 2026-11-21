@@ -50,7 +50,10 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], kno
     const forbidden = await Promise.all(blockedRoots.filter(Boolean).map((path) => realpath(path).catch(() => null)));
     if (!resolvedRoots.some((path) => path && inside(path, target)) || forbidden.some((path) => path && (path === target || inside(path, target))) || BLOCKED.test(basename(target))) throw new Error("Destino de aplicación no permitido");
     if (!(await stat(target)).isFile()) throw new Error("La aplicación ya no existe");
-    return { shortcut, target, args: details.args || "", cwd: details.cwd || "" };
+    // realpath se usa para validar el destino y evitar enlaces fuera de las
+    // raíces permitidas, pero conservamos la ruta declarada por el acceso
+    // directo para no cambiar su capitalización en Windows.
+    return { shortcut, target: details.target, args: details.args || "", cwd: details.cwd || "" };
   }
   async function inspectKnownTarget(path, expectedName) {
     if (typeof path !== "string" || !isAbsolute(path) || basename(path).toLowerCase() !== expectedName.toLowerCase()) return null;
@@ -62,7 +65,9 @@ export function createInstalledApps({ roots, targetRoots, blockedRoots = [], kno
         || forbidden.some((root) => root && (root === target || inside(root, target)))
         || BLOCKED.test(basename(target))
         || !(await stat(target)).isFile()) return null;
-      return target;
+      // La ruta original ya pasó la validación sobre su realpath. Devolverla
+      // evita que realpath cambie la capitalización que recibe el llamador.
+      return path;
     } catch {
       return null;
     }

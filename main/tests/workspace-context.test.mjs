@@ -32,11 +32,13 @@ function createElement() {
   };
 }
 
-function createHarness() {
+function createHarness({ workspaceView = "none" } = {}) {
   const ids = [
     "file-context", "file-context-name", "file-context-meta", "file-context-response", "file-context-actions", "file-context-close",
+    "file-context-icon", "file-context-kind-label", "file-context-viewer-title", "file-context-page-status", "file-context-question",
+    "file-context-prompt", "file-context-send", "file-context-preview", "file-context-pdf", "file-context-audio", "file-context-video", "file-context-text", "file-context-grid", "file-context-pages",
     "project-context", "project-document", "project-model", "project-state-label",
-    "model-summary", "model-title", "model-status", "project-file-name",
+    "model-summary", "model-title", "model-status", "project-model-facts", "project-model-facts-content", "project-file-name",
     "project-file-type", "project-file-size", "project-file-modified",
     "project-versions", "project-activity", "project-progress", "project-files",
     "project-file-count", "project-select", "project-name", "project-summary",
@@ -45,10 +47,13 @@ function createHarness() {
     "project-close", "document-close", "model-close",
   ];
   const elements = new Map(ids.map(id => [id, createElement()]));
+  const fileActions = new Map(["summarize", "analyze", "open", "project", "model3d"].map(action => [action, { dataset: { fileAction: action }, hidden: false, disabled: false }]));
+  elements.get("file-context-actions").querySelectorAll = () => [...fileActions.values()];
   const orbArea = createElement();
   const body = createElement();
   const listeners = new Map();
   const requests = [];
+  const fileRequests = [];
   const modelCalls = [];
   const runtime = {
     async projectSnapshot(request) {
@@ -56,6 +61,7 @@ function createHarness() {
       const project = request.project || "Mark II";
       return {
         activeProject: "Mark II",
+        workspaceView,
         lastSession: { project: "Mark II", goal: "Mantener el centro", lastTask: "Actualizar el visor" },
         projects: ["Mark II", "Other"],
         files: project === "Mark II" ? ["docs/readme.md", "models/sample.stl"] : ["notes.txt"],
@@ -70,6 +76,13 @@ function createHarness() {
       };
     },
     async readProjectFile() { return { content: "# Project document" }; },
+    async openFile() { return { ok: true }; },
+    async previewDroppedFile(filePath) {
+      return filePath.endsWith(".stl")
+        ? { kind: "model3d", notice: "Modelo 3D detectado; se abrirá en el visor 3D." }
+        : { kind: "pdf", content: "Contenido de la página 1.", pageCount: 9, dataUrl: "data:application/pdf;base64,VA==", notice: "Vista previa y texto extraídos localmente." };
+    },
+    async processDroppedFile(request) { fileRequests.push(request); return { ok: true, text: "Respuesta local sobre el archivo." }; },
     async loadProjectModel(request) {
       modelCalls.push(request);
       return { data: new Uint8Array([1, 2, 3]) };
@@ -118,8 +131,52 @@ function createHarness() {
       };
     },
   };
-  return { runtime, documentRef, windowRef, modelRuntime, elements, body, orbArea, listeners, requests, modelCalls };
+  return { runtime, documentRef, windowRef, modelRuntime, elements, fileActions, body, orbArea, listeners, requests, fileRequests, modelCalls };
 }
+
+test("al recargar el renderer se restaura la composición del proyecto activo", async () => {
+  const harness = createHarness({ workspaceView: "embedded" });
+  initWorkspaceContext(harness);
+  await settle();
+  assert.equal(harness.body.classList.contains("project-active"), true);
+  assert.equal(harness.elements.get("project-context").hidden, false);
+  assert.equal(harness.elements.get("project-name").textContent, "Mark II");
+});
+
+test("un proyecto sin archivos muestra un estado vacío explícito en el explorador", async () => {
+  const harness = createHarness();
+  const snapshot = harness.runtime.projectSnapshot;
+  harness.runtime.projectSnapshot = async request => ({ ...await snapshot(request), files: [] });
+  initWorkspaceContext(harness);
+  harness.listeners.get("transition")({ phase: "enter", displayMode: "embedded" });
+  await settle();
+  const files = harness.elements.get("project-files");
+  assert.equal(files.classList.contains("is-empty"), true);
+  assert.match(files.children[0].textContent, /Arrastre archivos a Bit/u);
+});
+
+test("el visor lleva dimensiones y formato reales al panel derecho y los limpia al cerrar", async () => {
+  const harness = createHarness();
+  initWorkspaceContext(harness);
+  harness.listeners.get("transition")({ phase: "enter", displayMode: "embedded" });
+  await settle();
+  await harness.elements.get("project-files").children[1].dispatch("click");
+  await settle();
+  const facts = harness.elements.get("project-model-facts");
+  const content = harness.elements.get("project-model-facts-content");
+  const rendered = content.children.map(row => row.children.map(cell => cell.textContent).join(": ")).join(" · ");
+  assert.equal(facts.hidden, false);
+  assert.match(rendered, /STL/u);
+  assert.match(rendered, /1 × 2 × 3/u);
+  assert.match(rendered, /unidad no declarada/u);
+  harness.elements.get("project-model-viewer").dispatch("bit-model-summary", {
+    detail: { name: "models/sample.stl", format: "stl", bounds: { size: [1, 2, 3] }, triangleCount: 2, componentCount: 1, componentStrategy: "single-mesh", selectedComponent: "Base" },
+  });
+  const updated = content.children.map(row => row.children.map(cell => cell.textContent).join(": ")).join(" · ");
+  assert.match(updated, /Selección: Base/u);
+  harness.elements.get("model-close").dispatch("click");
+  assert.equal(facts.hidden, true);
+});
 
 async function settle() {
   await new Promise(resolve => setImmediate(resolve));
@@ -165,11 +222,87 @@ test("una pantalla transiciona entre reposo, proyecto, documento, modelo y regre
 test("un archivo soltado abre contexto intermedio sin activar el proyecto", async () => {
   const harness = createHarness();
   initWorkspaceContext(harness);
-  harness.listeners.get("file-drop-requested")({ name: "informe.pdf", filePath: "C:/tmp/informe.pdf", size: 2048 });
+  harness.windowRef.BitUI.setFileContext({ name: "informe.pdf", filePath: "C:/tmp/informe.pdf", size: 2048 });
   assert.equal(harness.elements.get("file-context").hidden, false);
   assert.equal(harness.body.classList.contains("file-active"), true);
   assert.equal(harness.body.classList.contains("project-active"), false);
   assert.equal(harness.elements.get("file-context-name").children[0].textContent, "informe.pdf");
+  assert.equal(harness.fileActions.get("summarize").hidden, false);
+  assert.equal(harness.fileActions.get("analyze").hidden, true);
+  assert.equal(harness.fileActions.get("open").hidden, false);
+});
+
+test("cerrar un archivo incorporado durante un proyecto conserva el Workspace", async () => {
+  const harness = createHarness();
+  initWorkspaceContext(harness);
+  harness.listeners.get("transition")({ phase: "enter", displayMode: "embedded" });
+  await settle();
+  harness.windowRef.BitUI.setFileContext({ name: "plano.png", filePath: "C:/tmp/plano.png", size: 2048 });
+  assert.equal(harness.body.classList.contains("file-context-active"), true);
+  assert.equal(harness.body.classList.contains("project-active"), true);
+  harness.windowRef.BitUI.closeFileContext();
+  assert.equal(harness.body.classList.contains("project-active"), true);
+  assert.equal(harness.elements.get("project-context").hidden, false);
+});
+
+test("Abrir un PDF usa el visor seguro y conserva una sola tarjeta", async () => {
+  const harness = createHarness();
+  let openedPath = "";
+  harness.runtime.openFile = async path => { openedPath = path; return { ok: true }; };
+  initWorkspaceContext(harness);
+  harness.windowRef.BitUI.setFileContext({ name: "informe.pdf", filePath: "C:/tmp/informe.pdf", size: 2048 });
+  await settle();
+  assert.equal(harness.elements.get("file-context-page-status").children[0].textContent, "1 / 9");
+  assert.equal(harness.elements.get("file-context-pages").children.length, 8);
+  const button = harness.fileActions.get("open");
+  await harness.elements.get("file-context-actions").dispatch("click", { target: { closest: () => button } });
+  assert.equal(openedPath, "C:/tmp/informe.pdf");
+  assert.equal(harness.elements.get("file-context").hidden, false);
+  assert.match(harness.elements.get("file-context-response").textContent, /Archivo abierto/u);
+});
+
+test("la vista contextual permite preguntar sobre el archivo sin crear un proyecto", async () => {
+  const harness = createHarness();
+  initWorkspaceContext(harness);
+  harness.windowRef.BitUI.setFileContext({ name: "informe.pdf", filePath: "C:/tmp/informe.pdf", size: 2048 });
+  harness.elements.get("file-context-prompt").value = "¿Cuál es la idea principal?";
+  harness.elements.get("file-context-send").dispatch("click");
+  await settle();
+  assert.deepEqual(harness.fileRequests[0], {
+    filePath: "C:/tmp/informe.pdf",
+    action: "ask",
+    question: "¿Cuál es la idea principal?",
+  });
+  assert.match(harness.elements.get("file-context-response").textContent, /Respuesta local/u);
+});
+
+test("si falla un modelo soltado, el error queda visible en el contexto del archivo", async () => {
+  const harness = createHarness();
+  harness.runtime.loadDroppedModel = async () => ({ data: new Uint8Array([1, 2, 3]), assets: {} });
+  harness.modelRuntime.parse3DModel = () => { throw new Error("geometría inválida"); };
+  initWorkspaceContext(harness);
+  harness.windowRef.BitUI.setFileContext({ name: "pieza.stl", filePath: "C:/tmp/pieza.stl", size: 123 });
+  await settle();
+  assert.equal(harness.elements.get("file-context").hidden, false);
+  assert.match(harness.elements.get("file-context-response").textContent, /geometría inválida/u);
+});
+
+test("la orden de arrastre abre un modelo local en el Workspace integrado", async () => {
+  const harness = createHarness();
+  let requestedPath = '';
+  let response;
+  harness.runtime.loadDroppedModel = async ({ filePath }) => {
+    requestedPath = filePath;
+    return { data: new Uint8Array([1, 2, 3]), assets: {} };
+  };
+  harness.runtime.sendViewerCommandResult = value => { response = value; };
+  initWorkspaceContext(harness);
+  await harness.listeners.get('viewer')({ id: 'drop-1', command: { action: 'load-dropped', filePath: 'C:/tmp/pieza.stl' } });
+  assert.equal(requestedPath, 'C:/tmp/pieza.stl');
+  assert.equal(response.result.ok, true);
+  assert.equal(harness.elements.get('project-model').hidden, false);
+  assert.equal(harness.body.classList.contains('project-active'), true);
+  assert.equal(harness.body.dataset.visualState, 'project-3d');
 });
 
 test("la presentación multimonitor muestra un resumen principal y sincroniza la selección", async () => {

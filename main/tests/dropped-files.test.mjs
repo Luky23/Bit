@@ -29,6 +29,26 @@ test("resumir un archivo usa una sola inferencia sin herramientas ni rutas por c
   assert.equal(result.text, "Resumen del archivo.");
 });
 
+test("preguntar sobre un archivo conserva la pregunta fuera del contenido confiable", async () => {
+  let requestMessage = "";
+  const result = await runDroppedFileTurn({
+    file: { path: "C:/nota.txt", name: "nota.txt", content: "El proyecto comienza en abril." },
+    action: "ask",
+    question: "¿Cuándo comienza?",
+    config: { model: "elegido" },
+    modelService: {
+      async resolveModel(model) { return model; },
+      async generate(_model, request) {
+        requestMessage = request.messages[1].content;
+        return { message: { content: "Comienza en abril." } };
+      },
+    },
+  });
+  assert.match(requestMessage, /Pregunta del usuario: ¿Cuándo comienza\?/u);
+  assert.match(requestMessage, /El proyecto comienza en abril/u);
+  assert.equal(result.text, "Comienza en abril.");
+});
+
 test("adjuntar, preparar edición y avisar falta de extracción no invocan modelos", async () => {
   const file = { path: "C:/informe.pdf", name: "informe.pdf", content: null, notice: "Sin extracción de texto." };
   for (const action of ["attach", "edit", "summarize"]) {
@@ -86,8 +106,9 @@ test("la interfaz y el IPC registran el flujo de archivos soltados", async () =>
     assert.match(html, new RegExp(`data-action="${action}"`));
   }
   assert.match(html, /retainFile\(selected\)/);
+  assert.match(html, /function presentDroppedFile\(selected\)[\s\S]*?window\.BitUI\.setFileContext\(selected\);\s*return;/);
   assert.match(html, /filePath = await window\.bitRuntime\?\.getPathForFile\?\.\(file\)/);
-  assert.match(html, /if \(!filePath && typeof file\.path === 'string'\) filePath = file\.path/);
+  assert.match(html, /const filePath = await window\.bitRuntime\?\.getPathForFile\?\.\(file\) \|\|/);
   assert.match(html, /function hideModal\(\)\s*\{[\s\S]*?modal\.style\.display = 'none';\s*\}/);
   assert.match(html, /function clearDroppedFile\(\)[\s\S]*?droppedFile = null;/);
   assert.match(html, /#drop-modal\{inset:72px 24px auto auto/);
@@ -102,6 +123,61 @@ test("la interfaz y el IPC registran el flujo de archivos soltados", async () =>
 test("el IPC de archivos soltados valida ruta y acción", async () => {
   const { validateToolInput } = await import("../src/core/validation.mjs");
   assert.equal(validateToolInput("bit:process-dropped-file", { filePath: "C:\\Documentos\\nota.md", action: "summarize" }).ok, true);
+  assert.equal(validateToolInput("bit:process-dropped-file", { filePath: "C:\\Documentos\\nota.md", action: "ask", question: "¿Qué dice?" }).ok, true);
   assert.equal(validateToolInput("bit:process-dropped-file", { filePath: "C:\\Documentos\\nota.md", action: "delete" }).ok, false);
   assert.equal(validateToolInput("bit:process-dropped-file", { action: "summarize" }).ok, false);
+});
+
+test("un modelo 3D soltado admite el límite del visor, sin el límite de adjuntos", async () => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readDroppedModel } = await import("../src/core/file-tools.mjs");
+  const root = await mkdtemp(join(tmpdir(), "bit-model-drop-"));
+  try {
+    const path = join(root, "pieza.stl");
+    await writeFile(path, Buffer.alloc(9 * 1024 * 1024));
+    const model = await readDroppedModel(path);
+    assert.equal(model.data.byteLength, 9 * 1024 * 1024);
+    assert.equal(model.name, "pieza.stl");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("un glTF soltado carga su buffer local contiguo", async () => {
+  const { mkdtemp, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { readDroppedModel } = await import("../src/core/file-tools.mjs");
+  const root = await mkdtemp(join(tmpdir(), "bit-gltf-drop-"));
+  try {
+    const path = join(root, "pieza.gltf");
+    await writeFile(path, JSON.stringify({ buffers: [{ uri: "pieza.bin", byteLength: 4 }] }));
+    await writeFile(join(root, "pieza.bin"), Buffer.from([1, 2, 3, 4]));
+    const model = await readDroppedModel(path);
+    assert.deepEqual([...model.assets["pieza.bin"]], [1, 2, 3, 4]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("la ventana principal previsualiza los modelos soltados sin abrir un proyecto", async () => {
+  const { readFile } = await import('node:fs/promises');
+  const [html, preload, main, panelPreload, panel] = await Promise.all([
+    readFile(new URL('../electron/index.html', import.meta.url), 'utf8'),
+    readFile(new URL('../electron/preload.cjs', import.meta.url), 'utf8'),
+    readFile(new URL('../electron/main.mjs', import.meta.url), 'utf8'),
+    readFile(new URL('../electron/display-panel-preload.cjs', import.meta.url), 'utf8'),
+    readFile(new URL('../electron/display-panel.js', import.meta.url), 'utf8'),
+  ]);
+  assert.match(html, /async function openDroppedModelInWorkspace\(selected\)[\s\S]*?await window\.bitRuntime\.openDroppedModel\(selected\.filePath\)/);
+  assert.doesNotMatch(html, /openDroppedModelInWorkspace\(selected\)[\s\S]{0,300}?openWorkspace\(\)/);
+  assert.match(html, /onFileDropRequested\?\.\(selected=>[\s\S]*?presentDroppedFile\(\{\.\.\.selected,extension\}\)/);
+  assert.match(html, /presentDroppedFile\(selectedFiles\[0\]\)/);
+  assert.match(preload, /openDroppedModel:.*bit:open-dropped-model/);
+  assert.match(main, /\["stl", "3mf", "obj", "glb", "gltf"\]/);
+  assert.match(main, /ipcMain\.handle\("bit:open-dropped-model"[\s\S]*?openProjectWorkspace\(workspaceDisplay, displays\.length === 1\)[\s\S]*?requestWorkspaceViewerCommand\([\s\S]*?\{ action: "load-dropped", filePath \},[\s\S]*?\{ preferMain: displays\.length === 1 \},?[\s\S]*?\)/);
+  assert.match(panelPreload, /loadDroppedModel:.*bit:load-dropped-model/);
+  assert.match(panel, /addEventListener\('drop',[\s\S]*?executeViewerCommand\(\{ action: 'load-dropped', filePath \}\)/);
 });

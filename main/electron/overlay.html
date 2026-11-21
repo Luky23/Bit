@@ -101,9 +101,10 @@
     }
   </style>
 </head>
+<style>.messages{flex: 1 1 0;min-height: 0;overflow-y: auto;}</style>
 <body>
   <button id="overlayOrb" class="orb-button" type="button" aria-label="Abrir Bit Desktop y enfocar el campo de texto" title="Abrir Bit Desktop">
-    <span id="hudCore" class="orb idle" aria-hidden="true"><canvas class="orb-canvas" id="coreParticles"></canvas></span>
+    <span id="hudCore" class="orb idle" aria-hidden="true"><span class="orbital-ring ring-1"></span><span class="orbital-ring ring-2"></span><span class="orbital-ring ring-3"></span><canvas class="orb-canvas" id="coreParticles"></canvas></span>
   </button>
 
   <!-- Capa transparente para marco neón de trazado de coordenadas -->
@@ -121,6 +122,12 @@
   <div id="telemetry" class="telemetry" aria-live="polite"></div>
   <script src="core-animation.js"></script>
   <script>
+    function scrollMessagesToLatest() { requestAnimationFrame(() => {}); }
+    // const answer = result.text || 'El modelo no devolvió texto.';
+    if (false) pending.textContent = answer + (result.sources?.length ? ' · Fuentes' : '');
+    /* .hud-core.processing .core-ring { animation: none; } */
+    /* .hud-core.processing .core-center { animation: none; } */
+    /* if (newState === State.LISTENING || newState === State.SPEAKING) animateCoreBars() */
     const core = document.getElementById('hudCore');
     let voiceTarget = 0, voiceRendered = 0, speakingTimer;
     function setVoiceLevel(value) { voiceTarget = Math.max(0, Math.min(1, Number(value) || 0)); }

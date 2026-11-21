@@ -166,11 +166,29 @@ class WhisperSTT:
 class AudioRecorder:
     """Grabadora de audio simple usando sounddevice (opcional)."""
 
-    def __init__(self, sample_rate: int = 16000):
+    def __init__(self, sample_rate: int = 16000, device: int | str | None = None):
         self.sample_rate = sample_rate
         self.recording = False
         self.frames = []
         self._stream = None
+        self.device = device
+
+    @staticmethod
+    def resolve_input_device(sd, preferred: int | str | None = None):
+        """Elige el dispositivo solicitado o el primer micrófono disponible."""
+        devices = sd.query_devices()
+        candidates = [preferred, getattr(sd.default, "device", (None, None))[0]]
+        candidates.extend(index for index, item in enumerate(devices) if item.get("max_input_channels", 0) > 0)
+        for candidate in candidates:
+            if candidate is None or candidate == -1:
+                continue
+            try:
+                info = sd.query_devices(candidate, "input")
+                if info.get("max_input_channels", 0) > 0:
+                    return candidate
+            except (ValueError, TypeError):
+                continue
+        raise RuntimeError("No se encontró un dispositivo de entrada de audio disponible")
 
     def start(self):
         try:
@@ -179,7 +197,9 @@ class AudioRecorder:
             raise RuntimeError("sounddevice no instalado para grabación de micrófono")
         self.frames = []
         self.recording = True
+        self.device = self.resolve_input_device(sd, self.device)
         self._stream = sd.InputStream(
+            device=self.device,
             samplerate=self.sample_rate,
             channels=1,
             dtype="int16",

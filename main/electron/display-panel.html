@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="es">
 <head>
+  <link rel="stylesheet" href="./hud-tokens.css">
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self'; connect-src 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -165,7 +166,20 @@
     #settings{width:30px;height:30px;padding:0;font-size:17px}
     .command-dock{border:0;border-top:1px solid #14525d99;border-bottom:1px solid #14525d55;border-radius:0;background:linear-gradient(90deg,transparent,#07232c66,transparent);box-shadow:none}
     #workspace-command-submit{border:0;border-bottom:1px solid #1b6874;border-radius:0;background:transparent}
-    @media(prefers-reduced-motion:reduce){.panel,.files button,.viewer-toolbar button{transition:none!important}}
+    .workspace-chat{margin-top:auto;border-top:1px solid #183946;padding:14px;background:linear-gradient(180deg,#06131b66,#02070ccc)}
+    .workspace-chat h2{margin:0 0 10px;color:#69d9e6;font:9px Consolas,monospace;letter-spacing:.16em}
+    .workspace-chat .chat-orb{width:62px;height:62px;margin:0 auto 9px;border-radius:50%;background:radial-gradient(circle,#d8ffff 0 3%,#25d8f4 9%,#08788e 21%,transparent 53%),radial-gradient(circle,#0bbdd8 0 1px,transparent 2px);background-size:auto,9px 9px;box-shadow:0 0 20px #25d8f477,0 0 42px #0cb8d933}
+    .workspace-chat p{margin:0 0 8px;color:#9ab9bf;font:11px/1.45 "Segoe UI",sans-serif;text-align:center}
+    .workspace-chat button{width:100%;margin-top:5px;border:1px solid #175866;border-radius:12px;padding:7px 8px;background:#06212a;color:#9edee4;font:9px Consolas,monospace;cursor:pointer}
+    .project-core{min-height:100%;display:grid;place-items:center;padding:32px}
+    .project-core-inner{max-width:620px;text-align:center}
+    .project-core-orb{width:min(32vw,270px);aspect-ratio:1;margin:0 auto 22px;border-radius:50%;background:radial-gradient(circle,#efffff 0 1%,#36d9f4 3%,#0b9bb4 11%,transparent 43%),radial-gradient(circle,#2bd9f4 0 1px,transparent 2px);background-size:auto,13px 13px;box-shadow:0 0 24px #27dff477,0 0 90px #0aa4c044;animation:core-breathe 3.8s ease-in-out infinite}
+    .project-core h2{margin:0;color:#d8f7f8;font:400 clamp(24px,3vw,42px) "Segoe UI",sans-serif}
+    .project-core p{margin:10px 0 0;color:#7eaab2;font:13px/1.5 "Segoe UI",sans-serif}
+    @keyframes core-breathe{50%{transform:scale(1.04);filter:brightness(1.16)}}
+    body.model-active .project-core{display:none}
+    body:not(.model-active) #text-preview>.file-name,body:not(.model-active) #text-preview>.content{display:none}
+    @media(prefers-reduced-motion:reduce){.panel,.files button,.viewer-toolbar button,.project-core-orb{transition:none!important;animation:none!important}}
   </style>
 </head>
 <body>

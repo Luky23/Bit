@@ -1,8 +1,10 @@
-const {contextBridge,ipcRenderer}=require('electron');
+const {contextBridge,ipcRenderer,webUtils}=require('electron');
 contextBridge.exposeInMainWorld('projectPanel',Object.freeze({
   snapshot: (request={})=>ipcRenderer.invoke('bit:project-panel',request),
   setActiveProject: project=>ipcRenderer.invoke('bit:project-panel-select-project',project),
   loadModel: (request)=>ipcRenderer.invoke('bit:project-panel-load-model',request),
+  loadDroppedModel: request=>ipcRenderer.invoke('bit:load-dropped-model',request),
+  getPathForFile: file=>webUtils.getPathForFile(file),
   chat: message=>ipcRenderer.invoke('bit:chat',{message}),
   onChatChunk: listener=>{
     const handler=(_event,chunk)=>listener(chunk.text);
@@ -37,4 +39,11 @@ contextBridge.exposeInMainWorld('projectPanel',Object.freeze({
   sendViewerCommandResult: result=>ipcRenderer.send('bit:workspace-viewer-result',result),
   openMain: ()=>ipcRenderer.invoke('bit:open-main'),
   showHome: ()=>ipcRenderer.invoke('bit:show-home'),
+  startWorkshopSession: request=>ipcRenderer.invoke('bit:workshop-start',request),
+  stopWorkshopSession: request=>ipcRenderer.invoke('bit:workshop-stop',request),
+  markWorkshopEvent: request=>ipcRenderer.invoke('bit:workshop-mark',request),
+  recordWorkshopReading: request=>ipcRenderer.invoke('bit:workshop-reading',request),
+  getWorkshopSnapshot: request=>ipcRenderer.invoke('bit:workshop-snapshot',request),
+  updateDiagnosticComponent: request=>ipcRenderer.invoke('bit:diagnostic-update',request),
+  getDiagnosticSnapshot: request=>ipcRenderer.invoke('bit:diagnostic-snapshot',request),
 }));

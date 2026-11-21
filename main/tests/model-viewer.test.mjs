@@ -29,10 +29,18 @@ function makeElement() {
 
 function makeViewerHarness(t) {
   const operations = [];
+  const animationFrames = [];
   const context = Object.fromEntries([
     "setTransform", "clearRect", "save", "restore", "beginPath", "ellipse",
     "moveTo", "lineTo", "stroke", "closePath", "fill", "setLineDash",
   ].map((name) => [name, (...args) => operations.push([name, ...args])]));
+  for (const property of ["fillStyle", "strokeStyle", "shadowColor", "shadowBlur", "lineWidth", "globalCompositeOperation"]) {
+    Object.defineProperty(context, property, {
+      set(value) {
+        operations.push([property, value]);
+      },
+    });
+  }
   const canvas = makeElement();
   Object.assign(canvas, {
     width: 0,
@@ -65,7 +73,16 @@ function makeViewerHarness(t) {
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
   const originalResizeObserver = globalThis.ResizeObserver;
-  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener() {},
+    removeEventListener() {},
+    requestAnimationFrame(callback) {
+      animationFrames.push(callback);
+      return animationFrames.length;
+    },
+    cancelAnimationFrame() {},
+  };
   globalThis.document = { createElement: () => makeElement() };
   globalThis.ResizeObserver = undefined;
   t.after(() => {
@@ -76,7 +93,7 @@ function makeViewerHarness(t) {
     if (originalResizeObserver === undefined) delete globalThis.ResizeObserver;
     else globalThis.ResizeObserver = originalResizeObserver;
   });
-  return { root, canvas, elements, operations };
+  return { root, canvas, elements, operations, animationFrames };
 }
 
 function component(id, name, xOffset) {
@@ -137,6 +154,198 @@ test("3D renderer rechaza una calidad no configurada", (t) => {
   const { root } = makeViewerHarness(t);
   const viewer = createModelViewer(root);
   assert.throws(() => viewer.setQuality("ultra"), /calidad holográfica/u);
+  viewer.close();
+});
+
+test("3D renderer holográfico usa cuerpo petróleo sombreado y translúcido", (t) => {
+  const { root, operations } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  viewer.setQuality("high");
+  operations.length = 0;
+  viewer.load({
+    name: "pieza-color.stl",
+    format: "stl",
+    bounds: { center: [0, 0, 0], radius: 1 },
+    components: [{
+      id: "mesh-a",
+      name: "Malla cian",
+      color: [0.2, 0.7, 0.9],
+      positions: new Float32Array([
+        -0.8, -0.6, 0, 0.8, -0.6, 0, 0, 0.8, 0,
+      ]),
+    }, {
+      id: "mesh-b",
+      name: "Malla ámbar",
+      color: [0.35, 0.72, 0.82],
+      positions: new Float32Array([
+        -0.6, -0.4, -0.4, 0, 0.7, 0.4, 0.7, -0.4, -0.4,
+      ]),
+    }],
+  });
+
+  const fills = operations.filter(([name]) => name === "fillStyle").map(([, value]) => value);
+  assert.ok(new Set(fills).size >= 2, `se esperaban caras con color variable; se obtuvo ${fills.join(", ")}`);
+  assert.ok(fills.every((value) => /, \.82\)$/u.test(value)), "el cuerpo holográfico debe conservar opacidad 0.82");
+  assert.ok(fills.every((value) => /^rgba\(\d+, \d+, \d+, \.82\)$/u.test(value)), "el cuerpo debe usar sombreado calculado");
+  viewer.close();
+});
+
+test("3D renderer holográfico mantiene la superficie sólida al seleccionar", (t) => {
+  const { root, operations } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  viewer.setQuality("low");
+  viewer.load({
+    name: "cubo.stl",
+    format: "stl",
+    bounds: { center: [0, 0, 0], radius: 1 },
+    components: [{
+      id: "mesh",
+      name: "Cubo",
+      color: [0.2, 0.7, 0.9],
+      positions: new Float32Array([
+        -0.8, -0.8, 0, 0.8, -0.8, 0, 0.8, 0.8, 0,
+        -0.8, -0.8, 0, 0.8, 0.8, 0, -0.8, 0.8, 0,
+      ]),
+    }],
+  });
+  const restingFills = operations.filter(([name]) => name === "fillStyle").map(([, value]) => value);
+  operations.length = 0;
+
+  viewer.selectComponentByName("Cubo");
+
+  assert.equal(operations.filter(([name]) => name === "fill").length, 2, "la selección debe conservar todas las caras sólidas");
+  assert.deepEqual(operations.filter(([name]) => name === "fillStyle").map(([, value]) => value), restingFills, "la selección no debe cambiar el material");
+  assert.ok(operations.filter(([name]) => name === "stroke").length > 0, "debe conservar las aristas técnicas");
+  viewer.close();
+});
+
+test("3D renderer holográfico no omite caras al superar el presupuesto interactivo", (t) => {
+  const { root, operations } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  const triangleCount = 15_000;
+  const positions = new Float32Array(triangleCount * 9);
+  for (let index = 0; index < positions.length; index += 9) {
+    const offset = index / 90_000;
+    positions[index] = offset;
+    positions[index + 3] = offset + 0.01;
+    positions[index + 7] = 0.01;
+  }
+  viewer.setQuality("high");
+  operations.length = 0;
+
+  viewer.load({
+    name: "superficie-completa.3mf",
+    format: "3mf",
+    bounds: { center: [0.75, 0.005, 0], radius: 1 },
+    components: [{ id: "mesh", name: "Superficie", color: [0.2, 0.7, 0.9], positions }],
+  });
+
+  assert.equal(operations.filter(([name]) => name === "fill").length, triangleCount, "el render estático debe dibujar todas las caras");
+  viewer.close();
+});
+
+test("3D renderer agrupa movimientos del puntero en un solo cuadro", (t) => {
+  const { root, canvas, operations, animationFrames } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  viewer.load({
+    name: "ensamble.obj",
+    format: "obj",
+    bounds: { center: [0.5, 0.2, 0], radius: 1 },
+    components: [component("base", "Base", 0), component("tapa", "Tapa", 0.6)],
+  });
+  canvas.click("pointerdown", { clientX: 10, clientY: 10, button: 0, shiftKey: false, pointerId: 1 });
+  const rendersBeforeMove = operations.filter(([name]) => name === "clearRect").length;
+
+  canvas.click("pointermove", { clientX: 20, clientY: 12 });
+  canvas.click("pointermove", { clientX: 28, clientY: 16 });
+  canvas.click("pointermove", { clientX: 35, clientY: 20 });
+
+  assert.equal(operations.filter(([name]) => name === "clearRect").length, rendersBeforeMove);
+  assert.equal(animationFrames.length, 1);
+  animationFrames.shift()(16);
+  assert.equal(operations.filter(([name]) => name === "clearRect").length, rendersBeforeMove + 1);
+  viewer.close();
+});
+
+test("3D renderer conserva completa una malla grande en reposo", (t) => {
+  const { root, operations } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  const triangleCount = 100_000;
+  const positions = new Float32Array(triangleCount * 9);
+  for (let index = 0; index < positions.length; index += 9) {
+    const offset = index / 9_000;
+    positions[index] = offset;
+    positions[index + 3] = offset + 0.4;
+    positions[index + 7] = 0.4;
+  }
+  viewer.setQuality("low");
+  operations.length = 0;
+  viewer.load({
+    name: "ensamble-grande.stl",
+    format: "stl",
+    bounds: { center: [50, 0.2, 0], radius: 50 },
+    components: [{ id: "mesh", name: "Malla", color: [0.2, 0.7, 0.9], positions }],
+  });
+
+  const filledTriangles = operations.filter(([name]) => name === "fill").length;
+  assert.equal(filledTriangles, triangleCount, `se dibujaron ${filledTriangles} de ${triangleCount} caras`);
+  viewer.close();
+});
+
+test("3D renderer conserva material y detalle mientras se gira", (t) => {
+  const { root, canvas, operations, animationFrames } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  const triangleCount = 100_000;
+  const positions = new Float32Array(triangleCount * 9);
+  for (let index = 0; index < positions.length; index += 9) {
+    const offset = index / 9_000;
+    positions[index] = offset;
+    positions[index + 3] = offset + 0.4;
+    positions[index + 7] = 0.4;
+  }
+  viewer.setQuality("high");
+  viewer.load({
+    name: "ensamble-interactivo.stl",
+    format: "stl",
+    bounds: { center: [50, 0.2, 0], radius: 50 },
+    components: [{ id: "mesh", name: "Malla", color: [0.2, 0.7, 0.9], positions }],
+  });
+  operations.length = 0;
+
+  canvas.click("pointerdown", { clientX: 10, clientY: 10, button: 0, shiftKey: false, pointerId: 1 });
+  canvas.click("pointermove", { clientX: 40, clientY: 16 });
+  animationFrames.shift()(16);
+
+  const interactiveEdges = operations.filter(([name]) => name === "lineTo").length;
+  const interactiveFills = operations.filter(([name]) => name === "fillStyle").map(([, value]) => value);
+  operations.length = 0;
+  canvas.click("pointerup", { clientX: 40, clientY: 16, button: 0 });
+  assert.equal(operations.filter(([name]) => name === "lineTo").length, interactiveEdges, "el detalle cambió al soltar el puntero");
+  assert.deepEqual(operations.filter(([name]) => name === "fillStyle").map(([, value]) => value), interactiveFills, "el material cambió al soltar el puntero");
+  viewer.close();
+});
+
+test("3D renderer evita desenfoque costoso en mallas de miles de caras", (t) => {
+  const { root, operations } = makeViewerHarness(t);
+  const viewer = createModelViewer(root);
+  const triangleCount = 5_000;
+  const positions = new Float32Array(triangleCount * 9);
+  for (let index = 0; index < positions.length; index += 9) {
+    positions[index] = index / 9_000;
+    positions[index + 3] = positions[index] + 0.4;
+    positions[index + 7] = 0.4;
+  }
+  viewer.setQuality("high");
+  operations.length = 0;
+  viewer.load({
+    name: "malla-detallada.stl",
+    format: "stl",
+    bounds: { center: [2.5, 0.2, 0], radius: 3 },
+    components: [{ id: "mesh", name: "Malla", color: [0.2, 0.7, 0.9], positions }],
+  });
+
+  const blurValues = operations.filter(([name]) => name === "shadowBlur").map(([, value]) => value);
+  assert.equal(Math.max(...blurValues), 0, `se aplic\u00f3 un desenfoque de ${Math.max(...blurValues)} px`);
   viewer.close();
 });
 

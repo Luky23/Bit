@@ -10,6 +10,7 @@ import pkg from "electron";
 const { app } = pkg;
 import { isAllowedAudioFile } from "../voice/settings.mjs";
 import { validateProjectsRoot } from "../projects/workspace.mjs";
+import { resolveWorkspaceLayout, validateWorkspaceLayout } from "../projects/layout.mjs";
 import { quantizationFromName, readGgufMetadata } from "../models/gguf-metadata.mjs";
 import { automaticModelDirectories, discoverGgufFiles } from "../models/model-discovery.mjs";
 import { isWithin } from "./sandbox.mjs";
@@ -89,12 +90,15 @@ const STARTUP_DEFAULTS = {
   personalityPrompt: "Eres Bit, un asistente personal local inteligente, eficiente, conciso y técnico. Responde de forma directa sin divagar.",
   whisperModelPath: "",
   projectsRoot: "",
+  projectStorageMode: "local-isolated",
+  projectsBackupRoot: "",
   vaultPath: "",
   continuityEnabled: true,
   performanceMode: "automatic",
   maxConcurrentTasks: 0,
   hologramQuality: "automatic",
-  appearanceMode: "classic",
+  appearanceMode: "holographic",
+  spatialAppearanceMigrated: false,
   musicPlatform: "youtube",
   musicSelectionMode: "popular",
   browserPreference: "chrome.exe",
@@ -107,6 +111,7 @@ const STARTUP_DEFAULTS = {
   lastSession: null,
   googleCalendarConnection: { status: "not-configured", readOnly: true },
   notionConnection: { status: "not-configured", readOnly: true },
+  workspaceLayout: { preset: "home", layout: resolveWorkspaceLayout("home") },
 };
 const CONFIG_KEYS = new Set(Object.keys(STARTUP_DEFAULTS));
 CONFIG_KEYS.add('displayLayout');
@@ -365,6 +370,14 @@ async function readConfig() {
       const userName = normalizeUserName(parsed.userName);
       config.userName = userName.ok ? userName.value : STARTUP_DEFAULTS.userName;
     }
+    if (parsed && Object.hasOwn(parsed, "workspaceLayout")) {
+      const candidate = parsed.workspaceLayout;
+      const layout = validateWorkspaceLayout(candidate?.layout);
+      const presets = ["home", "project", "project_3d", "document", "custom"];
+      config.workspaceLayout = layout.ok && presets.includes(candidate?.preset)
+        ? { preset: candidate.preset, layout: layout.value }
+        : STARTUP_DEFAULTS.workspaceLayout;
+    }
     if (!config.whisperModelPath) config.whisperModelPath = await detectWhisperModelPath();
     return config;
   } catch {
@@ -455,6 +468,13 @@ export async function configSet(key, value) {
       return { ok: false, error: "audioOutputDeviceId debe ser un identificador de salida de audio vÃ¡lido" };
     }
     config[key] = value.trim();
+  } else if (key === "workspaceLayout") {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return { ok: false, error: "workspaceLayout debe ser un objeto" };
+    const presets = ["home", "project", "project_3d", "document", "custom"];
+    if (!presets.includes(value.preset)) return { ok: false, error: "workspaceLayout.preset no es válido" };
+    const layout = validateWorkspaceLayout(value.layout);
+    if (!layout.ok) return layout;
+    config[key] = { preset: value.preset, layout: layout.value };
   } else if (key === "userName") {
     const userName = normalizeUserName(value);
     if (!userName.ok) return userName;
@@ -527,6 +547,16 @@ export async function configSet(key, value) {
       return { ok: false, error: "projectsRoot debe ser una carpeta local absoluta, no una ruta de red" };
     }
     config[key] = value ? resolve(value) : "";
+  } else if (key === "projectStorageMode") {
+    if (!["local-isolated", "central-local-backup"].includes(value)) {
+      return { ok: false, error: "projectStorageMode debe ser local-isolated o central-local-backup" };
+    }
+    config[key] = value;
+  } else if (key === "projectsBackupRoot") {
+    if (typeof value !== "string" || value.length > 1024 || (value !== "" && (!isAbsolute(value) || value.startsWith("\\\\") || value.startsWith("//")))) {
+      return { ok: false, error: "projectsBackupRoot debe ser una carpeta local absoluta, no una ruta de red" };
+    }
+    config[key] = value ? resolve(value) : "";
   } else if (key === "continuityEnabled") {
     if (typeof value !== "boolean") return { ok: false, error: "continuityEnabled debe ser boolean" };
     config[key] = value;
@@ -538,6 +568,9 @@ export async function configSet(key, value) {
     const appearance = normalizeAppearanceMode(value);
     if (!appearance.ok) return appearance;
     config[key] = appearance.value;
+  } else if (key === "spatialAppearanceMigrated") {
+    if (typeof value !== "boolean") return { ok: false, error: "spatialAppearanceMigrated debe ser boolean" };
+    config[key] = value;
   } else if (key === "musicPlatform") {
     if (!["youtube", "spotify"].includes(value)) return { ok: false, error: "musicPlatform debe ser youtube o spotify" };
     config[key] = value;

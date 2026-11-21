@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
   stopChat: () => ipcRenderer.invoke("bit:stop-chat"),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   processDroppedFile: (request) => ipcRenderer.invoke("bit:process-dropped-file", request),
+  previewDroppedImage: (filePath) => ipcRenderer.invoke("bit:preview-dropped-image", { filePath }),
+  previewDroppedFile: (filePath) => ipcRenderer.invoke("bit:preview-dropped-file", { filePath }),
   forwardDroppedFile: filePath => ipcRenderer.invoke('bit:forward-dropped-file',filePath),
   onFileDropRequested: listener => {
     const handler=(_event,data)=>listener(data);
@@ -124,5 +126,12 @@ contextBridge.exposeInMainWorld("bitRuntime", Object.freeze({
     const handler = (_event, role) => listener(role);
     ipcRenderer.on("bit:display-role-assigned", handler);
     return () => ipcRenderer.removeListener("bit:display-role-assigned", handler);
+  },
+  getUiState: () => ipcRenderer.invoke("bit:get-ui-state"),
+  dispatchUiAction: (action) => ipcRenderer.invoke("bit:ui-action", action),
+  onUiState: (listener) => {
+    const handler = (_event, state) => listener(state);
+    ipcRenderer.on("bit:ui-state", handler);
+    return () => ipcRenderer.removeListener("bit:ui-state", handler);
   },
 }));

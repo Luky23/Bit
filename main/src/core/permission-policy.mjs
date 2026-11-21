@@ -8,6 +8,7 @@ export const PERMISSION_CATEGORIES = Object.freeze({
   "file.read": { risk: "low", label: "Abrir documentos autorizados" },
   "workspace.read": { risk: "low", label: "Leer archivos de proyectos" },
   "workspace.view": { risk: "low", label: "Mostrar proyectos y vistas 3D" },
+  "workspace.create": { risk: "low", label: "Crear proyectos y archivos nuevos" },
   "system.read": { risk: "low", label: "Consultar información del sistema" },
   "workspace.write": { risk: "medium", label: "Crear o modificar archivos de proyectos" },
   "memory.write": { risk: "medium", label: "Guardar información en la memoria local" },

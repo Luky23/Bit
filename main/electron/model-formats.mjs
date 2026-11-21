@@ -39,9 +39,9 @@ function transform3mfPoint(values, point) {
   if (!values) return point;
   const [a, b, c, d, e, f, g, h, i, j, k, l] = values;
   return [
-    a * point[0] + b * point[1] + c * point[2] + j,
-    d * point[0] + e * point[1] + f * point[2] + k,
-    g * point[0] + h * point[1] + i * point[2] + l,
+    a * point[0] + d * point[1] + g * point[2] + j,
+    b * point[0] + e * point[1] + h * point[2] + k,
+    c * point[0] + f * point[1] + i * point[2] + l,
   ];
 }
 
@@ -50,6 +50,57 @@ function parse3mfTransform(value) {
   const values = String(value).trim().split(/\s+/u).map(Number);
   if (values.length !== 12 || !values.every(Number.isFinite)) throw new Error("El 3MF contiene una transformación no válida");
   return values;
+}
+
+function splitStlComponents(positions) {
+  const triangleCount = positions.length / 9;
+  if (triangleCount < 2) return [positions];
+  // Construir el grafo de conectividad exige crear una clave de texto y
+  // mantener un Map por vértice. En STL grandes bloquea el proceso principal
+  // durante la carga; para estas mallas la separación tampoco es fiable para
+  // una explosión automática, así que se conserva como una pieza única.
+  if (triangleCount > 40_000) return [positions];
+  const parent = Array.from({ length: triangleCount }, (_, index) => index);
+  const find = (value) => {
+    let root = value;
+    while (parent[root] !== root) root = parent[root];
+    while (parent[value] !== value) {
+      const next = parent[value];
+      parent[value] = root;
+      value = next;
+    }
+    return root;
+  };
+  const union = (left, right) => {
+    const a = find(left);
+    const b = find(right);
+    if (a !== b) parent[b] = a;
+  };
+  const vertices = new Map();
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    for (let vertex = 0; vertex < 3; vertex += 1) {
+      const offset = triangle * 9 + vertex * 3;
+      const key = `${positions[offset]}|${positions[offset + 1]}|${positions[offset + 2]}`;
+      const previous = vertices.get(key);
+      if (previous === undefined) vertices.set(key, triangle);
+      else union(triangle, previous);
+    }
+  }
+  const groups = new Map();
+  for (let triangle = 0; triangle < triangleCount; triangle += 1) {
+    const root = find(triangle);
+    const group = groups.get(root) || [];
+    group.push(triangle);
+    groups.set(root, group);
+  }
+  // STL exportadores que duplican todos los vértices producen un grupo por
+  // triángulo; no interpretamos ese caso como un ensamblaje falso.
+  if (groups.size <= 1 || groups.size > 64) return [positions];
+  return [...groups.values()].map((triangles) => {
+    const result = new Float32Array(triangles.length * 9);
+    triangles.forEach((triangle, index) => result.set(positions.subarray(triangle * 9, triangle * 9 + 9), index * 9));
+    return result;
+  });
 }
 
 async function inflateRaw(bytes) {
@@ -92,47 +143,105 @@ async function parse3mf(bytes) {
   const modelAttributes = xmlAttributes(modelTag);
   const scale = UNIT_TO_MM.get(String(modelAttributes.unit || "millimeter").toLowerCase());
   if (!scale) throw new Error(`Unidad 3MF no compatible: ${modelAttributes.unit}`);
-  const objects = new Map();
-  for (const objectMatch of xml.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/giu)) {
-    const attributes = xmlAttributes(objectMatch[1]);
-    const body = objectMatch[2];
-    const vertices = [...body.matchAll(/<vertex\b([^>]*)\/?\s*>/giu)].map(match => {
-      const value = xmlAttributes(match[1]);
-      return [xmlNumber(value.x, "una coordenada X"), xmlNumber(value.y, "una coordenada Y"), xmlNumber(value.z, "una coordenada Z")];
-    });
-    const triangles = [...body.matchAll(/<triangle\b([^>]*)\/?\s*>/giu)].map(match => {
-      const value = xmlAttributes(match[1]);
-      return [Number.parseInt(value.v1, 10), Number.parseInt(value.v2, 10), Number.parseInt(value.v3, 10)];
-    });
-    if (vertices.length && triangles.length) objects.set(attributes.id, { id: attributes.id, name: attributes.name || `Objeto ${attributes.id}`, vertices, triangles });
+  const parseObjects = (source, sourcePath) => {
+    const objects = new Map();
+    for (const objectMatch of source.matchAll(/<object\b([^>]*)>([\s\S]*?)<\/object>/giu)) {
+      const attributes = xmlAttributes(objectMatch[1]);
+      const body = objectMatch[2];
+      const vertices = [...body.matchAll(/<vertex\b([^>]*)\/?\s*>/giu)].map(match => {
+        const value = xmlAttributes(match[1]);
+        return [xmlNumber(value.x, "una coordenada X"), xmlNumber(value.y, "una coordenada Y"), xmlNumber(value.z, "una coordenada Z")];
+      });
+      const triangles = [...body.matchAll(/<triangle\b([^>]*)\/?\s*>/giu)].map(match => {
+        const value = xmlAttributes(match[1]);
+        return [Number.parseInt(value.v1, 10), Number.parseInt(value.v2, 10), Number.parseInt(value.v3, 10)];
+      });
+      const references = [...body.matchAll(/<component\b([^>]*)\/?\s*>/giu)].map(match => {
+        const value = xmlAttributes(match[1]);
+        return { path: value["p:path"]?.replace(/^\/+/, "") || sourcePath, objectId: value.objectid, transform: parse3mfTransform(value.transform) };
+      });
+      if (attributes.id) objects.set(`${sourcePath}#${attributes.id}`, {
+        id: attributes.id,
+        name: attributes.name || `Objeto ${attributes.id}`,
+        vertices,
+        triangles,
+        references,
+        sourcePath,
+      });
+    }
+    return objects;
+  };
+  const objectEntries = new Map(parseObjects(xml, "3D/3dmodel.model"));
+  for (const [entryName, entryBytes] of entries) {
+    if (entryName === "3D/3dmodel.model" || !/\.model$/iu.test(entryName)) continue;
+    try {
+      const entryXml = textOf(entryBytes);
+      for (const [key, object] of parseObjects(entryXml, entryName)) objectEntries.set(key, object);
+    } catch { /* Los metadatos .model no geométricos no son necesarios para el visor. */ }
   }
-  if (!objects.size) throw new Error("El 3MF no contiene mallas triangulares");
+  if (![...objectEntries.values()].some(object => object.triangles.length || object.references.length)) {
+    throw new Error("El 3MF no contiene mallas triangulares");
+  }
   const items = [...xml.matchAll(/<item\b([^>]*)\/?\s*>/giu)].map(match => xmlAttributes(match[1]));
-  const placements = items.length ? items : [...objects.values()].map(object => ({ objectid: object.id }));
+  const placements = items.length ? items : [...objectEntries.values()]
+    .filter(object => object.sourcePath === "3D/3dmodel.model")
+    .map(object => ({ objectid: object.id }));
   const components = [];
+  const resolving = new Set();
+  const appendObject = (object, transforms, inheritedName = object.name) => {
+    if (!object || resolving.has(`${object.sourcePath}#${object.id}`)) throw new Error("El 3MF contiene una referencia circular");
+    const key = `${object.sourcePath}#${object.id}`;
+    resolving.add(key);
+    if (object.vertices.length && object.triangles.length) {
+      const positions = [];
+      for (const triangle of object.triangles) {
+        for (const index of triangle) {
+          const point = object.vertices[index];
+          if (!point) throw new Error("El 3MF referencia un vértice inexistente");
+          const transformed = transforms.reduce((current, transform) => transform3mfPoint(transform, current), point);
+          positions.push(...transformed.map(value => value * scale));
+        }
+      }
+      if (positions.length) components.push({ id: `3mf-${components.length}`, name: inheritedName, positions: new Float32Array(positions), color: DEFAULT_COLOR });
+    }
+    for (const reference of object.references) {
+      const target = objectEntries.get(`${reference.path}#${reference.objectId}`);
+      if (!target) throw new Error(`El 3MF referencia una malla inexistente: ${reference.path}`);
+      appendObject(target, reference.transform ? [reference.transform, ...transforms] : transforms, target.name || inheritedName);
+    }
+    resolving.delete(key);
+  };
   for (const placement of placements) {
-    const object = objects.get(placement.objectid);
+    const object = objectEntries.get(`3D/3dmodel.model#${placement.objectid}`);
     if (!object) continue;
     const transform = parse3mfTransform(placement.transform);
-    const positions = [];
-    for (const triangle of object.triangles) {
-      for (const index of triangle) {
-        const point = object.vertices[index];
-        if (!point) throw new Error("El 3MF referencia un vértice inexistente");
-        positions.push(...transform3mfPoint(transform, point).map(value => value * scale));
-      }
-    }
-    if (positions.length) components.push({ id: `3mf-${components.length}`, name: object.name, positions: new Float32Array(positions), color: DEFAULT_COLOR });
-    if (components.length && positions.length / 9 > MAX_TRIANGLES) throw new Error("El 3MF supera el límite de triángulos admitido");
+    appendObject(object, transform ? [transform] : []);
+    const triangleCount = components.reduce((count, component) => count + component.positions.length / 9, 0);
+    if (triangleCount > MAX_TRIANGLES) throw new Error("El 3MF supera el límite de triángulos admitido");
   }
   if (!components.length) throw new Error("El 3MF no contiene objetos construibles");
-  return { components, units: "millimeter", sourceUnit: String(modelAttributes.unit || "millimeter").toLowerCase(), componentStrategy: components.length > 1 ? "build-items" : "single-mesh" };
+  return {
+    components,
+    units: "millimeter",
+    sourceUnit: String(modelAttributes.unit || "millimeter").toLowerCase(),
+    componentStrategy: components.length > 1 ? "build-items" : "single-mesh",
+    // Los 3MF de CAD/laminadores suelen definir Z como vertical. La vista
+    // superior conserva la orientación natural de la pieza al abrirla.
+    // Esquina superior derecha visual: superior + frontal + lateral derecho.
+    preferredView: "iso-nw",
+  };
 }
 
 function parseStl(bytes) {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const header = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 256))).trimStart().toLowerCase();
-  const ascii = header.startsWith("solid") && /vertex\s+/iu.test(textOf(bytes));
+  // Un STL binario puede empezar por "solid" y contener bytes que no son
+  // UTF-8. Solo intentamos leerlo como ASCII si la decodificación completa
+  // es válida; de lo contrario seguimos por la ruta binaria.
+  let ascii = false;
+  if (header.startsWith("solid")) {
+    try { ascii = /vertex\s+/iu.test(textOf(bytes)); } catch { ascii = false; }
+  }
   const positions = [];
   if (!ascii && bytes.length >= 84) {
     const count = view.getUint32(80, true);
@@ -146,18 +255,30 @@ function parseStl(bytes) {
           positions.push(view.getFloat32(offset, true), view.getFloat32(offset + 4, true), view.getFloat32(offset + 8, true));
         }
       }
-      return [{ id: "stl-0", name: "Malla STL", positions: new Float32Array(positions), color: DEFAULT_COLOR }];
+      return splitStlComponents(new Float32Array(positions)).map((componentPositions, index) => ({
+        id: `stl-${index}`,
+        name: index === 0 ? "Malla STL" : `Pieza STL ${index + 1}`,
+        positions: componentPositions,
+        color: DEFAULT_COLOR,
+      }));
     }
   }
 
-  const source = textOf(bytes);
+  let source;
+  try { source = textOf(bytes); }
+  catch { throw new Error("El STL no es ASCII UTF-8 válido ni contiene una malla binaria válida"); }
   const vertexPattern = /\bvertex\s+([-+\d.eE]+)\s+([-+\d.eE]+)\s+([-+\d.eE]+)/giu;
   for (const match of source.matchAll(vertexPattern)) {
     positions.push(Number(match[1]), Number(match[2]), Number(match[3]));
     if (positions.length / 9 > MAX_TRIANGLES) throw new Error("El STL supera el límite de triángulos admitido");
   }
   if (!positions.length || positions.length % 9 !== 0) throw new Error("El STL no contiene triángulos válidos");
-  return [{ id: "stl-0", name: "Malla STL", positions: new Float32Array(positions), color: DEFAULT_COLOR }];
+  return splitStlComponents(new Float32Array(positions)).map((componentPositions, index) => ({
+    id: `stl-${index}`,
+    name: index === 0 ? "Malla STL" : `Pieza STL ${index + 1}`,
+    positions: componentPositions,
+    color: DEFAULT_COLOR,
+  }));
 }
 
 function colorForMaterial(name) {
@@ -519,7 +640,7 @@ export function parse3DModel({ name, data, assets = {} } = {}) {
   const bytes = bytesOf(data);
   const extension = name.split(".").pop().toLowerCase();
   let components;
-  if (extension === "3mf") return parse3mf(bytes).then(result => ({ name, format: extension, components: result.components, bounds: calculateBounds(result.components), units: result.units, sourceUnit: result.sourceUnit, componentStrategy: result.componentStrategy }));
+  if (extension === "3mf") return parse3mf(bytes).then(result => ({ name, format: extension, components: result.components, bounds: calculateBounds(result.components), units: result.units, sourceUnit: result.sourceUnit, componentStrategy: result.componentStrategy, preferredView: result.preferredView }));
   if (extension === "stl") components = parseStl(bytes);
   else if (extension === "obj") components = parseObj(bytes);
   else if (extension === "glb") {

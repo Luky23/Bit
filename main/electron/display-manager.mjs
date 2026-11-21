@@ -433,10 +433,10 @@ export function isDisplayPanel(sender) {
   return [projectWindow, infoWindow].some(win=>win&&!win.isDestroyed()&&win.webContents===sender);
 }
 
-export function requestWorkspaceViewerCommand(command) {
-  const win = projectWindow && !projectWindow.isDestroyed()
-    ? projectWindow
-    : mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
+export function requestWorkspaceViewerCommand(command, { preferMain = false } = {}) {
+  const main = mainWindowRef && !mainWindowRef.isDestroyed() ? mainWindowRef : null;
+  const project = projectWindow && !projectWindow.isDestroyed() ? projectWindow : null;
+  const win = preferMain ? main ?? project : project ?? main;
   if (!win) {
     return Promise.reject(new Error("No hay una ventana Workspace disponible para controlar el visor 3D"));
   }

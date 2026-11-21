@@ -12,7 +12,11 @@
   --hud-danger: #ff7087;
   --voice-level: 0;
   --core-size: 260px;
-  font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", "Segoe UI Variable", "Segoe UI", sans-serif;
+}
+
+button, input, select, textarea, code, pre, .hud-mono {
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
 }
 
 .reactor-core {

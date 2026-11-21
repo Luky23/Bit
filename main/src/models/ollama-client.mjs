@@ -96,7 +96,13 @@ export class OllamaClient {
 
   async #generateRequest(model, request, { onChunk, signal } = {}) {
     const budgets = await this.#budgets();
-    const scope = this.#requestScope(signal, budgets.connectionMs);
+    const generationBudgets = this.performanceManager
+      ? await this.performanceManager.getBudgets("model.generate")
+      : budgets;
+    // /api/chat puede tardar en devolver cabeceras mientras Ollama carga el modelo en CPU.
+    // Comprobamos la conexión con un endpoint liviano antes de esperar la generación.
+    await this.#jsonRequest("/api/version", {}, signal, budgets);
+    const scope = this.#requestScope(signal, 0, generationBudgets.totalMs);
     try {
       const response = await this.fetch(new URL("/api/chat", this.baseUrl), {
         method: "POST",
@@ -172,7 +178,7 @@ export class OllamaClient {
 
   async #budgets() {
     if (this.performanceManager) return this.performanceManager.getBudgets("connection.local");
-    return { connectionMs: 10_000, totalMs: 30_000 };
+    return { connectionMs: 10_000, totalMs: 300_000 };
   }
 
   #requestScope(signal, connectionMs, totalMs = 0) {
@@ -180,11 +186,11 @@ export class OllamaClient {
     const abort = () => controller.abort(signal.reason);
     if (signal?.aborted) abort();
     else signal?.addEventListener("abort", abort, { once: true });
-    const connectionTimer = setTimeout(() => {
+    const connectionTimer = connectionMs > 0 ? setTimeout(() => {
       controller.abort(Object.assign(new Error("Ollama no estableció la conexión local dentro del presupuesto adaptativo."), {
         code: "ADAPTIVE_CONNECTION_TIMEOUT",
       }));
-    }, connectionMs);
+    }, connectionMs) : null;
     const totalTimer = totalMs > 0
       ? setTimeout(() => {
         controller.abort(Object.assign(new Error("Ollama superó el límite total de la operación local."), {

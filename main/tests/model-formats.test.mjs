@@ -46,8 +46,7 @@ function makeGlb(json, binary) {
   return result;
 }
 
-function make3mf() {
-  const xml = `<model unit="millimeter"><resources><object id="1" name="Base"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="20" z="30"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object></resources><build><item objectid="1"/></build></model>`;
+function make3mf(xml = `<model unit="millimeter"><resources><object id="1" name="Base"><mesh><vertices><vertex x="0" y="0" z="0"/><vertex x="10" y="0" z="0"/><vertex x="0" y="20" z="30"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object></resources><build><item objectid="1"/></build></model>`) {
   const name = Buffer.from("3D/3dmodel.model");
   const data = Buffer.from(xml);
   const compressed = deflateRawSync(data);
@@ -68,6 +67,18 @@ test("3D parser: importa STL ASCII y binario como geometría triangular real", (
   triangle.forEach((value, index) => binary.writeFloatLE(value, 96 + index * 4));
   assert.deepEqual([...parse3DModel({ name: "pieza.stl", data: ascii }).components[0].positions], triangle);
   assert.deepEqual([...parse3DModel({ name: "pieza.stl", data: binary }).components[0].positions], triangle);
+});
+
+test("3D parser: un STL binario con cabecera solid no se intenta decodificar como UTF-8", () => {
+  const binary = Buffer.alloc(84 + 50);
+  binary.write("solid modelo", 0, "ascii");
+  binary.writeUInt32LE(1, 80);
+  binary.writeFloatLE(0, 96); binary.writeFloatLE(0, 100); binary.writeFloatLE(0, 104);
+  binary.writeFloatLE(1, 108); binary.writeFloatLE(0, 112); binary.writeFloatLE(0, 116);
+  binary.writeFloatLE(0, 120); binary.writeFloatLE(1, 124); binary.writeFloatLE(0, 128);
+  binary[133] = 0xff;
+  const model = parse3DModel({ name: "modelo.stl", data: binary });
+  assert.equal(model.components[0].positions.length, 9);
 });
 
 test("3D parser: conserva grupos independientes del OBJ para seleccionar y explosionar", () => {
@@ -104,6 +115,16 @@ test("3MF: abre ZIP/XML real, conserva unidades y calcula dimensiones", async ()
   assert.equal(model.componentStrategy, "single-mesh");
   assert.equal(model.components.length, 1);
   assert.deepEqual(model.bounds.size, [10, 20, 30]);
+});
+
+test("3MF: aplica transformaciones anidadas y de construcción a una sola pieza", async () => {
+  const xml = `<model unit="centimeter"><resources>
+    <object id="1"><mesh><vertices><vertex x="1" y="2" z="3"/><vertex x="2" y="2" z="3"/><vertex x="1" y="3" z="3"/></vertices><triangles><triangle v1="0" v2="1" v3="2"/></triangles></mesh></object>
+    <object id="2"><components><component objectid="1" transform="1 0 0 0 1 0 0 0 1 4 0 0"/></components></object>
+    </resources><build><item objectid="2" transform="0 1 0 -1 0 0 0 0 1 10 20 30"/></build></model>`;
+  const model = await parse3DModel({ name: "pieza.3mf", data: make3mf(xml) });
+  assert.deepEqual([...model.components[0].positions], [80, 250, 330, 80, 260, 330, 70, 250, 330]);
+  assert.deepEqual(model.bounds.center, [75, 255, 330]);
 });
 
 test("3D parser: rechaza rutas glTF externas faltantes y cabeceras GLB inválidas", () => {
